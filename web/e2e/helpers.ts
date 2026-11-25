@@ -1,9 +1,11 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import AxeBuilder from '@axe-core/playwright'
-import { test as base, expect, type Locator, type Page } from '@playwright/test'
+import { test as base, expect, request, type Locator, type Page } from '@playwright/test'
 
 export const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 export const D1 = 'Je veux une VM Ubuntu de test avec Nginx'
@@ -104,9 +106,86 @@ export function inDays(days: number): string {
   return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' })
 }
 
-export async function setAssistant(page: Page, adapter: string, scenario = 'nominal'): Promise<void> {
-  const r = await api(page, 'PUT', '/admin/assistant', { adapter, scenario })
+export const BASE = process.env.RACKLOOM_E2E_URL || 'https://localhost:8443'
+export const LOCKED = 'Ce réglage est déterminé par le profil de service.'
+
+export type Session = {
+  call: (method: 'GET' | 'POST' | 'PUT', path: string, data?: unknown) => Promise<{ status: number; body: any }>
+  dispose: () => Promise<void>
+}
+
+/** Session API indépendante du navigateur (son propre jar de cookies), vérification TLS active. */
+export async function session(who: string): Promise<Session> {
+  const ctx = await request.newContext({ baseURL: BASE, extraHTTPHeaders: { Origin: BASE } })
+  const r = await ctx.post('/api/v1/auth/login', { data: { email: `${who}@demo.invalid`, password: password(who) } })
+  expect(r.status(), `connexion ${who}`).toBe(200)
+  const csrf = (await r.json()).csrf_token
+  return {
+    async call(method, path, data) {
+      const res = await ctx.fetch(`/api/v1${path}`, {
+        method, data, headers: { 'X-CSRF-Token': csrf, 'Idempotency-Key': randomUUID() },
+      })
+      return { status: res.status(), body: await res.json().catch(() => null) }
+    },
+    dispose: () => ctx.dispose(),
+  }
+}
+
+export async function setAssistant(adapter: string, scenario = 'nominal'): Promise<void> {
+  const admin = await session('admin')
+  const r = await admin.call('PUT', '/admin/assistant', { adapter, scenario })
+  await admin.dispose()
   expect(r.status, JSON.stringify(r.body)).toBe(200)
+}
+
+export function need(extra: Record<string, unknown> = {}, inputs: Record<string, unknown> = {}) {
+  return {
+    schema: 'rackloom.need/v1', service: { template: 'ubuntu-web' }, environment: null, confirm_production: false,
+    inputs: { lifetime_until: inDays(14), ...inputs }, ...extra,
+  }
+}
+
+/** Demande déposée par l'API jusqu'au plan prêt (préparation de scénario). */
+export async function planViaApi(s: Session, project: string, title: string) {
+  const change = (await s.call('POST', `/projects/${project}/changes`, { title })).body
+  const v = await s.call('POST', `/changes/${change.id}/versions`, { need: need(), base_version_no: 0, source: 'webui' })
+  expect(v.status, JSON.stringify(v.body)).toBe(200)
+  expect((await s.call('POST', `/changes/${change.id}/submit`, { revision_no: v.body.revision_no })).status).toBe(200)
+  let view: any
+  await expect.poll(async () => (view = (await s.call('GET', `/changes/${change.id}`)).body).state,
+    { timeout: 180_000, intervals: [1000] }).toBe('plan_ready')
+  return view
+}
+
+/** Client CI réel (`rackloom ci submit`) lancé depuis l'hôte, CA locale vérifiée. */
+export function ciSubmit(who: string, project: string, body: unknown): { code: number; out: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'rackloom-ci-'))
+  try {
+    writeFileSync(join(dir, 'pw'), password(who), { mode: 0o600 })
+    writeFileSync(join(dir, 'need.json'), JSON.stringify(body))
+    const res = spawnSync(process.env.RACKLOOM_UV || 'uv', ['run', '--project', `${ROOT}backend`, 'rackloom', 'ci', 'submit',
+      '--url', BASE, '--ca', `${ROOT}.lab/ca.crt`, '--email', `${who}@demo.invalid`, '--password-file', join(dir, 'pw'),
+      '--project', project, '--need', join(dir, 'need.json')], { encoding: 'utf8' })
+    return { code: res.status ?? -1, out: `${res.stdout}${res.stderr}` }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+/** Retire ou rétablit un octroi par la commande d'exploitation (conteneur cli). */
+export function grants(action: 'revoke' | 'restore', project: string, environment: string, kind: string): string {
+  return compose('run', '--rm', 'cli', 'grants', action, '--project', project, '--environment', environment,
+    '--kind', kind, '--reason', `Démonstration ${action === 'revoke' ? 'D4 : retrait' : 'D4 : rétablissement'}`)
+}
+
+/** Bruno ouvre la demande depuis son accueil et approuve l'empreinte affichée. */
+export async function approveAsBruno(page: Page, ref: string): Promise<void> {
+  await logout(page)
+  await login(page, 'bruno')
+  await press(page.getByRole('link', { name: new RegExp(ref) }).first())
+  await expect(page.getByTestId('plan-panel')).toBeVisible()
+  await press(page.getByTestId('approve'))
+  await expect(page.getByText('Plan approuvé : exécution du plan approuvé.')).toBeVisible()
 }
 
 /** Étape 1 au clavier par le formulaire seul : service, date de fin ; le reste vient des défauts. */

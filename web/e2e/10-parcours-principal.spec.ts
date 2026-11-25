@@ -9,7 +9,7 @@ test('§1.1 parcours principal au clavier — D1, T30, T31', async ({ page }) =>
   // 2. Alice n'a qu'un projet : Rackloom ne lui demande pas de le choisir.
   await login(page, 'alice')
   await expectAccessible(page, 'accueil (Alice)')
-  const newRequest = page.getByRole('link', { name: 'Nouvelle demande' })
+  const newRequest = page.getByRole('link', { name: 'Nouvelle demande', exact: true })
   await expect(newRequest).toHaveCount(1)
   await press(newRequest)
   await expect(page.getByRole('heading', { name: 'Votre besoin' })).toBeVisible()

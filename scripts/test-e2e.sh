@@ -44,15 +44,15 @@ rm -rf "$NSS" && mkdir -p "$NSS"
 certutil -N -d "sql:$NSS" --empty-password
 certutil -A -d "sql:$NSS" -n "Rackloom demo CA" -t "C,," -i "$LAB/ca.crt"
 
-rm -rf "$OUT"
-step "T30-T36 : Playwright §1.1 et D1 à D6 (axe)" \
-  env -C "$ROOT/web" RACKLOOM_E2E_HOME="$LAB/e2e-home" NODE_EXTRA_CA_CERTS="$LAB/ca.crt" \
-  RACKLOOM_E2E_OUTPUT="$OUT" npx playwright test --reporter=list "$@"
-# T25 supprime les conteneurs : leurs journaux sont conservés pour le scan du canari (T24).
-mkdir -p "$OUT"
+rm -rf "$OUT" && mkdir -p "$OUT"
+# T25 d'abord (D5 retire ubuntu-web 1.0.0). Il supprime les conteneurs : leurs journaux sont conservés
+# pour le scan du canari (T24).
 "${COMPOSE[@]}" --profile lab logs --no-color > "$OUT/journaux-compose-avant-T25.log" 2>&1
 step "T25 : redémarrage de l'appliance pendant la configuration Ansible" \
   env -C "$ROOT" uv run --project backend python scripts/smoke-d1.py --restart-during ansible_configure
+step "T30-T36 : Playwright §1.1 et D1 à D6 (axe)" \
+  env -C "$ROOT/web" RACKLOOM_E2E_HOME="$LAB/e2e-home" NODE_EXTRA_CA_CERTS="$LAB/ca.crt" \
+  RACKLOOM_E2E_OUTPUT="$OUT" npx playwright test --reporter=list "$@"
 step "T24 : scan du canari" "$ROOT/scripts/canary-scan.sh" "$OUT"
 step "T28 : exposition" "$ROOT/scripts/check-exposure.sh"
 
