@@ -218,9 +218,10 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### Lot A : F27 calendriers (2026-11-25, heure de Paris)
 
-- Branche `cursor/lot-a-f27-calendriers-20f1` rebasée sur `main` (F28 + AT01 + F60 + F57). Migration **`0004`** (`down_revision = 0003_atelier`) — F57 n'ajoute aucune migration Alembic. R090 (`start`/`dispatch`), `builtin@3`, tables `environment_calendars` / `change_windows` / `calendar_freezes`, horloge injectable `rackloom.clock`, programmation `run_after` à l'approbation (y compris vagues ansible AT01).
-- Conflit post-F57 : seulement `docs/progress.md` (simple). Aucun conflit d'intention.
-- Preuves : `test_calendars.py` ; Playwright `70-f27-calendriers.spec.ts` ; vidéo magasin `media/lot-a-f27-calendriers.webm`.
+- Branche `cursor/lot-a-f27-calendriers-20f1` rebasée sur `main` (F28 + AT01 + F60 + F57). Migration **`0004`** (`down_revision = 0003_atelier`) — F60 et F57 n'ajoutent aucune migration Alembic. R090 (`start`/`dispatch`), `builtin@3`, tables `environment_calendars` / `change_windows` / `calendar_freezes`, horloge injectable `rackloom.clock`, programmation `run_after` à l'approbation (y compris vagues ansible AT01).
+- Conflits post-F60 / post-F57 : seulement `docs/progress.md` (simples). Aucun conflit d'intention.
+- E2e F27 : gel posé via API (ISO UTC) + `run_after` forcé en SQL avant redémarrage worker (évite course CI où le changement restait « Approuvée »).
+- Preuves : `test_calendars.py` (7) ; Playwright `70-f27-calendriers.spec.ts` ; vidéo magasin `media/lot-a-f27-calendriers.webm`.
 - Suite : **F21** après fusion de F27 (PR #7).
 
 ### F60 : serveur de référence (2026-11-25)

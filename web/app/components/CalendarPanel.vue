@@ -12,10 +12,9 @@ const startLocal = ref('')
 const endLocal = ref('')
 
 onMounted(() => {
-  const now = new Date()
-  const later = new Date(now.getTime() + 2 * 3600_000)
-  startLocal.value = toLocalInput(new Date(now.getTime() - 60_000))
-  endLocal.value = toLocalInput(later)
+  const now = Date.now()
+  startLocal.value = toLocalInput(new Date(now - 60_000))
+  endLocal.value = toLocalInput(new Date(now + 2 * 3600_000))
 })
 
 function toLocalInput(d: Date) {
@@ -24,7 +23,9 @@ function toLocalInput(d: Date) {
 }
 
 function toIso(local: string) {
-  return new Date(local).toISOString()
+  const ms = Date.parse(local)
+  if (Number.isNaN(ms)) throw new Error('horodatage local invalide')
+  return new Date(ms).toISOString()
 }
 
 function applyCalendar(cal: any) {

@@ -1,9 +1,10 @@
 import {
-  compose, expect, expectAccessible, login, logout, planViaApi, press, session, test, typeInto, waitState, type Page,
+  compose, expect, expectAccessible, login, logout, planViaApi, press, session, test, waitState, type Page,
 } from './helpers'
 
 // F27 : plan approuvé en file (worker arrêté) ; gel calendaire planifié ; au redémarrage le job
 // d'écriture est bloqué (calendar_frozen / R090) ; lecture et diagnostic restent disponibles.
+// Gel posé via l'API avec horodatages UTC explicites (évite datetime-local / fuseau du runner CI).
 
 const REASON = 'Gel planifié F27 : maintenance réseau de démonstration'
 let planned: any
@@ -45,12 +46,16 @@ test('F27 — gel calendaire : job en file bloqué à l\'admission, lecture disp
       await expect(apply).toContainText('En file')
       await beat(page)
 
+      const freeze = await bruno.call('POST', `/environments/${dev.id}/calendar/freezes`, {
+        starts_at: new Date(Date.now() - 60_000).toISOString(),
+        ends_at: new Date(Date.now() + 3_600_000).toISOString(),
+        reason: REASON,
+      })
+      expect(freeze.status, JSON.stringify(freeze.body)).toBe(200)
+      expect(freeze.body.state?.code).toBe('calendar_frozen')
+
       await openProject(page)
       const panel = page.getByTestId('calendar-dev')
-      await expect(panel).toBeVisible()
-      await typeInto(panel.getByTestId('calendar-freeze-reason'), REASON)
-      await beat(page)
-      await press(panel.getByTestId('calendar-freeze-add'))
       await expect(panel.getByTestId('calendar-freeze')).toContainText(REASON)
       await expect(page.getByTestId('project-calendar-banner')).toContainText(/gel|période/i)
       await expectAccessible(page, 'F27 calendrier gelé')
@@ -63,6 +68,13 @@ test('F27 — gel calendaire : job en file bloqué à l\'admission, lecture disp
       expect([r.status, r.body?.code]).toEqual([403, 'forbidden'])
       r = await chloe.call('GET', `/environments/${dev.id}/calendar`)
       expect(r.status).toBe(404)
+
+      // Réclamation garantie dès le redémarrage du worker (now() côté PostgreSQL).
+      compose(
+        'exec', '-T', 'postgres',
+        'psql', '-U', 'rackloom_owner', '-d', 'rackloom', '-v', 'ON_ERROR_STOP=1', '-c',
+        `UPDATE jobs SET run_after = now() - interval '1 second' WHERE change_id = '${planned.id}' AND kind = 'tf_apply' AND state = 'queued';`,
+      )
     } finally {
       compose('start', 'worker')
     }
