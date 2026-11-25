@@ -22,6 +22,7 @@ from . import (
     routes_auth,
     routes_changes,
     routes_chat,
+    routes_environments,
     routes_follow,
     routes_projects,
     routes_resources,
@@ -95,8 +96,8 @@ def create_app() -> FastAPI:
                              "details": {"request_id": getattr(request.state, "request_id", None)}},
                             status_code=500)
 
-    for module in (routes_auth, routes_projects, routes_changes, routes_follow, routes_resources, routes_chat,
-                   routes_admin):
+    for module in (routes_auth, routes_projects, routes_environments, routes_changes, routes_follow,
+                   routes_resources, routes_chat, routes_admin):
         app.include_router(module.router, prefix=PREFIX)
     app.include_router(routes_admin.health, prefix=PREFIX)
     return app

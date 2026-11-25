@@ -1,8 +1,10 @@
 """Admission au démarrage effectif d'un job : registre ordonné de règles, décision enregistrée.
 
 Chaque job est réévalué au moment où un worker le réclame, quelle que soit sa date de mise en
-file. Emplacements réservés, non enregistrés au lot 1 : 80 (F28), 90 (F27), 95 (F37),
-100 (F11), 110 (F05), 115 (F39), 120 (F03), 125 (F34), 130 (F16), 135 (F38), 140 (F10).
+file (étape `start`). Les règles qui dépendent d'un état pouvant changer entre l'admission et
+l'envoi au fournisseur (gel) sont rejouées dans la transaction qui marque cet envoi (étape
+`dispatch`). Emplacements réservés, non encore enregistrés : 90 (F27), 95 (F37), 100 (F11),
+110 (F05), 115 (F39), 120 (F03), 125 (F34), 130 (F16), 135 (F38), 140 (F10).
 """
 
 from __future__ import annotations
@@ -15,6 +17,9 @@ from typing import Any
 from .. import policy
 from ..db import Conn, Jsonb
 from ..identity.authz import Principal, load_bindings
+from ..projects import freezes
+
+STAGES = ("start", "dispatch")
 
 
 @dataclass
@@ -39,12 +44,13 @@ class Context:
 
 
 Rule = Callable[[Context], Verdict]
-REGISTRY: list[tuple[int, str, str, Rule]] = []
+REGISTRY: list[tuple[int, str, str, tuple[str, ...], Rule]] = []
 
 
-def rule(order: int, rule_id: str, job_class: str) -> Callable[[Rule], Rule]:
+def rule(order: int, rule_id: str, job_class: str,
+         stages: tuple[str, ...] = ("start",)) -> Callable[[Rule], Rule]:
     def register(fn: Rule) -> Rule:
-        REGISTRY.append((order, rule_id, job_class, fn))
+        REGISTRY.append((order, rule_id, job_class, stages, fn))
         REGISTRY.sort(key=lambda r: r[0])
         return fn
     return register
@@ -190,6 +196,17 @@ def cancel_not_requested(ctx: Context) -> Verdict:
     return Verdict(True)
 
 
+@rule(80, "R080", "write", stages=("start", "dispatch"))
+def environment_not_frozen(ctx: Context) -> Verdict:
+    """Le verrou partagé sur l'environnement tient jusqu'à la fin de la transaction qui admet ou envoie."""
+    if ctx.environment is None:
+        return Verdict(True)
+    frozen = freezes.active(ctx.conn, ctx.environment["id"], lock=True)
+    if frozen:
+        return Verdict(False, freezes.refusal(ctx.environment, frozen), "env_frozen")
+    return Verdict(True)
+
+
 @rule(900, "R900", "write")
 def stack_lock(ctx: Context) -> Verdict:
     if ctx.job["stack_id"] is None or ctx.job["kind"] != "tf_apply":
@@ -203,13 +220,17 @@ def stack_lock(ctx: Context) -> Verdict:
     return Verdict(True)
 
 
-def evaluate(ctx: Context) -> dict[str, Any]:
+def evaluate(ctx: Context, stage: str = "start") -> dict[str, Any]:
     """Évalue les règles applicables dans l'ordre ; s'arrête au premier refus. Enregistre la décision."""
+    if stage not in STAGES:
+        raise ValueError(stage)
     results = []
     outcome = "admitted"
     refusal: dict[str, Any] | None = None
-    for order, rule_id, job_class, fn in REGISTRY:
+    for order, rule_id, job_class, stages, fn in REGISTRY:
         if job_class == "write" and ctx.job["class"] != "write":
+            continue
+        if stage not in stages:
             continue
         verdict = fn(ctx)
         results.append({"id": rule_id, "order": order, "ok": verdict.ok, "reason": verdict.reason,
@@ -221,10 +242,10 @@ def evaluate(ctx: Context) -> dict[str, Any]:
     active = policy.active()
     ctx.conn.execute(
         "INSERT INTO admission_decisions (job_id, change_id, outcome, policy_bundle_version, policy_bundle_digest, "
-        "rules) VALUES (%s, %s, %s, %s, %s, %s)",
+        "rules, stage) VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (ctx.job["id"], ctx.change["id"] if ctx.change else None, outcome, active["version"], active["digest"],
-         Jsonb(results)))
-    return {"outcome": outcome, "rules": results, "refusal": refusal, "policy": active}
+         Jsonb(results), stage))
+    return {"outcome": outcome, "rules": results, "refusal": refusal, "policy": active, "stage": stage}
 
 
 def release_stack(conn: Conn, job: dict[str, Any]) -> None:

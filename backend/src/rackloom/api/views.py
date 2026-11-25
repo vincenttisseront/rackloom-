@@ -11,6 +11,7 @@ from ..changes.service import change_ref
 from ..changes.transitions import STATES
 from ..db import Conn
 from ..identity.authz import Principal
+from ..projects import freezes
 
 SERVICE_STATUS = {
     "unknown": "Non vérifié",
@@ -36,6 +37,30 @@ SIMULATED_STEPS = {"vm_inventory": "Inventaire vCenter (connecteur fictif)",
 
 def iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
+
+
+def freeze_view(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    s = freezes.summary(row)
+    return {**s, "id": str(s["id"]), "frozen_at": iso(s["frozen_at"])} if s else None
+
+
+def environment_view(conn: Conn, principal: Principal, env: dict[str, Any], *,
+                     history: bool = False) -> dict[str, Any]:
+    """État de gel et actions permises ; aucune donnée d'un autre projet."""
+    current = freezes.active(conn, env["id"])
+    out: dict[str, Any] = {
+        "id": str(env["id"]), "slug": env["slug"], "name": env["name"], "kind": env["kind"],
+        "is_production": env["is_production"],
+        "frozen": current is not None, "freeze": freeze_view(current),
+        "write_jobs": freezes.write_jobs(conn, env["id"]),
+        "allowed_actions": workflow.available_actions(conn, principal, "environment", env),
+    }
+    if "project_slug" in env:
+        out["project"] = {"id": str(env["project_id"]), "slug": env["project_slug"], "name": env["project_name"]}
+    if history:
+        out["history"] = [{**h, "id": str(h["id"]), "frozen_at": iso(h["frozen_at"]), "lifted_at": iso(h["lifted_at"])}
+                          for h in freezes.history(conn, env["id"])]
+    return out
 
 
 def plan_headline(counts: dict[str, int]) -> str:
@@ -189,6 +214,8 @@ def change_view(conn: Conn, principal: Principal, change: dict[str, Any]) -> dic
         "pending_retry": {"id": str(pending_retry["id"]), "host_ids": pending_retry["host_ids"],
                           "bundle_digest": pending_retry["bundle_digest"],
                           "requested_at": iso(pending_retry["requested_at"])} if pending_retry else None,
+        "environment_freeze": freeze_view(freezes.active(conn, change["environment_id"]))
+        if change["environment_id"] else None,
         "allowed_actions": workflow.available_actions(conn, principal, "change", change),
     }
 

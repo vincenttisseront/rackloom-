@@ -15,6 +15,7 @@ from .changes.transitions import ALLOWED, EDITABLE, STATES
 from .db import Conn
 from .errors import ApiError
 from .identity.authz import Principal
+from .projects import freezes
 
 LABELS = {
     "edit": "Modifier le besoin",
@@ -29,14 +30,18 @@ LABELS = {
     "duplicate": "Dupliquer",
     "cancel_job": "Demander l'annulation",
     "modify": "Modifier ce déploiement",
+    "freeze": "Geler l'environnement",
+    "unfreeze": "Dégeler l'environnement",
 }
 
 # Rôle exigé par action (sur le projet et l'environnement de la ressource).
+# Gel : décision D8, provisoire (administrateur de plateforme ou approbateur de l'environnement).
 ROLES = {
     "edit": ("operator",), "submit": ("operator",), "cancel": ("operator", "approver"),
     "approve": ("approver",), "reject": ("approver",), "request_retry": ("operator",),
     "approve_retry": ("approver",), "reject_retry": ("approver",), "replan": ("operator",),
     "duplicate": ("operator",), "cancel_job": ("operator", "approver"), "modify": ("operator",),
+    "freeze": ("approver", "platform_admin"), "unfreeze": ("approver", "platform_admin"),
 }
 
 RUNNING_JOB_STATES = ("queued", "leased", "running")
@@ -44,6 +49,21 @@ RUNNING_JOB_STATES = ("queued", "leased", "running")
 
 class Forbidden(str):
     """Motif lié à la personne (séparation des rôles) : refus 403, pas 409."""
+
+
+class Coded(str):
+    """Motif d'indisponibilité (409) portant un code stable plutôt que `action_unavailable`."""
+
+    code: str
+
+    def __new__(cls, text: str, code: str) -> Coded:
+        obj = super().__new__(cls, text)
+        obj.code = code
+        return obj
+
+
+FROZEN = Coded("environnement gelé : approbation suspendue jusqu'au dégel", "env_frozen")
+
 DEPLOYMENT_BUSY = (EDITABLE | {"validated", "planning", "approved", "executing", "verifying", "uncertain",
                                "reconciling"}) - {"rejected", "plan_failed"}
 
@@ -101,6 +121,9 @@ def _change_actions(conn: Conn, principal: Principal, change: dict[str, Any],
         elif env and env["requires_distinct_approver"] and change["created_by"] == principal.user_id:
             reason = Forbidden("l'approbateur doit être distinct du demandeur pour cet environnement")
     out["approve"] = out["reject"] = reason
+    frozen = freezes.active(conn, change["environment_id"]) is not None if change["environment_id"] else False
+    if frozen and reason is None:
+        out["approve"] = FROZEN
 
     retryable = conn.execute(
         "SELECT count(*) AS n FROM hosts WHERE deployment_id = %s "
@@ -122,6 +145,8 @@ def _change_actions(conn: Conn, principal: Principal, change: dict[str, Any],
         out["approve_retry"] = out["reject_retry"] = Forbidden("vous ne pouvez pas approuver votre propre reprise")
     else:
         out["approve_retry"] = out["reject_retry"] = None
+        if frozen:
+            out["approve_retry"] = FROZEN
 
     out["replan"] = None if state == "succeeded" else "nouvelle planification possible uniquement après un succès"
     out["duplicate"] = None if change["kind"] == "create" and version is not None else \
@@ -141,18 +166,28 @@ def _deployment_actions(conn: Conn, deployment: dict[str, Any]) -> dict[str, str
     return {"modify": "un changement est déjà en cours sur ce déploiement" if busy else None}
 
 
+def _environment_actions(conn: Conn, env: dict[str, Any]) -> dict[str, str | None]:
+    frozen = freezes.active(conn, env["id"]) is not None
+    return {"freeze": "environnement déjà gelé" if frozen else None,
+            "unfreeze": None if frozen else "environnement non gelé"}
+
+
 def evaluate(conn: Conn, principal: Principal, kind: str, resource: dict[str, Any],
              now: datetime | None = None) -> dict[str, dict[str, Any]]:
     now = now or datetime.now(UTC)
+    environment_id = resource.get("environment_id")
     if kind == "change":
         raw = _change_actions(conn, principal, resource, now)
     elif kind == "deployment":
         raw = _deployment_actions(conn, resource)
+    elif kind == "environment":
+        raw = _environment_actions(conn, resource)
+        environment_id = resource["id"]
     else:
         raise ValueError(kind)
     result = {}
     for action, unavailable in raw.items():
-        allowed_role = _has_role(principal, action, resource["project_id"], resource.get("environment_id"))
+        allowed_role = _has_role(principal, action, resource["project_id"], environment_id)
         result[action] = {"role": allowed_role, "reason": unavailable}
     return result
 
@@ -172,5 +207,5 @@ def require_action(conn: Conn, principal: Principal, kind: str, resource: dict[s
     if isinstance(verdict["reason"], Forbidden):
         raise ApiError(403, "separation_of_duties", verdict["reason"], details={"action": action})
     if verdict["reason"] is not None:
-        raise ApiError(409, "action_unavailable", f"« {LABELS[action]} » impossible : {verdict['reason']}",
-                       details={"action": action})
+        raise ApiError(409, getattr(verdict["reason"], "code", "action_unavailable"),
+                       f"« {LABELS[action]} » impossible : {verdict['reason']}", details={"action": action})

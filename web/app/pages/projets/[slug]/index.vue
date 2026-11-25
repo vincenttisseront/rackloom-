@@ -6,6 +6,7 @@ const project = ref<any>(null)
 const changes = ref<any[]>([])
 const deployments = ref<any[]>([])
 const hosts = ref<any[]>([])
+const environments = ref<any[]>([])
 const error = ref<string | null>(null)
 
 onMounted(async () => {
@@ -13,13 +14,18 @@ onMounted(async () => {
     const projects = await api.get('/projects')
     project.value = projects.find((p: any) => p.slug === slug.value)
     if (!project.value) throw new ApiError(404, { message: 'Projet introuvable.' })
-    ;[changes.value, deployments.value, hosts.value] = await Promise.all([
+    ;[changes.value, deployments.value, hosts.value, environments.value] = await Promise.all([
       api.get(`/projects/${slug.value}/changes`), api.get(`/projects/${slug.value}/deployments`), api.get(`/projects/${slug.value}/hosts`),
+      api.get(`/projects/${slug.value}/environments`),
     ])
   } catch (e) {
     error.value = errorText(e)
   }
 })
+
+function envChanged(updated: any) {
+  environments.value = environments.value.map(e => (e.id === updated.id ? { ...e, ...updated } : e))
+}
 </script>
 
 <template>
@@ -33,6 +39,14 @@ onMounted(async () => {
       <NuxtLink v-if="project?.roles.includes('operator')" class="button primary" :to="`/projets/${slug}/nouvelle`" data-testid="new-request">Nouvelle demande</NuxtLink>
     </div>
     <div v-if="error" class="banner bad" role="alert">{{ error }}</div>
+    <div v-for="e in environments.filter(x => x.frozen)" :key="`frozen-${e.id}`" class="banner warn" role="status" data-testid="project-freeze-banner">
+      Environnement {{ e.name }} gelé : aucun job d'écriture ne démarre jusqu'au dégel. Lecture et diagnostic restent disponibles.
+    </div>
+
+    <section v-if="environments.length" class="card" aria-labelledby="envs-title">
+      <h2 id="envs-title">Environnements</h2>
+      <EnvironmentTable :environments="environments" @changed="envChanged" />
+    </section>
 
     <section class="card" aria-labelledby="deps-title">
       <h2 id="deps-title">Déploiements</h2>

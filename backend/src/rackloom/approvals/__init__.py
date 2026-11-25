@@ -18,6 +18,7 @@ from ..errors import ApiError
 from ..executions import queue
 from ..identity.authz import Principal, require_role
 from ..ids import uuid7
+from ..projects import freezes
 
 
 def _auth_context(principal: Principal) -> dict[str, Any]:
@@ -39,6 +40,8 @@ def decide(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, An
         raise ApiError(422, "comment_required", "un motif est obligatoire pour refuser", field="/comment")
     change = get_change(conn, principal, change_id, for_update=True)
     require_role(principal, "approver", change["project_id"], change["environment_id"])
+    if decision == "approved" and freezes.active(conn, change["environment_id"], lock=True):
+        raise ApiError(409, "env_frozen", "environnement gelé : approbation suspendue jusqu'au dégel")
     if body.get("retry_id"):
         return _decide_retry(conn, principal, change, UUID(str(body["retry_id"])), body, decision, comment,
                              request_id)

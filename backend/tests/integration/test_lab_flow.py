@@ -12,6 +12,8 @@ import pytest
 
 import flows
 from rackloom import approvals
+from rackloom.errors import ApiError
+from rackloom.projects import freezes
 
 pytestmark = [pytest.mark.terraform, pytest.mark.ansible, pytest.mark.docker]
 API = "/api/v1"
@@ -146,5 +148,41 @@ def test_t22_echec_partiel_puis_reprise_ciblee(conn, demo, worker, lab):
     assert worker.drain() == ["ansible_configure", "verify"]
     configure = flows.jobs_of(conn, c["id"], "ansible_configure")[-1]
     assert configure["payload"]["host_ids"] == [str(second["id"])]
+    assert flows.change(conn, c["id"])["state"] == "succeeded"
+    assert flows.deployment(conn, c["deployment_id"])["service_status"] == "ready"
+
+
+def test_f28_configuration_bloquee_par_le_gel_puis_reprise(conn, demo, worker, lab):
+    """VM créée avant le gel, configuration en file pendant le gel : bloquée, jamais envoyée, VM conservée."""
+    lab.start(1)
+    c = _approved_and_applied(conn, demo, worker)
+    assert worker.drain(kinds=["guest_ready"]) == ["guest_ready"]
+    env_id = demo.env("vitrine", "dev")["id"]
+    bruno = demo.principal("bruno")
+    freezes.freeze(conn, bruno, env_id, "Gel avant la fenêtre de configuration")
+    conn.commit()
+
+    assert worker.drain(kinds=["ansible_configure"]) == ["ansible_configure"]
+    configure = flows.jobs_of(conn, c["id"], "ansible_configure")[0]
+    assert [configure["state"], configure["blocked_reason"], configure["dispatched_at"]] == [
+        "blocked", "env_frozen", None]
+    assert flows.change(conn, c["id"])["state"] == "partially_succeeded"
+    host = _hosts(conn, c["deployment_id"])[0]
+    assert host["deployment_state"] == "enrolled"
+    assert "Configuration nginx 1.0.0" not in " ".join(_step_names(conn, c["id"]))
+
+    retry = approvals.request_retry(conn, demo.principal("alice"), c["id"], {"step": "ansible_configure"})
+    conn.commit()
+    retry_body = {"retry_id": str(retry["retry_id"]), "bundle_digest": retry["bundle_digest"], "decision": "approved"}
+    with pytest.raises(ApiError) as exc:
+        approvals.decide(conn, bruno, c["id"], retry_body)
+    conn.rollback()
+    assert (exc.value.status, exc.value.code) == (409, "env_frozen")
+
+    freezes.unfreeze(conn, bruno, env_id, "Fenêtre de configuration ouverte")
+    conn.commit()
+    approvals.decide(conn, bruno, c["id"], retry_body)
+    conn.commit()
+    assert worker.drain() == ["ansible_configure", "verify"]
     assert flows.change(conn, c["id"])["state"] == "succeeded"
     assert flows.deployment(conn, c["deployment_id"])["service_status"] == "ready"

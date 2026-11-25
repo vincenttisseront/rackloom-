@@ -43,6 +43,23 @@ export const JOB_STATES: Record<string, string> = {
   cancelled: 'Annulé',
 }
 
+export const BLOCK_REASONS: Record<string, string> = {
+  env_frozen: 'Environnement gelé : le job ne démarre pas pendant le gel',
+  plan_expired: 'Plan expiré',
+  cancel_requested: 'Annulation demandée avant le démarrage',
+  requester_revoked: "Le demandeur n'a plus le rôle opérateur",
+  approver_revoked: "L'approbateur n'a plus le rôle approbateur",
+  approval_missing: 'Approbation absente',
+  approval_revoked: 'Approbation révoquée',
+  approval_consumed: 'Approbation déjà consommée',
+  bundle_mismatch: "Dossier d'exécution modifié depuis l'approbation",
+  policy_changed: 'Politique modifiée depuis la résolution : nouvelle approbation requise',
+  resolution_no_longer_admissible: "Résolution plus admissible : nouvelle révision requise",
+  simulated_in_prod: 'Connecteur simulé refusé en production',
+  stack_locked: 'Stack verrouillée par un autre job',
+  destructive: 'Plan avec suppression ou remplacement',
+}
+
 export const SERVICE_TONE: Record<string, string> = {
   ready: 'ok',
   created_not_ready: 'warn',

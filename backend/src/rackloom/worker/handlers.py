@@ -62,21 +62,26 @@ def _load(conn: Conn, job: dict[str, Any], lock: bool = True) -> dict[str, Any]:
     return ctx
 
 
-def _admit(r: JobContext, conn: Conn, ctx: dict[str, Any], recompute=None) -> None:
+def _admit(r: JobContext, conn: Conn, ctx: dict[str, Any], recompute=None, stage: str = "start") -> None:
     decision = admission.evaluate(admission.Context(
         conn=conn, job=r.job, change=ctx["change"], environment=ctx["env"], execution=ctx["execution"],
-        approval=ctx["approval"], plan=ctx["plan"], revision=ctx["revision"], recompute_digest=recompute))
+        approval=ctx["approval"], plan=ctx["plan"], revision=ctx["revision"], recompute_digest=recompute),
+        stage=stage)
+    label = (f"Admission (règles {decision['policy']['version']})" if stage == "start"
+             else "Contrôle avant envoi au fournisseur")
     if decision["outcome"] == "admitted":
-        r.fenced(conn, "state = 'running', blocked_reason = NULL")
-        r.step(conn, "Admission (règles builtin@1)", "succeeded",
+        if stage == "start":
+            r.fenced(conn, "state = 'running', blocked_reason = NULL")
+        r.step(conn, label, "succeeded",
                summary={"rules": [x["id"] for x in decision["rules"]], "policy": decision["policy"]["version"]})
         return
     refusal = decision["refusal"]
     r.fenced(conn, "state = 'blocked', blocked_reason = %s, finished_at = now(), lease_owner = NULL",
              (refusal["code"],))
     admission.release_stack(conn, r.job)
-    r.step(conn, "Admission (règles builtin@1)", "failed", summary={"rule": refusal["id"], "reason": refusal["reason"]})
+    r.step(conn, label, "failed", summary={"rule": refusal["id"], "reason": refusal["reason"]})
     r.event(conn, "job.blocked", {"kind": r.job["kind"], "rule": refusal["id"], "code": refusal["code"],
+                                  "stage": stage,
                                   "message": f"Admission refusée ({refusal['id']}) : {refusal['reason']}"},
             severity="error")
     change = ctx["change"]
@@ -211,13 +216,18 @@ def handle_tf_apply(r: JobContext) -> None:
     (work / "in" / "plan.bin").write_bytes(plan_bytes)
     if hashlib.sha256((work / "in" / "plan.bin").read_bytes()).hexdigest() != plan["plan_sha256"]:
         raise RuntimeError("copie du plan altérée")
-    with r.tx() as conn:
-        r.fenced(conn, "dispatched_at = now(), provider_ref = %s", (run_id,))
-        conn.execute("UPDATE executions SET started_at = coalesce(started_at, now()), state = 'running' WHERE id = %s",
-                     (r.job["execution_id"],))
-        change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (r.job["change_id"],)).fetchone()
-        transition(conn, change, "executing", reason_code="apply_dispatched", actor_type="worker",
-                   actor_id=r.worker_id, detail={"plan_id": str(plan["id"])})
+    try:
+        with r.tx() as conn:
+            current = _load(conn, r.job)
+            _admit(r, conn, current, stage="dispatch")
+            r.fenced(conn, "dispatched_at = now(), provider_ref = %s", (run_id,))
+            conn.execute("UPDATE executions SET started_at = coalesce(started_at, now()), state = 'running' "
+                         "WHERE id = %s", (r.job["execution_id"],))
+            transition(conn, current["change"], "executing", reason_code="apply_dispatched", actor_type="worker",
+                       actor_id=r.worker_id, detail={"plan_id": str(plan["id"])})
+    except Refused:
+        r.cleanup(run_id)
+        raise
     status = r.run({"run_id": run_id, "kind": "terraform", "stack": ctx["stack"]["slug"], "timeout_seconds": 1800})
     finish_apply(r, run_id, status)
 
