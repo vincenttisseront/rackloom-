@@ -19,6 +19,15 @@ router = APIRouter(tags=["ressources"], dependencies=[Depends(csrf_guard)])
 OBSERVATION_KINDS = ("facts", "packages", "services", "probe", "journal", "ssh")
 
 
+@router.get("/inbox")
+def get_inbox(request: Request) -> dict[str, Any]:
+    """F55 : boîte « À moi d'agir » et « En attente d'une autre personne »."""
+    from .. import inbox
+
+    with unit_of_work(request) as u:
+        return inbox.build(u.conn, u.p)
+
+
 @router.get("/deployments/{deployment_id}")
 def get_deployment(deployment_id: UUID, request: Request) -> dict[str, Any]:
     with unit_of_work(request) as u:

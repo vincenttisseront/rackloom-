@@ -4,6 +4,7 @@ const session = useSession()
 const projects = ref<any[]>([])
 const status = ref<any>(null)
 const recent = ref<Record<string, any[]>>({})
+const inbox = ref<any>(null)
 const error = ref<string | null>(null)
 const isAdmin = computed(() => hasRole(session.value, 'platform_admin'))
 const isAuthor = computed(() => hasRole(session.value, 'template_author'))
@@ -11,6 +12,7 @@ const ROLE_LABELS: Record<string, string> = { operator: 'Opérateur', approver: 
 
 onMounted(async () => {
   try {
+    inbox.value = await api.get('/inbox')
     projects.value = await api.get('/projects')
     for (const p of projects.value) {
       recent.value[p.slug] = (await api.get(`/projects/${p.slug}/changes`)).slice(0, 5)
@@ -31,6 +33,8 @@ onMounted(async () => {
       </div>
     </div>
     <div v-if="error" class="banner bad" role="alert">{{ error }}</div>
+
+    <InboxBox :inbox="inbox" />
 
     <section v-if="status" class="card" aria-labelledby="health-title" data-testid="platform-health">
       <h2 id="health-title">Santé de la plateforme</h2>

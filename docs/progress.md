@@ -50,7 +50,8 @@
 | Assistant de conception, adaptateur Ollama | code livré | non vérifié contre un vrai modèle | l'atelier est exercé avec l'adaptateur fictif |
 | Template depuis un serveur de référence (F60) | livré (observations fictives explicites) | testé localement | `tests/integration/test_f60_reference.py` ; `web/e2e/96-atelier-f60.spec.ts` ; collecteur réel indisponible (D21) |
 | Fiche « Votre service est prêt » (F57) | livré | testé localement | `tests/integration/test_f57_service_card.py` ; `web/e2e/97-atelier-f57.spec.ts` ; T41 pour le calcul réel |
-| Fonctions F01 à F56 / F58 à F59 (hors F28) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : F55 |
+| Boîte « À moi d'agir » (F55) | livré | testé localement | `tests/integration/test_f55_inbox.py` ; `web/e2e/98-atelier-f55.spec.ts` |
+| Fonctions F01 à F54 / F56 / F58 à F59 (hors F28) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6
 
@@ -232,9 +233,14 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Fiche courte : quatre états, sorties `outputs_allowlist`, preuves et heure des contrôles ; détails techniques au second niveau.
 - Preuves : `test_f57_service_card.py` (7) ; e2e `97-atelier-f57.spec.ts` (prêt réel + UI des autres états).
 
+### F55 : boîte « À moi d'agir » (2026-11-25)
+
+- Branche `cursor/atelier-f55-88f4` depuis `main` (F57 fusionné).
+- `GET /inbox` : « À moi d'agir » / « En attente d'une autre personne » via `workflow.available_actions`.
+- Preuves : `test_f55_inbox.py` (4) ; e2e `98-atelier-f55.spec.ts` (alice, bruno, david ; révocation → 403).
+
 ## Prochain jalon
 
-1. Fusionner F57 après CI verte.
-2. Suite atelier : **F55**.
-3. Finir le lot A : **F27 → F21** (si pas déjà fusionné).
-4. Ensuite **F31 → F37 → F46**. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
+1. Fusionner F55 après CI verte.
+2. Finir le lot A : **F27 → F21** (si pas déjà fusionné).
+3. Ensuite **F31 → F37 → F46**. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
