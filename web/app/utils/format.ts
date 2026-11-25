@@ -1,0 +1,74 @@
+const TZ = 'Europe/Paris'
+
+export function dateTime(value?: string | null): string {
+  if (!value) return '—'
+  return new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'medium', timeZone: TZ }).format(new Date(value))
+}
+
+export function time(value?: string | null): string {
+  if (!value) return '—'
+  return new Intl.DateTimeFormat('fr-FR', { timeStyle: 'medium', timeZone: TZ }).format(new Date(value))
+}
+
+export function day(value?: string | null): string {
+  if (!value) return '—'
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T12:00:00Z`) : new Date(value)
+  return new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long', timeZone: TZ }).format(d)
+}
+
+export function isoDay(offsetDays: number): string {
+  const d = new Date(Date.now() + offsetDays * 86400000)
+  return d.toISOString().slice(0, 10)
+}
+
+export const JOB_LABELS: Record<string, string> = {
+  tf_plan: 'Plan Terraform',
+  tf_apply: 'Application du plan',
+  tf_state_read: 'Lecture du state',
+  guest_ready: "Préparation de l'invité",
+  ansible_configure: 'Configuration Ansible',
+  verify: 'Vérification',
+  reconcile: 'Réconciliation',
+  inventory_refresh: "Rafraîchissement de l'inventaire",
+}
+
+export const JOB_STATES: Record<string, string> = {
+  queued: 'En file',
+  leased: 'Pris en charge',
+  running: 'En cours',
+  succeeded: 'Terminé',
+  failed: 'Échec',
+  blocked: 'Bloqué',
+  uncertain: 'Incertain',
+  cancelled: 'Annulé',
+}
+
+export const SERVICE_TONE: Record<string, string> = {
+  ready: 'ok',
+  created_not_ready: 'warn',
+  failed: 'bad',
+  verification_unavailable: 'warn',
+  unknown: 'neutral',
+}
+
+export const CHANGE_TONE: Record<string, string> = {
+  draft: 'neutral',
+  needs_info: 'warn',
+  resolution_blocked: 'bad',
+  validated: 'info',
+  planning: 'info',
+  plan_ready: 'info',
+  awaiting_approval: 'info',
+  approved: 'info',
+  executing: 'info',
+  verifying: 'info',
+  succeeded: 'ok',
+  partially_succeeded: 'warn',
+  failed: 'bad',
+  rejected: 'bad',
+  cancelled: 'neutral',
+  plan_failed: 'bad',
+  plan_expired: 'warn',
+  blocked: 'bad',
+  uncertain: 'warn',
+}
