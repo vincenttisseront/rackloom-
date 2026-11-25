@@ -48,7 +48,8 @@
 | Fail2ban 1.0.0 : paquets, processus, jail `sshd` démarrée dans le journal | livré | testé localement | même parcours labo ; `verification_level` = `tested_locally` |
 | Bannissement Fail2ban (nftables) | non couvert | non vérifié | les nœuds de labo n'ont pas NET_ADMIN ; le contrat le dit |
 | Assistant de conception, adaptateur Ollama | code livré | non vérifié contre un vrai modèle | l'atelier est exercé avec l'adaptateur fictif |
-| Fonctions F01 à F60 (hors F28) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : F60 |
+| Template depuis un serveur de référence (F60) | livré (observations fictives explicites) | testé localement | `tests/integration/test_f60_reference.py` ; `web/e2e/96-atelier-f60.spec.ts` ; collecteur réel indisponible (D21) |
+| Fonctions F01 à F59 (hors F28) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : F57 |
 
 ## Démonstrations D1 à D6
 
@@ -217,9 +218,16 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - CI PR #5 : 4/4 verts sur `1919102` avant conflit F28 ; merge de `main` en cours.
 - Résultat : atelier et vagues testés localement. Aucune capacité validée en laboratoire. L'adaptateur Ollama de conception n'a pas été appelé. Double validation : ADR-0010 proposé.
 
+### F60 : serveur de référence (2026-11-25)
+
+- Branche `cursor/atelier-f60-88f4` depuis `main` (AT01 fusionné, `2ff90b7`).
+- Collecteurs approuvés (liste blanche) ; fixture `ubuntu-nginx-dedicated-mount` avec badge « Observations fictives » (D21).
+- Trois catégories UI : À standardiser / Propre à cet hôte / À confirmer ; layout `/var/www` signalé ; canaris absents du brouillon ; aucun job d'écriture.
+- Preuves : `uv run pytest tests/integration/test_f60_reference.py` — 7 verts. Collecteur réel et labo VM : non couverts (consignés).
+
 ## Prochain jalon
 
-1. Fusionner AT01 (PR #5) sur `main` après CI verte post-merge F28.
-2. Finir le lot A : **F27 → F21**, entièrement testables localement.
-3. Suite atelier : **F60 → F57 → F55**.
+1. Fusionner F60 après CI verte.
+2. Suite atelier : **F57 → F55**.
+3. Finir le lot A : **F27 → F21** (si pas déjà fusionné).
 4. Ensuite **F31 → F37 → F46**. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

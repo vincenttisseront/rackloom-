@@ -29,6 +29,7 @@ from ..errors import ApiError, conflict, forbidden, not_found
 from ..identity.authz import Principal, require_author
 from ..ids import uuid7
 from ..redact import Redactor
+from . import reference as refmod
 
 SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
 TEXT_RE = re.compile(r"[\x00-\x1f\x7f<>]")
@@ -274,6 +275,20 @@ def problems(conn: Conn, draft: dict[str, Any]) -> list[dict[str, str]]:
     pending = [s for s in draft["proposals"] if s["status"] == "pending"]
     if pending:
         out.append({"path": "/suggestions", "message": f"{len(pending)} suggestion(s) de l'assistant sans décision"})
+    pending_ref = sum(
+        1
+        for analysis in draft.get("sources") or []
+        if analysis.get("kind") == "reference_analysis"
+        for item in analysis.get("items") or []
+        if item.get("decidable") and item.get("status") == "pending"
+    )
+    if pending_ref:
+        out.append(
+            {
+                "path": "/reference",
+                "message": f"{pending_ref} proposition(s) du serveur de référence sans décision",
+            }
+        )
     if out:
         return out
     contract = build_contract(conn, draft)
@@ -452,7 +467,10 @@ def edit(conn: Conn, principal: Principal, draft_id: UUID, body: dict[str, Any])
 
 
 def _assistant_context(conn: Conn, draft: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
-    """Catalogue et conception : aucun inventaire, aucune cible, aucun secret, aucune donnée de projet."""
+    """Catalogue et conception : aucun inventaire, aucune cible, aucun secret, aucune donnée de projet.
+
+    Les observations de référence n'entrent que sous forme assainie (pas d'identité d'hôte).
+    """
     os_ = base["contract"]["system_profile"]["os"]
     return {
         "base": {"slug": base["slug"], "version": base["version"], "title": base["contract"]["title"]},
@@ -463,6 +481,7 @@ def _assistant_context(conn: Conn, draft: dict[str, Any], base: dict[str, Any]) 
             if os_ in c["supports"]["os"]
         ],
         "waves_limits": {k: list(v) for k, v in registry.WAVE_LIMITS.items()},
+        "reference": refmod.sanitized_for_assistant(draft.get("sources") or []),
     }
 
 
@@ -828,7 +847,7 @@ def _next_version(conn: Conn, slug: str) -> str:
 
 def create(conn: Conn, principal: Principal, body: dict[str, Any]) -> dict[str, Any]:
     require_author(principal)
-    extra = set(body) - {"slug", "base", "brief"}
+    extra = set(body) - {"slug", "base", "brief", "reference"}
     if extra:
         raise ApiError(422, "unknown_field", f"champ « {sorted(extra)[0]} » refusé", field=f"/{sorted(extra)[0]}")
     slug = body.get("slug")
@@ -843,6 +862,14 @@ def create(conn: Conn, principal: Principal, body: dict[str, Any]) -> dict[str, 
     brief = str(body.get("brief") or "").strip()
     if len(brief) > 2000:
         raise ApiError(422, "invalid_message", "description du besoin trop longue", field="/brief")
+    reference = body.get("reference")
+    if reference is not None and brief:
+        raise ApiError(
+            422,
+            "conflicting_origin",
+            "choisir soit un brief d'assistant, soit un serveur de référence, pas les deux",
+            field="/reference",
+        )
     if conn.execute(
         "SELECT 1 FROM template_drafts WHERE slug = %s AND status IN ('editing', 'in_review')", (slug,)
     ).fetchone():
@@ -866,10 +893,35 @@ def create(conn: Conn, principal: Principal, body: dict[str, Any]) -> dict[str, 
         p: {"source": "base", "by": None, "at": _now()}
         for p in ["/title", "/description", "/waves"] + [f"/components/{x['component']}" for x in c["components"]]
     }
+    origin = "reference_host" if reference is not None else "assistant"
+    sources: list[dict[str, Any]] = []
+    if reference is not None:
+        observation = refmod.load_observation(conn, principal, reference)
+        analysis = refmod.analyze(conn, observation, c)
+        sources = [analysis]
+        # Titre / description initiaux dérivés de l'observation (sans identité d'hôte).
+        content["title"] = f"{c['title']} (depuis serveur de référence)"
+        content["description"] = (
+            "Brouillon dérivé d'observations "
+            + ("fictives explicites" if observation.get("simulated") else "en lecture seule")
+            + ". Chaque proposition « À standardiser » attend une décision de l'auteur."
+        )
+        provenance["/title"] = {"source": "reference_host", "by": str(principal.user_id), "at": _now()}
+        provenance["/description"] = {"source": "reference_host", "by": str(principal.user_id), "at": _now()}
     draft = conn.execute(
         "INSERT INTO template_drafts (id, slug, version, origin, base_template_version_id, content, provenance, "
-        "created_by) VALUES (%s, %s, %s, 'assistant', %s, %s, %s, %s) RETURNING *",
-        (uuid7(), slug, _next_version(conn, slug), base["id"], Jsonb(content), Jsonb(provenance), principal.user_id),
+        "sources, created_by) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+        (
+            uuid7(),
+            slug,
+            _next_version(conn, slug),
+            origin,
+            base["id"],
+            Jsonb(content),
+            Jsonb(provenance),
+            Jsonb(sources),
+            principal.user_id,
+        ),
     ).fetchone()
     _event(
         conn,
@@ -877,7 +929,19 @@ def create(conn: Conn, principal: Principal, body: dict[str, Any]) -> dict[str, 
         "created",
         "user",
         str(principal.user_id),
-        {"base": f"{base['slug']}@{base['version']}"},
+        {
+            "base": f"{base['slug']}@{base['version']}",
+            "origin": origin,
+            **(
+                {
+                    "reference": sources[0]["source"],
+                    "host_unchanged": sources[0]["host_unchanged"],
+                    "simulated": sources[0]["source"]["simulated"],
+                }
+                if sources
+                else {}
+            ),
+        },
         content,
     )
     audit.record(
@@ -887,13 +951,90 @@ def create(conn: Conn, principal: Principal, body: dict[str, Any]) -> dict[str, 
         action="studio.draft.create",
         outcome="ok",
         targets={"draft": str(draft["id"]), "template": slug},
-        versions={"base": f"{base['slug']}@{base['version']}"},
+        versions={"base": f"{base['slug']}@{base['version']}", "origin": origin},
     )
     result = {"draft": draft, "turn": None}
     if brief:
         result["turn"] = _run_assistant(conn, principal, draft, brief)
         result["draft"] = result["turn"]["draft"]
     return result
+
+
+def decide_reference(
+    conn: Conn, principal: Principal, draft_id: UUID, item_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
+    """Décide une proposition issue du serveur de référence.
+
+    « À standardiser » acceptée → apply_op + provenance reference_host.
+    « À confirmer » acceptée → extension (jamais appliquée).
+    « Propre à cet hôte » → refusée (422).
+    """
+    extra = set(body) - {"row_version", "decision"}
+    if extra:
+        raise ApiError(422, "unknown_field", f"champ « {sorted(extra)[0]} » refusé", field=f"/{sorted(extra)[0]}")
+    decision = body.get("decision")
+    if decision not in ("accepted", "rejected"):
+        raise ApiError(422, "invalid_decision", "decision attendue : accepted | rejected", field="/decision")
+    draft = _own(conn, principal, draft_id, body.get("row_version"))
+    found = refmod.find_item(draft.get("sources") or [], item_id)
+    if found is None:
+        raise not_found("proposition de référence")
+    _analysis, item = found
+    if item["category"] == "host_specific" or not item.get("decidable"):
+        raise ApiError(
+            422,
+            "not_decidable",
+            "valeur propre à l'hôte : non recopiable dans le brouillon",
+            field="/item",
+        )
+    if item.get("status") != "pending":
+        raise conflict("already_decided", "cette proposition a déjà une décision")
+    sources = copy.deepcopy(draft["sources"])
+    analysis, item = refmod.find_item(sources, item_id)  # type: ignore[misc]
+    assert analysis is not None and item is not None
+    content, provenance = draft["content"], draft["provenance"]
+    if decision == "accepted" and item["category"] == "standardize":
+        # Le composant doit exister avant un réglage de config.
+        path, value = item["path"], item["value"]
+        if path and path.startswith("/components/") and "/config/" in path:
+            slug = path.split("/")[2]
+            if not any(c["component"] == slug for c in content["components"]):
+                raise ApiError(
+                    422,
+                    "component_required",
+                    f"acceptez d'abord le composant « {slug} » avant son réglage",
+                    field="/item",
+                )
+        content = apply_op(conn, content, path, value)
+        provenance = _provenance(provenance, path, value, "reference_host", principal)
+    elif decision == "accepted" and item["category"] == "confirm":
+        ext = item.get("extension") or {}
+        conn.execute(
+            "INSERT INTO extension_proposals (id, draft_id, kind, subject, summary, proposal, origin, "
+            "created_by) VALUES (%s, %s, %s, %s, %s, %s, 'reference_host', %s)",
+            (
+                uuid7(),
+                draft["id"],
+                ext.get("kind", "component_parameter"),
+                str(ext.get("subject", "reference"))[:80],
+                str(ext.get("summary", item["deduction"]))[:600],
+                Jsonb({"observation": item["observation"], "deduction": item["deduction"]}),
+                principal.user_id,
+            ),
+        )
+    item["status"] = decision
+    item["decided_at"] = _now()
+    draft = _save(conn, draft, content=content, provenance=provenance, sources=sources)
+    _event(
+        conn,
+        draft["id"],
+        f"reference_{decision}",
+        "user",
+        str(principal.user_id),
+        {"item": item_id, "category": item["category"], "path": item.get("path")},
+        content,
+    )
+    return draft
 
 
 def submit(conn: Conn, principal: Principal, draft_id: UUID, body: dict[str, Any]) -> dict[str, Any]:
@@ -1065,6 +1206,9 @@ def view(conn: Conn, principal: Principal, draft: dict[str, Any]) -> dict[str, A
         "status": draft["status"],
         "status_label": STATUS_LABELS[draft["status"]],
         "origin": draft["origin"],
+        "origin_label": (
+            "Depuis un serveur de référence" if draft["origin"] == "reference_host" else "Assisté par l'IA"
+        ),
         "row_version": draft["row_version"],
         "author": names.get(str(draft["created_by"])),
         "mine": draft["created_by"] == principal.user_id,
@@ -1083,6 +1227,10 @@ def view(conn: Conn, principal: Principal, draft: dict[str, Any]) -> dict[str, A
             "waves_label": waves_label(content["waves"]),
             "components": comps,
         },
+        "reference": next(
+            (refmod.public_analysis(a) for a in (draft.get("sources") or []) if a.get("kind") == "reference_analysis"),
+            None,
+        ),
         "health_checks": contract["health_checks"],
         "provenance": [
             {
@@ -1154,7 +1302,11 @@ def review_view(conn: Conn, row: dict[str, Any]) -> dict[str, Any]:
     return {
         "draft_id": str(draft["id"]),
         "origin": draft["origin"],
-        "origin_label": "Brouillon assisté par l'IA : chaque valeur a été décidée par l'auteur",
+        "origin_label": (
+            "Brouillon depuis un serveur de référence : chaque valeur standardisée a été décidée par l'auteur"
+            if draft["origin"] == "reference_host"
+            else "Brouillon assisté par l'IA : chaque valeur a été décidée par l'auteur"
+        ),
         "author": names.get(str(row["submitted_by"])),
         "submitted_at": row["submitted_at"].isoformat() if row["submitted_at"] else None,
         "base": {"slug": base["slug"], "version": base["version"]},

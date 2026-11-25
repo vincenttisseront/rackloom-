@@ -1149,6 +1149,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/studio/drafts/{draft_id}/reference/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Reference
+         * @description Accepte ou refuse une proposition issue du serveur de référence (F60).
+         */
+        post: operations["decide_reference_api_v1_studio_drafts__draft_id__reference__item_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/studio/drafts/{draft_id}/submit": {
         parameters: {
             query?: never;
@@ -1177,6 +1197,26 @@ export interface paths {
         put?: never;
         /** Decide Suggestion */
         post: operations["decide_suggestion_api_v1_studio_drafts__draft_id__suggestions__suggestion_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/studio/reference-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reference Sources
+         * @description Sources pour « Partir d'un serveur existant » : fixtures fictives et hôtes du périmètre.
+         */
+        get: operations["reference_sources_api_v1_studio_reference_sources_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3556,6 +3596,46 @@ export interface operations {
             };
         };
     };
+    decide_reference_api_v1_studio_drafts__draft_id__reference__item_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     submit_draft_api_v1_studio_drafts__draft_id__submit_post: {
         parameters: {
             query?: never;
@@ -3631,6 +3711,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reference_sources_api_v1_studio_reference_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

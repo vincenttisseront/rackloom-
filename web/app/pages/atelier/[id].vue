@@ -13,6 +13,22 @@ const DECISION: Record<string, string> = { pending: 'en attente', accepted: 'acc
 
 const pending = computed(() => (draft.value?.suggestions || []).filter((s: any) => s.status === 'pending'))
 const available = computed(() => catalog.value.filter(c => !(draft.value?.design.components || []).some((x: any) => x.component === c.slug)))
+const refPending = computed(() => {
+  const ref = draft.value?.reference
+  if (!ref) return [] as any[]
+  const items: any[] = []
+  for (const g of ref.categories || []) {
+    for (const i of g.items || []) {
+      if (i.status === 'pending' && i.decidable) items.push({ ...i, category_label: g.label })
+    }
+  }
+  // Composants avant réglages.
+  return items.sort((a, b) => {
+    const ac = a.path && !String(a.path).includes('/config/') ? 0 : 1
+    const bc = b.path && !String(b.path).includes('/config/') ? 0 : 1
+    return ac - bc
+  })
+})
 
 async function load() {
   draft.value = await api.get(`/studio/drafts/${route.params.id}`)
@@ -50,6 +66,9 @@ function edit(ops: { path: string; value: unknown }[]) {
 function decide(id: string, decision: 'accepted' | 'rejected') {
   return run(`/studio/drafts/${draft.value.id}/suggestions/${id}`, { decision })
 }
+function decideReference(id: string, decision: 'accepted' | 'rejected') {
+  return run(`/studio/drafts/${draft.value.id}/reference/${id}`, { decision })
+}
 async function assist() {
   const text = message.value.trim()
   if (!text) return
@@ -74,13 +93,43 @@ function addComponent() {
         <div class="crumbs"><NuxtLink to="/atelier">Atelier</NuxtLink> › {{ draft.slug }}</div>
         <h1>{{ draft.design.title }} <span class="badge info">{{ draft.status_label }}</span>
           <SimBadge v-if="draft.assistant.simulated" label="Assistant fictif" title="Les suggestions viennent de l'adaptateur fictif, pas d'un modèle." />
+          <SimBadge v-if="draft.reference?.source?.simulated" label="Observations fictives" title="Collecteur réel indisponible : observations fictives explicites." />
         </h1>
-        <p class="small muted">{{ draft.slug }} {{ draft.version }} · base {{ draft.base.title }} {{ draft.base.version }} · {{ draft.author }}</p>
+        <p class="small muted">{{ draft.slug }} {{ draft.version }} · {{ draft.origin_label }} · base {{ draft.base.title }} {{ draft.base.version }} · {{ draft.author }}</p>
       </div>
     </div>
     <div v-if="error" class="banner bad" role="alert" data-testid="error">{{ error }}</div>
     <div v-if="notice" class="banner info" role="status" data-testid="assistant-reply">{{ notice }}</div>
     <div v-if="draft.returned" class="banner warn">Version {{ draft.returned.version }} renvoyée : {{ draft.returned.reason }}</div>
+    <div v-if="draft.reference?.layout_warning" class="banner warn" role="status" data-testid="layout-warning">{{ draft.reference.layout_warning }}</div>
+
+    <section v-if="draft.reference" class="card" aria-labelledby="ref-title" data-testid="reference">
+      <h2 id="ref-title">Serveur de référence</h2>
+      <p class="small">
+        {{ draft.reference.source.label }}
+        <SimBadge v-if="draft.reference.source.simulated" :label="draft.reference.source.simulation_label || 'Observations fictives'" />
+        · empreinte inchangée : {{ draft.reference.host_unchanged ? 'oui' : 'non' }}
+      </p>
+      <div v-for="g in draft.reference.categories" :key="g.id" class="card" style="margin-top: 0.75rem" :data-testid="`ref-cat-${g.id}`">
+        <h3>{{ g.label }}</h3>
+        <ul class="small">
+          <li v-for="i in g.items" :key="i.id">
+            <strong>{{ i.label }}</strong>
+            <span class="muted"> · {{ i.status }}</span>
+            <div class="muted">Observation ({{ i.observed_at }}) : {{ i.observation }}</div>
+            <div>{{ i.deduction }}</div>
+          </li>
+        </ul>
+      </div>
+      <div v-if="refPending.length && draft.allowed_actions.edit == null" class="actions" style="margin-top: 0.75rem" data-testid="reference-decisions">
+        <p class="small">Décidez chaque proposition. « Propre à cet hôte » n'est jamais recopié. Accepter « À confirmer » crée une extension à revoir, jamais appliquée.</p>
+        <div v-for="i in refPending" :key="i.id" class="actions" style="margin: 0.4rem 0">
+          <span><span class="badge neutral">{{ i.category_label }}</span> {{ i.label }}</span>
+          <button type="button" class="primary" :disabled="busy" :data-testid="`ref-accept-${i.id}`" @click="decideReference(i.id, 'accepted')">Accepter</button>
+          <button type="button" :disabled="busy" :data-testid="`ref-reject-${i.id}`" @click="decideReference(i.id, 'rejected')">Refuser</button>
+        </div>
+      </div>
+    </section>
 
     <section class="card" aria-labelledby="inherit-title">
       <h2 id="inherit-title">Hérité de la base</h2>
