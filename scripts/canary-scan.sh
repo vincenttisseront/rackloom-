@@ -37,7 +37,7 @@ for vol in workspaces tfstate demo_infra artifacts lab_keys; do
   scan "volume rackloom_$vol (brut)" "$TMP/vol"
 done
 
-if "${COMPOSE[@]}" run --rm -T -v artifacts:/var/lib/rackloom/artifacts:ro cli artifacts scan \
+if "${COMPOSE[@]}" run --rm -T -v rackloom_artifacts:/var/lib/rackloom/artifacts:ro cli artifacts scan \
     < "$CANARY_FILE"; then
   echo "  absent   artefacts de classe B déchiffrés"
 else
