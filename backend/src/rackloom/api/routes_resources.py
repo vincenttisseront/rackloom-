@@ -25,6 +25,15 @@ def get_deployment(deployment_id: UUID, request: Request) -> dict[str, Any]:
         return deployment_view(u.conn, u.p, service.get_deployment(u.conn, u.p, deployment_id))
 
 
+@router.get("/deployments/{deployment_id}/service-card")
+def get_service_card(deployment_id: UUID, request: Request) -> dict[str, Any]:
+    """F57 : fiche courte « Votre service est prêt » (périmètre projet, sorties allowlist)."""
+    from ..deployments import service_card
+
+    with unit_of_work(request) as u:
+        return service_card.for_principal(u.conn, u.p, deployment_id)
+
+
 def _host(conn, principal, host_id: UUID) -> dict[str, Any]:
     host = conn.execute("SELECT * FROM hosts WHERE id = %s", (host_id,)).fetchone()
     if host is None or not principal.can_see_project(host["project_id"]):
