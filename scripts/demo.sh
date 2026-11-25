@@ -7,7 +7,8 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 LAB="$ROOT/.lab"
 COMPOSE=(docker compose -f "$ROOT/compose/compose.yaml" -f "$ROOT/compose/compose.demo.yaml")
 [ -n "${RACKLOOM_COMPOSE_EXTRA:-}" ] && COMPOSE+=(-f "$RACKLOOM_COMPOSE_EXTRA")
-NODES=(lab-node-1 lab-node-2 lab-node-3)
+NODES=()
+for i in $(seq 1 "${RACKLOOM_LAB_NODE_COUNT:-3}"); do NODES+=("lab-node-$i"); done
 
 say() { printf '\n== %s\n' "$*"; }
 
