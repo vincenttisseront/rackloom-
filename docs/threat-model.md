@@ -40,7 +40,7 @@ Statut : lot 0. Les frontières de confiance TB1 à TB10 sont définies dans `do
 | B4 | Résolution recalculée entre approbation et exécution, ou différente pour des entrées identiques | fonction pure ; révision immuable avec `resolution_digest` ; l'exécution ne lit que la révision ; règle d'admission 55 qui vérifie sans recalculer | T35, T37, T40 |
 | B5 | Une nouvelle version de template modifie un plan approuvé ou un déploiement existant | empreintes du template et des composants dans le dossier d'exécution ; déploiement épinglé sur sa version ; publication sans job ni écriture sur un déploiement | T35, T39 |
 | B6 | Modification d'une version publiée (fichier de `catalog/` réécrit, mise à jour en base) | empreinte comparée au chargement et refus ; triggers d'immutabilité ; toute modification exige une nouvelle version | E3, T21 |
-| B7 | Publication abusive : un opérateur ou un approbateur publie, ou un publicateur publie une version qui élargit des cibles ou un composant sans revue | rôle `template_publisher` distinct ; motif obligatoire et aperçu d'impact ; audit ; seules les versions `validated` (chargées depuis `catalog/` revu) sont publiables ; chaque déploiement reste soumis à son approbation et à l'admission | T39 |
+| B7 | Publication abusive : un opérateur ou un approbateur publie, ou un publicateur publie une version qui élargit des cibles ou un composant sans revue | rôle `template_publisher` distinct (un seul siège) ; motif obligatoire et aperçu d'impact ; audit ; versions `validated` chargées depuis `catalog/` revu, ou versions `in_review` de l'atelier publiées seulement par une personne autre que l'auteur qui les a soumises, sur l'empreinte affichée ; chaque déploiement reste soumis à son approbation et à l'admission | T39 ; `test_studio.py` |
 | B8 | Secret littéral dans un template ou un composant (mot de passe, community SNMP, clé de licence) | contrats acceptant seulement des références de secrets ; chargeur qui refuse les champs secrets sous forme de valeur et les motifs connus ; canari | E3, T24 |
 | B9 | Composant ou rôle Ansible malveillant introduit dans le registre | revue Git de `catalog/`, rôles épinglés par empreinte, effets et contrôles déclarés, runner isolé ; `verification_level` affiché (« non testé ») ; AT01 ajoute test sur machine jetable et revue avant publication | E3, E10 ; AT01 |
 | B10 | Version retirée encore exécutée | règle d'admission 55 ; le retrait bloque sans modifier le plan | T35 |
@@ -138,7 +138,7 @@ Statut : lot 0. Les frontières de confiance TB1 à TB10 sont définies dans `do
 
 ### 3.9 Atelier de conception (AT01 et suivants, hors lot 1)
 
-À traiter lors de la conception de AT01 ; listé ici pour que le lot 1 ne ferme aucune porte.
+Première tranche AT01 : ces mesures sont en place pour le brouillon, la revue et les vagues. La double validation (un relecteur en plus du publicateur) reste une proposition, ADR-0010, non implémentée.
 
 | ID | Menace | Mesures prévues |
 |---|---|---|

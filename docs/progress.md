@@ -44,7 +44,11 @@
 | ISO, premier boot, sauvegarde, restauration | lot 3 | non vérifié | — |
 | OIDC | lot 4 | non vérifié | — |
 | Gel d'urgence par environnement (F28, règle R080, bundle `builtin@2`) | livré | testé localement | `test_freeze.py`, `test_lab_flow.py` (F28), `60-f28-gel.spec.ts` ; vidéo `media/lot-a-f28-gel-urgence.webm` |
-| Fonctions F01 à F60 (hors F28) et atelier AT01 à AT04 | à faire | non vérifié | `docs/backlog.md` |
+| Atelier de templates, première tranche (AT01) : brouillon assisté, revue, publication par une autre personne, vagues `pilot` | livré | testé localement | `tests/integration/test_studio.py` ; `tests/integration/test_lab_flow.py` (deux nœuds) |
+| Fail2ban 1.0.0 : paquets, processus, jail `sshd` démarrée dans le journal | livré | testé localement | même parcours labo ; `verification_level` = `tested_locally` |
+| Bannissement Fail2ban (nftables) | non couvert | non vérifié | les nœuds de labo n'ont pas NET_ADMIN ; le contrat le dit |
+| Assistant de conception, adaptateur Ollama | code livré | non vérifié contre un vrai modèle | l'atelier est exercé avec l'adaptateur fictif |
+| Fonctions F01 à F60 (hors F28) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : F60 |
 
 ## Démonstrations D1 à D6
 
@@ -128,7 +132,9 @@ Constaté sur `main` après la fusion des PR #2 et #3, corrigé dans la PR de cl
 - **Réseaux internes isolés** : `core`, `ai` et `rn-lab` sont `internal` ; l'API n'a aucune sortie réseau en démo, donc le test de connexion vSphere réel n'est exercé que par `pytest`.
 - **Inventaire, personnalisation invitée, attribution d'adresse** : simulés (`vsphere-fake`) jusqu'au lot 2. Le connecteur vSphere réel n'a que la configuration et le test TLS ; sa session REST arrive au lot 2.
 - **Ollama** : adaptateur codé, jamais exécuté contre un vrai modèle.
-- **Fail2ban** (D15) : non livré au lot 1 ; il sera livré avec AT01.
+- **Fail2ban** (D15) : livré avec AT01. La jail `sshd` est observée dans le journal (testé localement). Le bannissement effectif n'est pas couvert : les nœuds de labo n'ont pas la capacité NET_ADMIN.
+- **Double validation** (D16) : non implémentée. Le siège unique de publicateur est conservé. La proposition est l'ADR-0010, statut proposé.
+- **Parcours navigateur AT01** : le scénario Playwright `web/e2e/95-atelier-at01.spec.ts` est écrit (après D5, base lue sur le serveur). Il n'a pas été exécuté sur la pile dans cette tranche ; la preuve d'exécution est le test d'intégration sur deux nœuds de labo.
 - **Canari T24** : aucun composant du catalogue ne référence encore de secret, donc le chemin « secret transmis à un runner » n'est pas exercé ; le canari passe par le connecteur, les journaux de nœud et toutes les sorties.
 - **mypy** : 136 erreurs restantes (447 au départ), surtout des annotations de lignes psycopg ; `make typecheck` est non bloquant au lot 1. `ruff format` n'est pas appliqué (seul `ruff check`).
 - **Poste de développement** : sur la VM de travail, des tables `iptables-legacy` résiduelles bloquaient le trafic entre ponts Docker ; une règle ACCEPT entre ponts a été ajoutée sur l'hôte (hors dépôt). Les exécuteurs GitHub n'en ont pas besoin.
@@ -165,8 +171,8 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 | D12 | Départage du résolveur entre candidats équivalents (H13) | rang dans la liste du template, puis identifiant stable ; aucune question tant qu'il n'y a qu'un site | E4, F32 | ouverte (appliquée : T37) |
 | D13 | Environnement par défaut quand plusieurs environnements hors production sont admissibles (H14) | l'utilisateur choisit parmi eux ; jamais la production | E4 | ouverte (appliquée : T34, D4) |
 | D14 | Date de fin exigée en `dev` (H16) | date de fin obligatoire en `dev`, 30 jours au plus ; seule question du scénario D1 | E2, E4 | décidé (Vincent, 2026-11-25) |
-| D15 | Composant Fail2ban | optionnel en E10 si le reste est vert, sinon livré avec AT01 | E10 | ouverte (non livré au lot 1 : livré avec AT01) |
-| D16 | Qui tient le rôle `template_publisher` ; double validation pour publier | une seule personne publie au lot 1 ; la double validation est étudiée avec AT01 | E3, AT01 | décidé (Vincent, 2026-11-25) |
+| D15 | Composant Fail2ban | livré avec AT01 : jail observée dans le journal ; bannissement non couvert sans NET_ADMIN | E10, AT01 | livré (testé localement, 2026-11-25) |
+| D16 | Qui tient le rôle `template_publisher` ; double validation pour publier | une seule personne publie ; la double validation est proposée dans l'ADR-0010 et n'est pas implémentée | E3, AT01 | décidé pour le siège unique (Vincent, 2026-11-25) ; double validation encore à trancher |
 | D17 | Référent affiché dans les messages de blocage | référent désigné par projet (`projects.referent_user_id`) | E2, E4 | ouverte (appliquée : T33, D3, D4) |
 | D18 | Signature des versions publiées de templates et composants | à étudier avec AT01 ou F17 | AT01, F17 | ouverte |
 | D19 | Succès d'un changement conditionné à un service prêt | « Succès » seulement si tous les contrôles de santé réussissent, sinon « Succès partiel » avec le motif (T41) | E10 | décidé (Vincent, 2026-11-25) |
@@ -202,8 +208,18 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Limites : un job déjà `dispatched` n'est pas stoppé (suivi seulement) ; un job bloqué ne repart pas au dégel (nouvelle version ou reprise) ; D8 non tranchée formellement ; pas de job réellement envoyé à vCenter.
 - Suite du lot A : **F27** (calendriers), puis **F21** (chronologie unifiée).
 
+### AT01 : atelier, Fail2ban et vagues (2026-11-25)
+
+- Branche `cursor/atelier-at01-88f4`, d'abord depuis `main` (`d61d602`), puis rebasée sur F28 (`8211386`). Migration atelier renumérotée en `0003_atelier` (F28 occupe `0002`).
+- Commandes exécutées sur le poste de travail (Europe/Paris) :
+  - `uv run ruff check` / `lint-imports` / `nuxi typecheck` / `make openapi` : verts ;
+  - `uv run pytest` backend : **188 passed** avant fusion F28 ; rejeu CI après correctifs T25/DOM.
+- CI PR #5 : 4/4 verts sur `1919102` avant conflit F28 ; merge de `main` en cours.
+- Résultat : atelier et vagues testés localement. Aucune capacité validée en laboratoire. L'adaptateur Ollama de conception n'a pas été appelé. Double validation : ADR-0010 proposé.
+
 ## Prochain jalon
 
-1. Finir le lot A : **F27 → F21** (après fusion de F28), entièrement testables localement.
-2. En parallèle : branche « atelier » **AT01** puis **F60 → F57 → F55**.
-3. Ensuite **F31 → F37 → F46**. Le lot 2 attend un laboratoire réel autorisé (D2).
+1. Fusionner AT01 (PR #5) sur `main` après CI verte post-merge F28.
+2. Finir le lot A : **F27 → F21**, entièrement testables localement.
+3. Suite atelier : **F60 → F57 → F55**.
+4. Ensuite **F31 → F37 → F46**. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

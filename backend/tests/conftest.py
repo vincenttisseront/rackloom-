@@ -4,6 +4,7 @@ Une base modèle est créée une fois par session (migration + `demo seed`), pui
 (`CREATE DATABASE … TEMPLATE`) pour chaque test qui demande `db`. Aucune donnée réelle.
 """
 
+
 from __future__ import annotations
 
 import os
@@ -18,10 +19,16 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
 ADMIN_URL = os.environ.get("RACKLOOM_TEST_ADMIN_URL", "postgresql:///postgres")
+
+
 DEMO_PASSWORD = "mot-de-passe-de-test-" + "x" * 4
 
-DEMO_PASSWORDS = {f"{u}@demo.invalid": DEMO_PASSWORD for u in ("admin", "pub", "alice", "bruno", "chloe", "david")}
+
+DEMO_PASSWORDS = {f"{u}@demo.invalid": DEMO_PASSWORD for u in
+                   ("admin", "pub", "alice", "bruno", "chloe", "david", "ines")}
 
 
 def _db_url(name: str) -> str:

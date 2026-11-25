@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# make test-e2e : pile de test jetable (6 nœuds de labo), vrais runners Terraform et Ansible, parcours
+# make test-e2e : pile de test jetable (8 nœuds de labo), vrais runners Terraform et Ansible, parcours
 # Playwright §1.1 et D1 à D6 avec contrôle axe, redémarrage pendant une exécution (T25), scan du canari (T24)
 # et exposition (T28). DÉTRUIT les volumes rackloom_* : ressources locales jetables uniquement.
 # Arguments supplémentaires transmis à Playwright (ex. : scripts/test-e2e.sh d2-verrouillage).
@@ -9,7 +9,7 @@ set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 LAB="$ROOT/.lab"
 export RACKLOOM_COMPOSE_EXTRA="$ROOT/compose/compose.test.yaml"
-export RACKLOOM_LAB_NODE_COUNT=6
+export RACKLOOM_LAB_NODE_COUNT=8
 OUT=${RACKLOOM_E2E_OUTPUT:-$LAB/e2e-results}
 COMPOSE=(docker compose -f "$ROOT/compose/compose.yaml" -f "$ROOT/compose/compose.demo.yaml"
          -f "$RACKLOOM_COMPOSE_EXTRA")

@@ -39,10 +39,14 @@
     state: started
     enabled: true
 
+- name: Marqueur d'activation de nginx
+  ansible.builtin.stat:
+    path: /var/lib/lab-node/nginx-enabled
+  register: rl_nginx_marker
+
 - name: Marquer nginx comme activé au redémarrage du nœud de labo
   ansible.builtin.file:
     path: /var/lib/lab-node/nginx-enabled
     state: touch
     mode: "0644"
-    modification_time: preserve
-    access_time: preserve
+  when: not rl_nginx_marker.stat.exists

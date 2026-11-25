@@ -1,6 +1,7 @@
 """Machine à états d'un changement. Toute écriture d'état passe par `transition()`,
 qui enregistre l'historique, l'événement et l'audit dans la même transaction."""
 
+
 from __future__ import annotations
 
 from typing import Any
@@ -32,6 +33,7 @@ STATES = {
     "cancelled": "Annulée",
 }
 
+
 ALLOWED: dict[str, set[str]] = {
     "draft": {"needs_info", "resolution_blocked", "validated", "draft", "cancelled"},
     "needs_info": {"draft", "needs_info", "resolution_blocked", "cancelled"},
@@ -48,7 +50,8 @@ ALLOWED: dict[str, set[str]] = {
     # executing → plan_expired : Terraform refuse un plan sauvegardé périmé (aucune ressource touchée).
     # executing → cancelled : annulation effective avant toute création de ressource.
     "executing": {"verifying", "failed", "partially_succeeded", "uncertain", "plan_expired", "cancelled"},
-    "verifying": {"succeeded", "partially_succeeded", "failed", "uncertain"},
+    # verifying → executing : vague suivante après la vérification réussie de la précédente (AT01).
+    "verifying": {"succeeded", "partially_succeeded", "failed", "uncertain", "executing"},
     "uncertain": {"reconciling"},
     # Une réconciliation concluant « appliqué » reprend les étapes suivantes (invités, configuration).
     "reconciling": {"executing", "verifying", "failed", "uncertain"},
@@ -58,11 +61,17 @@ ALLOWED: dict[str, set[str]] = {
     "cancelled": set(),
 }
 
+
 EDITABLE = {"draft", "needs_info", "resolution_blocked", "plan_failed", "plan_ready", "plan_expired", "rejected",
             "approved", "blocked"}
+
+
 BEFORE_EXECUTION = EDITABLE | {"validated", "planning"}
-# États finaux d'un changement sans ressource créée par lui : ses noms réservés sont libérés.
+
+
 RELEASES_NAMES = {"cancelled", "rejected", "plan_failed", "failed"}
+
+
 TERMINAL = {"failed", "cancelled"}
 
 

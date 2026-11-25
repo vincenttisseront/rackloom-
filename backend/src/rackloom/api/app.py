@@ -1,5 +1,6 @@
 """Application FastAPI : préfixe /api/v1, erreurs normalisées, en-têtes de sécurité, identifiant de requête."""
 
+
 from __future__ import annotations
 
 import logging
@@ -26,11 +27,15 @@ from . import (
     routes_follow,
     routes_projects,
     routes_resources,
+    routes_studio,
 )
 
 log = logging.getLogger(__name__)
 
+
 PREFIX = "/api/v1"
+
+
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
@@ -38,6 +43,8 @@ SECURITY_HEADERS = {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
 }
+
+
 NO_STORE = "no-store"
 
 
@@ -56,8 +63,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Rackloom", version="0.1.0", openapi_url=f"{PREFIX}/openapi.json",
-                  docs_url=None, redoc_url=None, lifespan=lifespan)
+    app = FastAPI(
+        title="Rackloom",
+        version="0.1.0",
+        openapi_url=f"{PREFIX}/openapi.json",
+        docs_url=None,
+        redoc_url=None,
+        lifespan=lifespan,
+    )
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
@@ -92,12 +105,26 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def unexpected(request: Request, exc: Exception) -> JSONResponse:
         log.exception("erreur inattendue", extra={"request_id": getattr(request.state, "request_id", None)})
-        return JSONResponse({"code": "internal_error", "message": "erreur interne",
-                             "details": {"request_id": getattr(request.state, "request_id", None)}},
-                            status_code=500)
+        return JSONResponse(
+            {
+                "code": "internal_error",
+                "message": "erreur interne",
+                "details": {"request_id": getattr(request.state, "request_id", None)},
+            },
+            status_code=500,
+        )
 
-    for module in (routes_auth, routes_projects, routes_environments, routes_changes, routes_follow,
-                   routes_resources, routes_chat, routes_admin):
+    for module in (
+        routes_auth,
+        routes_projects,
+        routes_environments,
+        routes_changes,
+        routes_follow,
+        routes_resources,
+        routes_chat,
+        routes_admin,
+        routes_studio,
+    ):
         app.include_router(module.router, prefix=PREFIX)
     app.include_router(routes_admin.health, prefix=PREFIX)
     return app

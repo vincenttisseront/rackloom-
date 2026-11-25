@@ -1,0 +1,71 @@
+---
+- name: Contrôler les paramètres reçus
+  ansible.builtin.assert:
+    that:
+      - rackloom_params.jail_sshd in [true, false]
+      - rackloom_params.jail_nginx_http_auth in [true, false]
+      - rackloom_params.maxretry | int >= 3
+      - rackloom_params.maxretry | int <= 10
+      - rackloom_params.findtime_seconds | int >= 60
+      - rackloom_params.findtime_seconds | int <= 3600
+      - rackloom_params.bantime_seconds | int >= 300
+      - rackloom_params.bantime_seconds | int <= 86400
+    quiet: true
+
+- name: Installer fail2ban et nftables depuis le dépôt approuvé et signé
+  ansible.builtin.apt:
+    name: [fail2ban, nftables]
+    state: present
+    update_cache: true
+    install_recommends: false
+
+- name: Neutraliser les réglages par défaut de la distribution (backend systemd)
+  ansible.builtin.copy:
+    dest: /etc/fail2ban/jail.d/defaults-debian.conf
+    content: "# Géré par Rackloom : les jails sont déclarées dans rackloom.local\n"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Redémarrer fail2ban
+
+- name: Jails déclarées par le composant
+  ansible.builtin.template:
+    src: rackloom.local.j2
+    dest: /etc/fail2ban/jail.d/rackloom.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Redémarrer fail2ban
+
+- name: Présence du journal d'authentification surveillé
+  ansible.builtin.stat:
+    path: /var/log/auth.log
+  register: rl_auth_log
+  when: rackloom_params.jail_sshd
+
+- name: Créer le journal d'authentification s'il manque
+  ansible.builtin.file:
+    path: /var/log/auth.log
+    state: touch
+    owner: root
+    group: adm
+    mode: "0640"
+  when: rackloom_params.jail_sshd and not rl_auth_log.stat.exists
+
+- name: Démarrer fail2ban et l'activer au démarrage
+  ansible.builtin.service:
+    name: fail2ban
+    state: started
+    enabled: true
+
+- name: Marqueur d'activation de fail2ban
+  ansible.builtin.stat:
+    path: /var/lib/lab-node/fail2ban-enabled
+  register: rl_fail2ban_marker
+
+- name: Marquer fail2ban comme activé au redémarrage du nœud de labo
+  ansible.builtin.file:
+    path: /var/lib/lab-node/fail2ban-enabled
+    state: touch
+    mode: "0644"
+  when: not rl_fail2ban_marker.stat.exists

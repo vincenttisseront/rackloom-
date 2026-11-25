@@ -1,0 +1,17 @@
+schema: rackloom.role-contract/v1
+name: rackloom.fail2ban
+version: 1.0.0
+# Seuls ces paramètres sont transmis au rôle (configuration déclarée du composant).
+parameters: [jail_sshd, jail_nginx_http_auth, maxretry, findtime_seconds, bantime_seconds]
+packages: [fail2ban, nftables]
+services: [{name: fail2ban, state: started, enabled: true}]
+privilege_escalation: required
+identity: rackloom-config
+check_mode:
+  covered:
+    - "présence des paquets fail2ban et nftables (installation simulée)"
+    - "contenu de /etc/fail2ban/jail.d/rackloom.local et neutralisation de defaults-debian.conf"
+    - "état démarré et activé du service fail2ban"
+  not_covered:
+    - "démarrage effectif des jails (vérifié après exécution dans le journal fail2ban)"
+    - "bannissement effectif (exige nftables et la capacité NET_ADMIN sur l'hôte)"

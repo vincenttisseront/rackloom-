@@ -4,6 +4,7 @@ table des routes (T06, T32), jeton d'amorçage, révocation de rôle, D7.
 Niveau de preuve : testé localement (FastAPI TestClient en HTTPS, PostgreSQL éphémère).
 """
 
+
 from __future__ import annotations
 
 import inspect
@@ -25,13 +26,23 @@ from rackloom.api import (
     routes_follow,
     routes_projects,
     routes_resources,
+    routes_studio,
 )
 from rackloom.changes import service
 from rackloom.identity.service import create_bootstrap_token
 
 API = "/api/v1"
-MODULES = (routes_auth, routes_projects, routes_environments, routes_changes, routes_follow, routes_resources,
-           routes_chat, routes_admin)
+MODULES = (
+    routes_auth,
+    routes_projects,
+    routes_environments,
+    routes_changes,
+    routes_follow,
+    routes_resources,
+    routes_chat,
+    routes_admin,
+    routes_studio,
+)
 
 
 def _routes():

@@ -1,5 +1,6 @@
 """Représentations renvoyées par l'API. Aucune donnée hors périmètre, aucun secret, aucun plan brut."""
 
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -20,7 +21,25 @@ SERVICE_STATUS = {
     "failed": "Échec",
     "verification_unavailable": "Vérification indisponible",
 }
+
+
 DEPLOYMENT_STATUS = {"pending": "En préparation", "active": "Actif", "failed": "Échec", "abandoned": "Abandonné"}
+
+
+HOST_STATES = {
+    "created": "Créée",
+    "no_address": "Sans adresse",
+    "unreachable": "Injoignable",
+    "enrolled": "Préparation vérifiée",
+    "configured": "Configurée",
+    "config_failed": "Configuration en échec",
+    "verified": "Vérifiée",
+    "verify_failed": "Vérification en échec",
+    "wave_blocked": "Vague non lancée (échec précédent)",
+    "out_of_scope": "Hors de la liste approuvée",
+}
+
+
 SOURCE_LABELS = {
     "user": "Vous", "suggestion": "Proposé par l'assistant", "template": "Profil de service",
     "template_default": "Défaut du profil", "environment_default": "Seul environnement disponible",
@@ -28,8 +47,12 @@ SOURCE_LABELS = {
     "inventory": "Inventaire", "tie_break": "Départage", "platform": "Plateforme",
     "deployment_pinned": "Version du déploiement", "template_latest_published": "Dernière version publiée",
 }
+
+
 GROUP_LABELS = {"service": "Service et versions", "placement": "Placement", "reseau": "Réseau",
                 "dimensionnement": "Dimensionnement", "execution": "Exécution", "gouvernance": "Gouvernance"}
+
+
 SIMULATED_STEPS = {"vm_inventory": "Inventaire vCenter (connecteur fictif)",
                    "guest_customization": "Personnalisation invitée (vCenter fictif)",
                    "ip_assignment": "Attribution d'adresse (nœud de labo associé)"}
@@ -130,34 +153,61 @@ def plan_view(conn: Conn, plan: dict[str, Any], revision: dict[str, Any]) -> dic
     counts = summary["vm_counts"]
     risks = []
     if summary.get("destructive"):
-        risks.append({"code": "destructive", "level": "blocking",
-                      "text": f"Le plan supprime ({counts['delete']}) ou remplace ({counts['replace']}) des "
-                              "ressources : approbation impossible au lot 1."})
+        risks.append(
+            {
+                "code": "destructive",
+                "level": "blocking",
+                "text": f"Le plan supprime ({counts['delete']}) ou remplace ({counts['replace']}) des "
+                "ressources : approbation impossible au lot 1.",
+            }
+        )
     if resolution["environment"]["is_production"]:
         risks.append({"code": "production", "level": "warning", "text": "Déploiement en production."})
-    risks.append({"code": "approval", "level": "info",
-                  "text": "Approbation requise par un approbateur distinct du demandeur."
-                  if resolution["approval"]["distinct_approver"] else "Approbation requise."})
+    risks.append(
+        {
+            "code": "approval",
+            "level": "info",
+            "text": "Approbation requise par un approbateur distinct du demandeur."
+            if resolution["approval"]["distinct_approver"]
+            else "Approbation requise.",
+        }
+    )
     return {
-        "id": str(plan["id"]), "status": plan["status"], "revision_no": plan["revision_no"],
-        "version_no": plan["version_no"], "valid_until": iso(plan["valid_until"]),
-        "created_at": iso(plan["created_at"]), "bundle_digest": plan["bundle_digest"],
+        "id": str(plan["id"]),
+        "status": plan["status"],
+        "revision_no": plan["revision_no"],
+        "version_no": plan["version_no"],
+        "valid_until": iso(plan["valid_until"]),
+        "created_at": iso(plan["created_at"]),
+        "bundle_digest": plan["bundle_digest"],
         "headline": plan_headline(counts),
-        "counts": counts, "terraform_version": summary.get("terraform_version"),
-        "vms": [{"name": v["name"], "action": v["action"], "attributes": v.get("attributes", {})}
-                for v in summary.get("vms", [])],
-        "resources": [{"address": r["address"], "type": r["type"], "action": r["action"]}
-                      for r in summary.get("resources", [])],
+        "counts": counts,
+        "terraform_version": summary.get("terraform_version"),
+        "vms": [
+            {"name": v["name"], "action": v["action"], "attributes": v.get("attributes", {})}
+            for v in summary.get("vms", [])
+        ],
+        "resources": [
+            {"address": r["address"], "type": r["type"], "action": r["action"]} for r in summary.get("resources", [])
+        ],
         "destructive": summary.get("destructive", False),
         "risks": risks,
         "details": plan_details(resolution),
         "ansible": ansible_contract(resolution),
         "verifications": [resolver.CHECK_LABELS[c["type"]].format(**c) for c in resolution["health_checks"]],
-        "bundle": {"template": plan["bundle"]["template"], "components": [
-            {"slug": c["slug"], "version": c["version"], "digest": c["digest"]} for c in plan["bundle"]["components"]],
-            "terraform": plan["bundle"]["terraform"], "policy_bundle": plan["bundle"]["policy_bundle"],
-            "environment": plan["bundle"]["environment"], "request": plan["bundle"]["request"],
-            "runner_images": plan["bundle"]["runner_images"]},
+        "waves": (plan["bundle"].get("targets") or {}).get("waves") or [],
+        "bundle": {
+            "template": plan["bundle"]["template"],
+            "components": [
+                {"slug": c["slug"], "version": c["version"], "digest": c["digest"]}
+                for c in plan["bundle"]["components"]
+            ],
+            "terraform": plan["bundle"]["terraform"],
+            "policy_bundle": plan["bundle"]["policy_bundle"],
+            "environment": plan["bundle"]["environment"],
+            "request": plan["bundle"]["request"],
+            "runner_images": plan["bundle"]["runner_images"],
+        },
     }
 
 
@@ -236,12 +286,23 @@ def deployment_summary(conn: Conn, dep: dict[str, Any]) -> dict[str, Any]:
 def deployment_view(conn: Conn, principal: Principal, dep: dict[str, Any]) -> dict[str, Any]:
     changes = conn.execute("SELECT * FROM changes WHERE deployment_id = %s ORDER BY created_at", (dep["id"],))
     host_rows = conn.execute("SELECT * FROM hosts WHERE deployment_id = %s ORDER BY name", (dep["id"],)).fetchall()
-    return {**deployment_summary(conn, dep), "project_id": str(dep["project_id"]),
-            "service_checks": dep["service_checks"],
-            "hosts": [{"id": str(h["id"]), "name": h["name"], "deployment_state": h["deployment_state"],
-                       "health": hosts_mod.health(conn, h)} for h in host_rows],
-            "changes": [change_summary(conn, c) for c in changes.fetchall()],
-            "allowed_actions": workflow.available_actions(conn, principal, "deployment", dep)}
+    return {
+        **deployment_summary(conn, dep),
+        "project_id": str(dep["project_id"]),
+        "service_checks": dep["service_checks"],
+        "hosts": [
+            {
+                "id": str(h["id"]),
+                "name": h["name"],
+                "deployment_state": h["deployment_state"],
+                "deployment_state_label": HOST_STATES.get(h["deployment_state"], h["deployment_state"]),
+                "health": hosts_mod.health(conn, h),
+            }
+            for h in host_rows
+        ],
+        "changes": [change_summary(conn, c) for c in changes.fetchall()],
+        "allowed_actions": workflow.available_actions(conn, principal, "deployment", dep),
+    }
 
 
 def job_view(conn: Conn, job: dict[str, Any]) -> dict[str, Any]:

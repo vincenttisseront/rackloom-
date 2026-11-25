@@ -5,9 +5,11 @@ Alice décrit le besoin et soumet, Bruno approuve l'empreinte du plan, puis le s
 le résultat du service. Lancer depuis la racine : `uv run --project backend python scripts/smoke-d1.py`.
 
 `--restart-during KIND` (T25) : dès qu'un job de ce type est en cours, `docker compose down` des services
-de l'appliance sans suppression de volumes, puis `up`. Le script vérifie ensuite que les données sont
-conservées, que la modification aboutit (reprise jusqu'à succès, ou réconciliation sans doublon) et
-qu'aucun job `tf_apply` ni hôte n'est en double.
+de l'appliance sans suppression de volumes, puis `up`. Si les sorties Ansible sont sur disque, la
+réconciliation conclut sans relance ; sinon un succès partiel peut être repris (Alice demande, Bruno
+approuve). Le script vérifie ensuite que les données sont conservées, que la modification aboutit
+(reprise jusqu'à succès, ou réconciliation sans doublon) et qu'aucun job `tf_apply` ni hôte n'est
+en double.
 """
 
 from __future__ import annotations
@@ -122,9 +124,24 @@ def main() -> int:
 
     terminal = ("succeeded", "partially_succeeded", "failed", "cancelled")
     view = wait(alice, cid, lambda x: x["state"] in terminal, "fin de la modification")
+    jobs = alice.get(f"{API}/changes/{cid}/jobs").json()
+    # Interrompu sans sorties exploitables : reprise humaine. Si la réconciliation a déjà conclu
+    # depuis le disque (F28), on n'ajoute pas de reprise (hôtes peut-être hors états retryables).
+    reconciled_already = (
+        view["state"] == "partially_succeeded"
+        and any(j["kind"] == "reconcile" and j["state"] == "succeeded" for j in jobs)
+        and any(j["kind"] == args.restart_during and j["state"] in ("failed", "succeeded")
+                for j in jobs)
+    ) if args.restart_during else False
+    if args.restart_during and view["state"] == "partially_succeeded" and not reconciled_already:
+        print("T25 : succès partiel après redémarrage — demande de reprise ansible_configure")
+        retry = post(alice, f"/changes/{cid}/retries", {"step": "ansible_configure"})
+        post(bruno, f"/changes/{cid}/approvals",
+             {"retry_id": retry["retry_id"], "bundle_digest": retry["bundle_digest"], "decision": "approved"})
+        view = wait(alice, cid, lambda x: x["state"] in terminal, "fin après reprise")
+        jobs = alice.get(f"{API}/changes/{cid}/jobs").json()
     dep = view["deployment"]
     print("modification :", view["state"], "| service :", dep["service_status"], "—", dep.get("service_reason"))
-    jobs = alice.get(f"{API}/changes/{cid}/jobs").json()
     for job in jobs:
         simulated = [s["name"] for s in job.get("steps", []) if s["simulated"]]
         print(f"  {job['kind']:<18} {job['state']:<10} tentatives={job['attempts']}",

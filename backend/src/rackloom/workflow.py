@@ -5,6 +5,7 @@ d'action appelle `require_action`, qui réévalue la même fonction au moment de
 Un droit manquant ou la séparation des rôles renvoie 403 ; une action devenue impossible renvoie 409.
 """
 
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -44,6 +45,7 @@ ROLES = {
     "freeze": ("approver", "platform_admin"), "unfreeze": ("approver", "platform_admin"),
 }
 
+
 RUNNING_JOB_STATES = ("queued", "leased", "running")
 
 
@@ -72,15 +74,18 @@ def _has_role(principal: Principal, action: str, project_id, environment_id) -> 
     return any(principal.has_role(role, project_id, environment_id) for role in ROLES[action])
 
 
-def _change_actions(conn: Conn, principal: Principal, change: dict[str, Any],
-                    now: datetime) -> dict[str, str | None]:
+def _change_actions(conn: Conn, principal: Principal, change: dict[str, Any], now: datetime) -> dict[str, str | None]:
     """Renvoie {action: None si possible, sinon motif d'indisponibilité}."""
     state = change["state"]
     out: dict[str, str | None] = {}
-    revision = conn.execute("SELECT * FROM request_revisions WHERE change_id = %s AND revision_no = %s",
-                            (change["id"], change["current_revision_no"])).fetchone()
-    version = conn.execute("SELECT * FROM request_versions WHERE change_id = %s AND version_no = %s",
-                           (change["id"], change["current_version_no"])).fetchone()
+    revision = conn.execute(
+        "SELECT * FROM request_revisions WHERE change_id = %s AND revision_no = %s",
+        (change["id"], change["current_revision_no"]),
+    ).fetchone()
+    version = conn.execute(
+        "SELECT * FROM request_versions WHERE change_id = %s AND version_no = %s",
+        (change["id"], change["current_version_no"]),
+    ).fetchone()
 
     out["edit"] = None if state in EDITABLE else f"demande non modifiable dans l'état « {STATES[state]} »"
 
@@ -94,11 +99,15 @@ def _change_actions(conn: Conn, principal: Principal, change: dict[str, Any],
         out["submit"] = None
 
     executing = state in ("executing", "verifying", "uncertain", "reconciling")
-    out["cancel"] = None if "cancelled" in ALLOWED.get(state, set()) and not executing else \
-        "annulation de la demande impossible dans cet état"
+    out["cancel"] = (
+        None
+        if "cancelled" in ALLOWED.get(state, set()) and not executing
+        else "annulation de la demande impossible dans cet état"
+    )
 
-    plan = conn.execute("SELECT * FROM plans WHERE change_id = %s ORDER BY created_at DESC LIMIT 1",
-                        (change["id"],)).fetchone()
+    plan = conn.execute(
+        "SELECT * FROM plans WHERE change_id = %s ORDER BY created_at DESC LIMIT 1", (change["id"],)
+    ).fetchone()
     reason = None
     if state != "plan_ready" or plan is None:
         reason = "aucun plan prêt à approuver"
@@ -113,8 +122,10 @@ def _change_actions(conn: Conn, principal: Principal, change: dict[str, Any],
     elif conn.execute("SELECT 1 FROM approvals WHERE plan_id = %s AND kind = 'plan'", (plan["id"],)).fetchone():
         reason = "ce plan a déjà fait l'objet d'une décision"
     else:
-        author = conn.execute("SELECT created_by FROM request_versions WHERE change_id = %s AND version_no = %s",
-                              (change["id"], plan["version_no"])).fetchone()
+        author = conn.execute(
+            "SELECT created_by FROM request_versions WHERE change_id = %s AND version_no = %s",
+            (change["id"], plan["version_no"]),
+        ).fetchone()
         env = conn.execute("SELECT * FROM environments WHERE id = %s", (change["environment_id"],)).fetchone()
         if author and author["created_by"] == principal.user_id:
             reason = Forbidden("vous ne pouvez pas approuver une version que vous avez rédigée")
@@ -125,12 +136,19 @@ def _change_actions(conn: Conn, principal: Principal, change: dict[str, Any],
     if frozen and reason is None:
         out["approve"] = FROZEN
 
-    retryable = conn.execute(
-        "SELECT count(*) AS n FROM hosts WHERE deployment_id = %s "
-        "AND deployment_state IN ('config_failed', 'enrolled')",
-        (change["deployment_id"],)).fetchone()["n"] if change["deployment_id"] else 0
-    pending = conn.execute("SELECT * FROM retry_requests WHERE change_id = %s AND status = 'pending' "
-                           "ORDER BY requested_at DESC LIMIT 1", (change["id"],)).fetchone()
+    retryable = (
+        conn.execute(
+            "SELECT count(*) AS n FROM hosts WHERE deployment_id = %s "
+            "AND deployment_state IN ('config_failed', 'enrolled', 'wave_blocked')",
+            (change["deployment_id"],),
+        ).fetchone()["n"]
+        if change["deployment_id"]
+        else 0
+    )
+    pending = conn.execute(
+        "SELECT * FROM retry_requests WHERE change_id = %s AND status = 'pending' ORDER BY requested_at DESC LIMIT 1",
+        (change["id"],),
+    ).fetchone()
     if state != "partially_succeeded":
         out["request_retry"] = "reprise possible uniquement après un succès partiel"
     elif not retryable:
@@ -149,11 +167,15 @@ def _change_actions(conn: Conn, principal: Principal, change: dict[str, Any],
             out["approve_retry"] = FROZEN
 
     out["replan"] = None if state == "succeeded" else "nouvelle planification possible uniquement après un succès"
-    out["duplicate"] = None if change["kind"] == "create" and version is not None else \
-        "seule une demande de création avec un besoin peut être dupliquée"
-    running = conn.execute("SELECT 1 FROM jobs WHERE change_id = %s AND state = ANY(%s) "
-                           "AND cancel_requested_at IS NULL LIMIT 1",
-                           (change["id"], list(RUNNING_JOB_STATES))).fetchone()
+    out["duplicate"] = (
+        None
+        if change["kind"] == "create" and version is not None
+        else "seule une demande de création avec un besoin peut être dupliquée"
+    )
+    running = conn.execute(
+        "SELECT 1 FROM jobs WHERE change_id = %s AND state = ANY(%s) AND cancel_requested_at IS NULL LIMIT 1",
+        (change["id"], list(RUNNING_JOB_STATES)),
+    ).fetchone()
     out["cancel_job"] = None if running and state not in EDITABLE - {"approved"} else "aucun job annulable en cours"
     return out
 

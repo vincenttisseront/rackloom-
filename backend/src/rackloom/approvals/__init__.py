@@ -4,6 +4,7 @@ L'approbation, l'exécution et le job d'écriture sont créés dans la même tra
 Le contexte d'authentification de l'approbateur est enregistré (base de F12).
 """
 
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -116,8 +117,9 @@ def decide(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, An
             "change": change}
 
 
-def request_retry(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, Any],
-                  request_id: str | None = None) -> dict[str, Any]:
+def request_retry(
+    conn: Conn, principal: Principal, change_id: UUID, body: dict[str, Any], request_id: str | None = None
+) -> dict[str, Any]:
     """Reprise ciblée de la configuration après un succès partiel ; à approuver ensuite."""
     from ..canonical import digest
 
@@ -126,41 +128,82 @@ def request_retry(conn: Conn, principal: Principal, change_id: UUID, body: dict[
     if change["state"] != "partially_succeeded":
         raise ApiError(409, "invalid_state", "reprise possible uniquement après un succès partiel")
     if body.get("step") != "ansible_configure":
-        raise ApiError(422, "invalid_step", "seule la reprise de la configuration est prise en charge",
-                       field="/step")
-    execution = conn.execute("SELECT * FROM executions WHERE change_id = %s ORDER BY created_at DESC LIMIT 1",
-                             (change_id,)).fetchone()
+        raise ApiError(422, "invalid_step", "seule la reprise de la configuration est prise en charge", field="/step")
+    execution = conn.execute(
+        "SELECT * FROM executions WHERE change_id = %s ORDER BY created_at DESC LIMIT 1", (change_id,)
+    ).fetchone()
     failed = conn.execute(
-        "SELECT id, name FROM hosts WHERE deployment_id = %s AND deployment_state IN ('config_failed', 'enrolled') "
-        "ORDER BY name", (change["deployment_id"],)).fetchall()
+        "SELECT id, name FROM hosts WHERE deployment_id = %s "
+        "AND deployment_state IN ('config_failed', 'enrolled', 'wave_blocked') ORDER BY name",
+        (change["deployment_id"],),
+    ).fetchall()
     requested = body.get("host_ids") or [str(h["id"]) for h in failed]
     known = {str(h["id"]) for h in failed}
     if not requested or not set(requested) <= known:
         raise ApiError(422, "invalid_hosts", "hôtes de reprise inconnus ou déjà configurés", field="/host_ids")
     plan = conn.execute("SELECT * FROM plans WHERE id = %s", (execution["plan_id"],)).fetchone()
-    bundle = {"schema": "rackloom.retry-bundle/v1", "change_id": str(change_id), "execution_id": str(execution["id"]),
-              "step": "ansible_configure", "host_ids": sorted(requested), "revision_no": plan["revision_no"],
-              "plan_bundle_digest": plan["bundle_digest"], "components": plan["bundle"]["components"],
-              "ansible": plan["bundle"]["ansible"], "runner_images": plan["bundle"]["runner_images"],
-              "policy_bundle": plan["bundle"]["policy_bundle"]}
+    bundle = {
+        "schema": "rackloom.retry-bundle/v1",
+        "change_id": str(change_id),
+        "execution_id": str(execution["id"]),
+        "step": "ansible_configure",
+        "host_ids": sorted(requested),
+        "revision_no": plan["revision_no"],
+        "plan_bundle_digest": plan["bundle_digest"],
+        "components": plan["bundle"]["components"],
+        "ansible": plan["bundle"]["ansible"],
+        "runner_images": plan["bundle"]["runner_images"],
+        "policy_bundle": plan["bundle"]["policy_bundle"],
+    }
     retry_id = uuid7()
     conn.execute(
         "INSERT INTO retry_requests (id, change_id, execution_id, step, host_ids, bundle, bundle_digest, requested_by) "
         "VALUES (%s, %s, %s, 'ansible_configure', %s, %s, %s, %s)",
-        (retry_id, change_id, execution["id"], Jsonb(sorted(requested)), Jsonb(bundle), digest(bundle),
-         principal.user_id))
-    events.emit(conn, type="retry.requested", source="rackloom", project_id=change["project_id"],
-                correlation_id=change_id, data={"retry_id": str(retry_id), "hosts": len(requested)})
-    audit.record(conn, actor_type="user", actor_id=str(principal.user_id), action="retry.request", outcome="ok",
-                 project_id=change["project_id"], correlation_id=change_id, targets={"retry": str(retry_id)},
-                 request_id=request_id)
+        (
+            retry_id,
+            change_id,
+            execution["id"],
+            Jsonb(sorted(requested)),
+            Jsonb(bundle),
+            digest(bundle),
+            principal.user_id,
+        ),
+    )
+    events.emit(
+        conn,
+        type="retry.requested",
+        source="rackloom",
+        project_id=change["project_id"],
+        correlation_id=change_id,
+        data={"retry_id": str(retry_id), "hosts": len(requested)},
+    )
+    audit.record(
+        conn,
+        actor_type="user",
+        actor_id=str(principal.user_id),
+        action="retry.request",
+        outcome="ok",
+        project_id=change["project_id"],
+        correlation_id=change_id,
+        targets={"retry": str(retry_id)},
+        request_id=request_id,
+    )
     return {"retry_id": retry_id, "bundle_digest": digest(bundle), "host_ids": sorted(requested)}
 
 
-def _decide_retry(conn: Conn, principal: Principal, change: dict[str, Any], retry_id: UUID,
-                  body: dict[str, Any], decision: str, comment: str, request_id: str | None) -> dict[str, Any]:
-    retry = conn.execute("SELECT * FROM retry_requests WHERE id = %s AND change_id = %s FOR UPDATE",
-                         (retry_id, change["id"])).fetchone()
+def _decide_retry(
+    conn: Conn,
+    principal: Principal,
+    change: dict[str, Any],
+    retry_id: UUID,
+    body: dict[str, Any],
+    decision: str,
+    comment: str,
+    request_id: str | None,
+) -> dict[str, Any]:
+    retry = conn.execute(
+        "SELECT * FROM retry_requests WHERE id = %s AND change_id = %s FOR UPDATE", (retry_id, change["id"])
+    ).fetchone()
     if retry is None:
         raise ApiError(404, "not_found", "demande de reprise introuvable")
     if retry["status"] != "pending":
@@ -176,20 +219,66 @@ def _decide_retry(conn: Conn, principal: Principal, change: dict[str, Any], retr
                                bundle_digest, decided_by, comment, session_id, auth_context, retry_scope)
         VALUES (%s, %s, %s, %s, %s, 'retry', %s, %s, %s, %s, %s, %s, %s)
         """,
-        (approval_id, change["id"], retry["bundle"]["revision_no"], retry["execution_id"], retry_id, decision,
-         retry["bundle_digest"],
-         principal.user_id, comment, principal.session_id, Jsonb(_auth_context(principal)),
-         Jsonb({"step": retry["step"], "host_ids": retry["host_ids"]})))
+        (
+            approval_id,
+            change["id"],
+            retry["bundle"]["revision_no"],
+            retry["execution_id"],
+            retry_id,
+            decision,
+            retry["bundle_digest"],
+            principal.user_id,
+            comment,
+            principal.session_id,
+            Jsonb(_auth_context(principal)),
+            Jsonb({"step": retry["step"], "host_ids": retry["host_ids"]}),
+        ),
+    )
     conn.execute("UPDATE retry_requests SET status = %s WHERE id = %s", (decision, retry_id))
-    audit.record(conn, actor_type="user", actor_id=str(principal.user_id), action=f"approval.retry.{decision}",
-                 outcome="ok", project_id=change["project_id"], correlation_id=change["id"],
-                 targets={"retry": str(retry_id), "approval": str(approval_id)},
-                 versions={"bundle_digest": retry["bundle_digest"]}, request_id=request_id)
+    audit.record(
+        conn,
+        actor_type="user",
+        actor_id=str(principal.user_id),
+        action=f"approval.retry.{decision}",
+        outcome="ok",
+        project_id=change["project_id"],
+        correlation_id=change["id"],
+        targets={"retry": str(retry_id), "approval": str(approval_id)},
+        versions={"bundle_digest": retry["bundle_digest"]},
+        request_id=request_id,
+    )
     if decision == "rejected":
         return {"approval_id": approval_id, "decision": decision, "change": change}
-    change = transition(conn, change, "executing", reason_code="retry_approved", actor_type="user",
-                        actor_id=str(principal.user_id), request_id=request_id)
-    job = queue.enqueue(conn, kind="ansible_configure", change=change, execution_id=retry["execution_id"],
-                        idempotency_key=f"ansible_configure:retry:{retry_id}",
-                        payload={"host_ids": retry["host_ids"], "retry_approval_id": str(approval_id)})
+    change = transition(
+        conn,
+        change,
+        "executing",
+        reason_code="retry_approved",
+        actor_type="user",
+        actor_id=str(principal.user_id),
+        request_id=request_id,
+    )
+    execution = conn.execute("SELECT plan_id FROM executions WHERE id = %s", (retry["execution_id"],)).fetchone()
+    plan = conn.execute("SELECT bundle FROM plans WHERE id = %s", (execution["plan_id"],)).fetchone()
+    names = {
+        r["name"]
+        for r in conn.execute(
+            "SELECT name FROM hosts WHERE id = ANY(%s::uuid[])", (list(retry["host_ids"]),)
+        ).fetchall()
+    }
+    targets = plan["bundle"]["targets"]
+    waves = [[n for n in w if n in names] for w in targets.get("waves") or [targets["instances"]]]
+    job = queue.enqueue(
+        conn,
+        kind="ansible_configure",
+        change=change,
+        execution_id=retry["execution_id"],
+        idempotency_key=f"ansible_configure:retry:{retry_id}",
+        payload={
+            "host_ids": retry["host_ids"],
+            "retry_approval_id": str(approval_id),
+            "waves": [w for w in waves if w],
+            "wave": 0,
+        },
+    )
     return {"approval_id": approval_id, "decision": decision, "job_id": job["id"], "change": change}

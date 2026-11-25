@@ -1,0 +1,75 @@
+---
+# Collecte en lecture seule (identité rackloom-collect, sans élévation). Les paquets, processus et
+# journaux interrogés viennent des contrôles de santé et des effets déclarés des composants du
+# template (rackloom_collect, généré par le serveur depuis la révision) ; aucune commande composée
+# ailleurs. Les noms et chemins sont passés en arguments, jamais à un shell.
+- name: Collecter l'état des hôtes enrôlés
+  hosts: enrolled
+  gather_facts: true
+  become: false
+  vars:
+    rl_spec: "{{ rackloom_collect | default({'packages': [], 'processes': [], 'journals': []}) }}"
+  tasks:
+    - name: Versions des paquets déclarés
+      ansible.builtin.command:
+        argv: [dpkg-query, -W, "-f=${Version}", "{{ item }}"]
+      loop: "{{ rl_spec.packages }}"
+      register: rl_pkgs
+      changed_when: false
+      failed_when: false
+
+    - name: Processus déclarés
+      ansible.builtin.command:
+        argv: [pgrep, -x, "{{ item }}"]
+      loop: "{{ rl_spec.processes }}"
+      register: rl_procs
+      changed_when: false
+      failed_when: false
+
+    - name: Gestionnaire de services
+      ansible.builtin.command:
+        argv: [cat, /proc/1/comm]
+      register: rl_init
+      changed_when: false
+      failed_when: false
+
+    - name: Extraits des journaux déclarés (50 lignes)
+      ansible.builtin.command:
+        argv: [tail, -n, "50", "{{ item.path }}"]
+      loop: "{{ rl_spec.journals }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: rl_journals
+      changed_when: false
+      failed_when: false
+
+    - name: Assembler les versions de paquets
+      ansible.builtin.set_fact:
+        rl_packages: "{{ rl_packages | default({}) | combine({item.item: (item.stdout if item.rc == 0 else None)}) }}"
+      loop: "{{ rl_pkgs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Assembler l'état des processus
+      ansible.builtin.set_fact:
+        rl_processes: "{{ rl_processes | default({}) | combine({item.item: (item.rc == 0)}) }}"
+      loop: "{{ rl_procs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Assembler les journaux (16 Kio au plus chacun)
+      ansible.builtin.set_fact:
+        rl_logs: "{{ rl_logs | default({}) | combine({item.item.name: {'path': item.item.path, 'readable': item.rc == 0, 'text': (item.stdout[-16384:] if item.rc == 0 else '')}}) }}"
+      loop: "{{ rl_journals.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Rapport Rackloom
+      ansible.builtin.set_fact:
+        rackloom_report:
+          os: "{{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+          kernel: "{{ ansible_facts['kernel'] }}"
+          init: "{{ rl_init.stdout }}"
+          packages: "{{ rl_packages | default({}) }}"
+          processes: "{{ rl_processes | default({}) }}"
+          journals: "{{ rl_logs | default({}) }}"

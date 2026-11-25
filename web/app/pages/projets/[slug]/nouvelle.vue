@@ -310,6 +310,7 @@ const inputs = computed(() => service.value?.inputs || {})
             <dt>Création</dt><dd>{{ revision.summary.creates.join(', ') || '—' }}</dd>
             <dt v-if="revision.summary.keeps?.length">Conservé</dt><dd v-if="revision.summary.keeps?.length">{{ revision.summary.keeps.join(', ') }}</dd>
             <dt>Vérifications</dt><dd>{{ revision.summary.verifications }}</dd>
+            <dt v-if="revision.summary.waves">Vagues</dt><dd v-if="revision.summary.waves" data-testid="summary-waves">{{ revision.summary.waves }}</dd>
             <dt>Approbation</dt><dd>{{ revision.summary.approval }}</dd>
             <dt>Service</dt><dd>{{ revision.template?.title }} {{ revision.template?.version }}</dd>
           </dl>

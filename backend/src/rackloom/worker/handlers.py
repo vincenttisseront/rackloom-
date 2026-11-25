@@ -4,6 +4,7 @@ transaction qui enregistre le succès du précédent. Les paramètres viennent e
 la révision approuvée.
 """
 
+
 from __future__ import annotations
 
 import hashlib
@@ -24,10 +25,10 @@ from ..executions import queue
 from .core import JobContext, Refused, read_json
 
 TERRAFORM_BIN = "terraform"
+
+
 IDENTITIES = {"configure": "rackloom-config", "collect": "rackloom-collect"}
 
-
-# --- Chargement du contexte ---------------------------------------------------------------
 
 def _load(conn: Conn, job: dict[str, Any], lock: bool = True) -> dict[str, Any]:
     ctx: dict[str, Any] = {"job": job}
@@ -100,8 +101,6 @@ def _admit(r: JobContext, conn: Conn, ctx: dict[str, Any], recompute=None, stage
                        severity="error")
     raise Refused(refusal["code"])
 
-
-# --- Terraform ---------------------------------------------------------------------------
 
 def _prepare_tf(r: JobContext, run_id: str, resolution: dict[str, Any], job_json: dict[str, Any]) -> Path:
     work = r.workspace(run_id)
@@ -330,8 +329,6 @@ def finish_apply(r: JobContext, run_id: str, status: dict[str, Any], *, job: dic
     return outcome
 
 
-# --- Invités et Ansible ------------------------------------------------------------------
-
 def _lab_keys(conn: Conn, purpose: str) -> tuple[str, str]:
     identity = IDENTITIES[purpose]
     pubs = conn.execute("SELECT value FROM platform_settings WHERE key = 'lab_ssh_public_keys'").fetchone()
@@ -341,17 +338,31 @@ def _lab_keys(conn: Conn, purpose: str) -> tuple[str, str]:
     return pubs["value"][identity], private
 
 
-def _prepare_ansible(r: JobContext, conn: Conn, run_id: str, resolution: dict[str, Any],
-                     purpose: str, targets: list[dict[str, Any]]) -> tuple[Path, str]:
+def _prepare_ansible(
+    r: JobContext, conn: Conn, run_id: str, resolution: dict[str, Any], purpose: str, targets: list[dict[str, Any]]
+) -> tuple[Path, str]:
     work = r.workspace(run_id)
     private_dir = work / "ansible"
     for sub in ("env", "inventory", "project"):
         (private_dir / sub).mkdir(parents=True, exist_ok=True)
     (private_dir / "env" / "known_hosts").write_text(hosts.known_hosts(conn, [h["address"] for h in targets]))
     identity = IDENTITIES[purpose]
-    inventory = {"all": {"children": {"enrolled": {"hosts": {
-        h["name"]: {"ansible_host": h["address"], "ansible_user": identity,
-                    "ansible_python_interpreter": "/usr/bin/python3"} for h in targets}}}}}
+    inventory = {
+        "all": {
+            "children": {
+                "enrolled": {
+                    "hosts": {
+                        h["name"]: {
+                            "ansible_host": h["address"],
+                            "ansible_user": identity,
+                            "ansible_python_interpreter": "/usr/bin/python3",
+                        }
+                        for h in targets
+                    }
+                }
+            }
+        }
+    }
     (private_dir / "inventory" / "hosts.json").write_text(json.dumps(inventory))
     pb = resolution["ansible"]["playbooks"][purpose]
     pb_dir = r.settings.catalog_dir / "ansible" / "playbooks" / purpose / pb["version"]
@@ -365,14 +376,25 @@ def _prepare_ansible(r: JobContext, conn: Conn, run_id: str, resolution: dict[st
                 raise RuntimeError(f"rôle {role['name']} modifié sur disque depuis son chargement")
             shutil.copytree(src, private_dir / "project" / "roles" / role["name"], dirs_exist_ok=True)
         (private_dir / "env" / "extravars").write_text(
-            json.dumps({"rackloom_components": bundles.ansible_components(resolution)}))
+            json.dumps({"rackloom_components": bundles.ansible_components(resolution)})
+        )
+    else:
+        (private_dir / "env" / "extravars").write_text(
+            json.dumps(
+                {"rackloom_collect": registry.collect_spec(resolution["components"], resolution["health_checks"])}
+            )
+        )
     (private_dir / "project" / "ansible.cfg").write_text(
         "[defaults]\nhost_key_checking = True\nroles_path = roles\nretry_files_enabled = False\n"
-        "interpreter_python = /usr/bin/python3\n[ssh_connection]\npipelining = True\n")
+        "interpreter_python = /usr/bin/python3\n[ssh_connection]\npipelining = True\n"
+    )
     pub, private = _lab_keys(conn, purpose)
     r.redactor = type(r.redactor)([private, *r.redactor.known])
-    (work / "job.json").write_text(json.dumps({"action": "ansible_play", "playbook": f"{purpose}.yml",
-                                               "ssh_public_key": pub, "timeout_seconds": 900}))
+    (work / "job.json").write_text(
+        json.dumps(
+            {"action": "ansible_play", "playbook": f"{purpose}.yml", "ssh_public_key": pub, "timeout_seconds": 900}
+        )
+    )
     return work, json.dumps({"ssh_private_key": private})
 
 
@@ -423,9 +445,19 @@ def handle_guest_ready(r: JobContext) -> None:
         free = [n for n in nodes if n["address"] not in used]
         targets = []
         mapping = []
+        approved = set(_approved_names(ctx))
         for vm in r.job["payload"]["vms"]:
-            host = conn.execute("SELECT * FROM hosts WHERE deployment_id = %s AND name = %s",
-                                (dep["id"], vm["name"])).fetchone()
+            if vm["name"] not in approved:
+                r.step(
+                    conn,
+                    f"VM hors de la liste approuvée ignorée ({vm['name']})",
+                    "skipped",
+                    summary={"host": vm["name"], "reason": "nouvelle approbation requise"},
+                )
+                continue
+            host = conn.execute(
+                "SELECT * FROM hosts WHERE deployment_id = %s AND name = %s", (dep["id"], vm["name"])
+            ).fetchone()
             if host is not None and host["deployment_state"] in ("configured", "verified", "verify_failed"):
                 continue
             if host is None:
@@ -434,26 +466,55 @@ def handle_guest_ready(r: JobContext) -> None:
                     "INSERT INTO hosts (id, project_id, environment_id, deployment_id, template_version_id, change_id, "
                     "stack_id, vm_stable_id, name, address, deployment_state) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
-                    (queue.new_id(), r.job["project_id"], dep["environment_id"], dep["id"], dep["template_version_id"],
-                     r.job["change_id"], dep["stack_id"], f"vm-lab-{vm['uuid'][:8]}", vm["name"],
-                     node["address"] if node else None, "created" if node else "no_address")).fetchone()
+                    (
+                        queue.new_id(),
+                        r.job["project_id"],
+                        dep["environment_id"],
+                        dep["id"],
+                        dep["template_version_id"],
+                        r.job["change_id"],
+                        dep["stack_id"],
+                        f"vm-lab-{vm['uuid'][:8]}",
+                        vm["name"],
+                        node["address"] if node else None,
+                        "created" if node else "no_address",
+                    ),
+                ).fetchone()
             mapping.append({"vm": vm["name"], "node": host["address"]})
             if host["address"]:
                 targets.append(host)
-        r.step(conn, "Personnalisation invitée (vCenter fictif)", "succeeded", simulated=True,
-               summary={"vms": [m["vm"] for m in mapping]})
-        r.step(conn, "Attribution d'adresse : association à un nœud de labo", "succeeded", simulated=True,
-               summary={"mapping": mapping})
+        r.step(
+            conn,
+            "Personnalisation invitée (vCenter fictif)",
+            "succeeded",
+            simulated=True,
+            summary={"vms": [m["vm"] for m in mapping]},
+        )
+        r.step(
+            conn,
+            "Attribution d'adresse : association à un nœud de labo",
+            "succeeded",
+            simulated=True,
+            summary={"mapping": mapping},
+        )
         anchored = [h for h in targets if hosts.anchor_for(conn, h["address"])]
         for h in targets:
             if h not in anchored:
                 conn.execute("UPDATE hosts SET deployment_state = 'unreachable' WHERE id = %s", (h["id"],))
-                hosts.observe(conn, h, "ssh", {"error": "aucune ancre de clé d'hôte importée pour cette adresse"},
-                              "unreachable", "worker", r.job["id"])
+                hosts.observe(
+                    conn,
+                    h,
+                    "ssh",
+                    {"error": "aucune ancre de clé d'hôte importée pour cette adresse"},
+                    "unreachable",
+                    "worker",
+                    r.job["id"],
+                )
         stdin = None
         if anchored:
-            work, stdin = _prepare_ansible(r, conn, f"{r.job['id']}-a{r.job['attempts']}", resolution, "collect",
-                                           anchored)
+            work, stdin = _prepare_ansible(
+                r, conn, f"{r.job['id']}-a{r.job['attempts']}", resolution, "collect", anchored
+            )
     enrolled: list[dict[str, Any]] = []
     if anchored:
         run_id = f"{r.job['id']}-a{r.job['attempts']}"
@@ -463,33 +524,166 @@ def handle_guest_ready(r: JobContext) -> None:
                 ok, reason = _host_ok(summary, h["name"])
                 if ok:
                     anchor = hosts.anchor_for(conn, h["address"])
-                    conn.execute("UPDATE hosts SET deployment_state = 'enrolled', enrolled_at = now(), "
-                                 "host_key_fingerprint = %s WHERE id = %s", (anchor["fingerprint"], h["id"]))
+                    conn.execute(
+                        "UPDATE hosts SET deployment_state = 'enrolled', enrolled_at = now(), "
+                        "host_key_fingerprint = %s WHERE id = %s",
+                        (anchor["fingerprint"], h["id"]),
+                    )
                     report = summary.get("reports", {}).get(h["name"], {})
-                    hosts.observe(conn, h, "ssh", {"fingerprint": anchor["fingerprint"]}, "ok", "rackloom-collect",
-                                  r.job["id"])
-                    hosts.observe(conn, h, "facts", {"os": report.get("os"), "kernel": report.get("kernel"),
-                                                     "init": report.get("init")}, "ok", "rackloom-collect", r.job["id"],
-                                  r.redactor)
+                    hosts.observe(
+                        conn, h, "ssh", {"fingerprint": anchor["fingerprint"]}, "ok", "rackloom-collect", r.job["id"]
+                    )
+                    hosts.observe(
+                        conn,
+                        h,
+                        "facts",
+                        {"os": report.get("os"), "kernel": report.get("kernel"), "init": report.get("init")},
+                        "ok",
+                        "rackloom-collect",
+                        r.job["id"],
+                        r.redactor,
+                    )
                     enrolled.append(h)
                 else:
                     conn.execute("UPDATE hosts SET deployment_state = 'unreachable' WHERE id = %s", (h["id"],))
-                    hosts.observe(conn, h, "ssh", {"error": reason}, "unreachable", "rackloom-collect", r.job["id"],
-                                  r.redactor)
-                r.step(conn, f"Connexion SSH vérifiée ({h['name']})", "succeeded" if ok else "failed",
-                       summary={"host": h["name"], **({"reason": reason} if not ok else {})})
+                    hosts.observe(
+                        conn, h, "ssh", {"error": reason}, "unreachable", "rackloom-collect", r.job["id"], r.redactor
+                    )
+                r.step(
+                    conn,
+                    f"Connexion SSH vérifiée ({h['name']})",
+                    "succeeded" if ok else "failed",
+                    summary={"host": h["name"], **({"reason": reason} if not ok else {})},
+                )
         r.cleanup(run_id)
     with r.tx() as conn:
-        r.fenced(conn, "state = 'succeeded', finished_at = now(), result = %s",
-                 (Jsonb({"enrolled": [h["name"] for h in enrolled]}),))
+        r.fenced(
+            conn,
+            "state = 'succeeded', finished_at = now(), result = %s",
+            (Jsonb({"enrolled": [h["name"] for h in enrolled]}),),
+        )
         change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (r.job["change_id"],)).fetchone()
-        if enrolled:
-            queue.enqueue(conn, kind="ansible_configure", change=change, execution_id=r.job["execution_id"],
-                          idempotency_key=f"ansible_configure:{r.job['execution_id']}",
-                          payload={"host_ids": [str(h["id"]) for h in enrolled]})
-        else:
-            queue.enqueue(conn, kind="verify", change=change, execution_id=r.job["execution_id"],
-                          idempotency_key=f"verify:{r.job['id']}", payload={})
+        _exclude_unapproved(r, conn, ctx)
+        _start_wave(r, conn, change, _approved_waves(ctx), 0, {})
+
+
+def _approved_names(ctx: dict[str, Any]) -> list[str]:
+    """Cibles figées par l'approbation (dossier d'exécution), à défaut la révision approuvée."""
+    if ctx["plan"] is not None:
+        return list(ctx["plan"]["bundle"]["targets"]["instances"])
+    return [i["name"] for i in ctx["resolution"]["instances"]]
+
+
+def _approved_waves(ctx: dict[str, Any]) -> list[list[str]]:
+    if ctx["plan"] is not None and "waves" in ctx["plan"]["bundle"]["targets"]:
+        return [list(w) for w in ctx["plan"]["bundle"]["targets"]["waves"]]
+    return [_approved_names(ctx)]
+
+
+def _exclude_unapproved(r: JobContext, conn: Conn, ctx: dict[str, Any]) -> None:
+    """Une machine rattachée au déploiement après l'approbation n'est jamais configurée en silence."""
+    approved = _approved_names(ctx)
+    rows = conn.execute(
+        "UPDATE hosts SET deployment_state = 'out_of_scope' WHERE deployment_id = %s "
+        "AND NOT (name = ANY(%s)) AND deployment_state NOT IN ('configured', 'verified', 'verify_failed', "
+        "'out_of_scope') RETURNING name",
+        (ctx["deployment"]["id"], approved),
+    ).fetchall()
+    for row in rows:
+        r.step(
+            conn,
+            f"Hors de la liste approuvée : {row['name']} non configurée",
+            "skipped",
+            summary={"host": row["name"], "reason": "nouvelle approbation requise"},
+        )
+        r.event(
+            conn,
+            "deployment.target_excluded",
+            {
+                "host": row["name"],
+                "message": f"{row['name']} n'appartient pas à la liste approuvée : aucune "
+                "configuration sans nouvelle approbation",
+            },
+            severity="warning",
+        )
+
+
+CONFIGURABLE = ("enrolled", "config_failed", "configured", "verified", "verify_failed", "wave_blocked")
+
+
+def _wave_label(waves: list[list[str]], index: int) -> str:
+    return "pilote" if index == 0 else f"vague {index + 1}"
+
+
+def _wave_of(index: int) -> str:
+    return "du pilote" if index == 0 else f"de la vague {index + 1}"
+
+
+def _wave_verified(index: int) -> str:
+    return "Pilote vérifié" if index == 0 else f"Vague {index + 1} vérifiée"
+
+
+def _start_wave(
+    r: JobContext, conn: Conn, change: dict[str, Any], waves: list[list[str]], index: int, extra: dict[str, Any]
+) -> None:
+    """Configure la vague `index` ; sans machine joignable dans la vague, passe à sa vérification."""
+    dep_id = change["deployment_id"]
+    names = waves[index] if waves else []
+    ready = conn.execute(
+        "SELECT name FROM hosts WHERE deployment_id = %s AND name = ANY(%s) AND deployment_state = ANY(%s)",
+        (dep_id, names, list(CONFIGURABLE)),
+    ).fetchall()
+    payload = {"waves": waves, "wave": index, **extra}
+    suffix = "" if index == 0 else f":w{index}"
+    if extra.get("retry_approval_id"):
+        suffix = f":retry:{extra['retry_approval_id']}:w{index}"
+    if len(waves) > 1:
+        r.event(
+            conn,
+            "deployment.wave_started",
+            {
+                "wave": index + 1,
+                "hosts": names,
+                "message": f"{_wave_label(waves, index).capitalize()} : {', '.join(names)}",
+            },
+        )
+    if ready:
+        queue.enqueue(
+            conn,
+            kind="ansible_configure",
+            change=change,
+            execution_id=r.job["execution_id"],
+            idempotency_key=f"ansible_configure:{r.job['execution_id']}{suffix}",
+            payload=payload,
+        )
+    else:
+        queue.enqueue(
+            conn,
+            kind="verify",
+            change=change,
+            execution_id=r.job["execution_id"],
+            idempotency_key=f"verify:{r.job['id']}{suffix}",
+            payload=payload,
+        )
+
+
+def _configure_targets(conn: Conn, job: dict[str, Any], ctx: dict[str, Any]) -> list[dict[str, Any]]:
+    payload = job["payload"]
+    if payload.get("waves"):
+        return list(
+            conn.execute(
+                "SELECT * FROM hosts WHERE deployment_id = %s AND name = ANY(%s) "
+                "AND deployment_state = ANY(%s) ORDER BY name",
+                (ctx["deployment"]["id"], payload["waves"][payload["wave"]], list(CONFIGURABLE)),
+            ).fetchall()
+        )
+    ids = [UUID(i) for i in payload["host_ids"]]
+    return list(
+        conn.execute(
+            "SELECT * FROM hosts WHERE id = ANY(%s) AND deployment_id = %s ORDER BY name",
+            (ids, ctx["deployment"]["id"]),
+        ).fetchall()
+    )
 
 
 def _record_configure(r: JobContext, conn: Conn, job: dict[str, Any], targets: list[dict[str, Any]],
@@ -497,14 +691,28 @@ def _record_configure(r: JobContext, conn: Conn, job: dict[str, Any], targets: l
                       source: str) -> list[dict[str, Any]]:
     """Enregistre le rapport configure et met à jour les hôtes. Retourne ceux configurés avec succès."""
     _store_ansible_report(r, conn, "configure", rc, summary)
+    payload = job["payload"]
+    waves = payload.get("waves") or []
+    prefix = f"{_wave_label(waves, payload['wave']).capitalize()} · " if len(waves) > 1 else ""
     configured: list[dict[str, Any]] = []
     for h in targets:
         ok, reason = _host_ok(summary, h["name"])
         conn.execute("UPDATE hosts SET deployment_state = %s WHERE id = %s",
                      ("configured" if ok else "config_failed", h["id"]))
         comps = ", ".join(f"{c['slug']} {c['version']}" for c in resolution["components"])
-        r.step(conn, f"Configuration {comps} ({h['name']})", "succeeded" if ok else "failed",
-               summary={"host": h["name"], **({"reason": reason} if not ok else {})})
+        host_stats = summary.get("hosts", {}).get(h["name"]) or {}
+        # Ansible omet l'hôte du compteur `changed` quand rien n'a changé.
+        changed = host_stats.get("changed", 0)
+        r.step(
+            conn,
+            f"{prefix}Configuration {comps} ({h['name']})",
+            "succeeded" if ok else "failed",
+            summary={
+                "host": h["name"],
+                **({"changed": changed} if ok else {}),
+                **({"reason": reason} if not ok else {}),
+            },
+        )
         if ok:
             configured.append(h)
     result = {"configured": [h["name"] for h in configured], "exit_code": rc, "outcome": "configured",
@@ -522,9 +730,8 @@ def handle_ansible_configure(r: JobContext) -> None:
         ctx = _load(conn, r.job)
         _admit(r, conn, ctx)
         resolution = ctx["resolution"]
-        ids = [UUID(i) for i in r.job["payload"]["host_ids"]]
-        targets = conn.execute("SELECT * FROM hosts WHERE id = ANY(%s) AND deployment_id = %s ORDER BY name",
-                               (ids, ctx["deployment"]["id"])).fetchall()
+        payload = r.job["payload"]
+        targets = _configure_targets(conn, r.job, ctx)
         targets = [h for h in targets if h["address"] and hosts.anchor_for(conn, h["address"])]
         run_id = str(r.job["id"])
         work, stdin = _prepare_ansible(r, conn, run_id, resolution, "configure", targets)
@@ -533,8 +740,14 @@ def handle_ansible_configure(r: JobContext) -> None:
     with r.tx() as conn:
         _record_configure(r, conn, r.job, targets, resolution, rc, summary, source="runner")
         change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (r.job["change_id"],)).fetchone()
-        queue.enqueue(conn, kind="verify", change=change, execution_id=r.job["execution_id"],
-                      idempotency_key=f"verify:{r.job['id']}", payload={})
+        queue.enqueue(
+            conn,
+            kind="verify",
+            change=change,
+            execution_id=r.job["execution_id"],
+            idempotency_key=f"verify:{r.job['id']}",
+            payload={k: v for k, v in payload.items() if k in ("waves", "wave", "retry_approval_id")},
+        )
     r.cleanup(run_id)
 
 
@@ -550,43 +763,104 @@ def finish_configure(r: JobContext, run_id: str, status: dict[str, Any], *, job:
             rc = None
     with r.tx() as conn:
         ctx = _load(conn, job)
-        ids = [UUID(i) for i in job["payload"]["host_ids"]]
-        targets = conn.execute("SELECT * FROM hosts WHERE id = ANY(%s) AND deployment_id = %s ORDER BY name",
-                               (ids, ctx["deployment"]["id"])).fetchall()
+        targets = _configure_targets(conn, job, ctx)
         configured = _record_configure(r, conn, job, targets, ctx["resolution"], rc, summary, source="workspace")
         change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (job["change_id"],)).fetchone()
         if change["state"] == "reconciling":
             change = transition(conn, change, "executing", reason_code="reconciled_configure",
                                 actor_type="worker", actor_id=r.worker_id,
                                 detail={"outcome": "configured", "source": "workspace"})
-        queue.enqueue(conn, kind="verify", change=change, execution_id=job["execution_id"],
-                      idempotency_key=f"verify:reconcile:{job['id']}", payload={})
+        payload = job["payload"]
+        queue.enqueue(
+            conn,
+            kind="verify",
+            change=change,
+            execution_id=job["execution_id"],
+            idempotency_key=f"verify:reconcile:{job['id']}",
+            payload={k: v for k, v in payload.items() if k in ("waves", "wave", "retry_approval_id")},
+        )
     r.cleanup(run_id)
     return "configured" if configured else "configure_failed"
 
 
-CHECK_FAILURES = {"package_installed": "paquet {package} absent", "service_active": "service {unit} inactif",
-                  "http_probe": "sonde HTTP en échec"}
+CHECK_FAILURES = {
+    "package_installed": "paquet {package} absent",
+    "service_active": "service {unit} inactif",
+    "http_probe": "sonde HTTP en échec",
+    "jail_active": "jail {jail} inactive",
+}
 
 
-def evaluate_checks(checks: list[dict[str, Any]], report: dict[str, Any] | None, probe: dict[str, Any] | None,
-                    at: str) -> list[dict[str, Any]]:
+def _report_package(report: dict[str, Any] | None, name: str) -> str | None:
+    report = report or {}
+    if "packages" in report:
+        return (report.get("packages") or {}).get(name)
+    return report.get(f"package_{name}")
+
+
+def _report_process(report: dict[str, Any] | None, name: str) -> bool:
+    report = report or {}
+    if "processes" in report:
+        return bool((report.get("processes") or {}).get(name))
+    return str(report.get(f"process_{name}")).lower() == "true"
+
+
+def _jail_line(line: str, jail: str, verb: str) -> bool:
+    compact = line.replace("'", "").replace('"', "")
+    return f"Jail {jail} {verb}" in compact
+
+
+def _jail_started(journal: str, jail: str) -> tuple[bool, str]:
+    """Dernier démarrage du service fail2ban dans son journal : la jail y a-t-elle démarré ?"""
+    lines = journal.splitlines()
+    starts = [i for i, line in enumerate(lines) if "Starting Fail2ban" in line]
+    if not starts:
+        return False, "démarrage de fail2ban absent des 50 dernières lignes du journal"
+    tail = lines[starts[-1] :]
+    if any(_jail_line(line, jail, "stopped") for line in tail) or any("Exiting Fail2ban" in line for line in tail):
+        return False, f"jail {jail} arrêtée depuis le dernier démarrage"
+    if any(_jail_line(line, jail, "started") for line in tail):
+        return True, f"journal fail2ban : jail « {jail} » démarrée"
+    return False, f"jail « {jail} » non démarrée (journal fail2ban)"
+
+
+def evaluate_checks(
+    checks: list[dict[str, Any]], report: dict[str, Any] | None, probe: dict[str, Any] | None, at: str
+) -> list[dict[str, Any]]:
     """Contrôles de santé du template sur un hôte. Les données de collecte sont non fiables."""
     results = []
     for check in checks:
         kind = check["type"]
         entry: dict[str, Any] = {"type": kind, "at": at}
+        subject = check.get("package") or check.get("unit") or check.get("jail")
+        if subject:
+            entry["subject"] = str(subject)
         if kind == "package_installed":
-            version = (report or {}).get(f"package_{check['package']}")
+            version = _report_package(report, check["package"])
             entry.update(ok=bool(version), evidence=f"dpkg : {version}" if version else "dpkg : absent")
         elif kind == "service_active":
-            active = str((report or {}).get(f"process_{check['unit']}")).lower() == "true"
-            entry.update(ok=active, evidence=f"processus {check['unit']} {'actif' if active else 'absent'}",
-                         systemd="non collecté (nœud de labo sans systemd, hypothèse H4 infirmée)")
+            process = str(check.get("process", check["unit"]))
+            active = _report_process(report, process)
+            entry.update(
+                ok=active,
+                evidence=f"processus {process} {'actif' if active else 'absent'}",
+                systemd="non collecté (nœud de labo sans systemd, hypothèse H4 infirmée)",
+            )
         elif kind == "http_probe":
             ok = bool(probe and probe.get("ok"))
-            entry.update(ok=ok, evidence=f"HTTP {probe.get('status')}" if probe and probe.get("status") else
-                         f"sonde : {(probe or {}).get('error', 'non jointe')}")
+            entry.update(
+                ok=ok,
+                evidence=f"HTTP {probe.get('status')}"
+                if probe and probe.get("status")
+                else f"sonde : {(probe or {}).get('error', 'non jointe')}",
+            )
+        elif kind == "jail_active":
+            log = ((report or {}).get("journals") or {}).get("fail2ban") or {}
+            if not log.get("readable"):
+                entry.update(ok=False, evidence="journal fail2ban illisible par l'identité de collecte")
+            else:
+                ok, evidence = _jail_started(str(log.get("text") or ""), str(check["jail"]))
+                entry.update(ok=ok, evidence=evidence)
         else:
             entry.update(ok=False, evidence="contrôle non pris en charge")
         if not entry["ok"]:
@@ -603,11 +877,15 @@ def service_status(host_results: list[dict[str, Any]]) -> tuple[str, str]:
     failing = [h for h in host_results if h["state"] == "checked" and not all(c["ok"] for c in h["checks"])]
     unavailable = [h for h in host_results if h["state"] == "unavailable"]
     if incomplete:
-        return "created_not_ready", "VM créée, configuration incomplète"
+        blocked = [h for h in incomplete if h.get("blocked")]
+        return "created_not_ready", "VM créée, configuration incomplète" + (
+            f" : {blocked[0]['reason']}" if blocked else ""
+        )
     if failing:
         # La sonde HTTP est le symptôme visible par l'utilisateur : elle mène la raison affichée.
-        failed = sorted((c for h in failing for c in h["checks"] if not c["ok"]),
-                        key=lambda c: c["type"] != "http_probe")
+        failed = sorted(
+            (c for h in failing for c in h["checks"] if not c["ok"]), key=lambda c: c["type"] != "http_probe"
+        )
         reasons = list(dict.fromkeys(c["failure"] for c in failed))
         return "created_not_ready", "VM créée, " + " ; ".join(reasons)
     if unavailable:
@@ -615,17 +893,117 @@ def service_status(host_results: list[dict[str, Any]]) -> tuple[str, str]:
     return "ready", "tous les contrôles de santé ont réussi"
 
 
+def _observe_report(
+    r: JobContext, conn: Conn, h: dict[str, Any], report: dict[str, Any], results: list[dict[str, Any]]
+) -> None:
+    """Observations de la fiche machine : collecte 1.1.0 (déclarée par les composants) ou 1.0.0 (nginx)."""
+    hosts.observe(
+        conn,
+        h,
+        "facts",
+        {"os": report.get("os"), "kernel": report.get("kernel"), "init": report.get("init")},
+        "ok",
+        "rackloom-collect",
+        r.job["id"],
+    )
+    packages = dict(report.get("packages") or {}) if "packages" in report else {"nginx": report.get("package_nginx")}
+    hosts.observe(
+        conn, h, "packages", packages, "ok" if all(packages.values()) else "error", "rackloom-collect", r.job["id"]
+    )
+    services = {
+        x["subject"]: {"active": x["ok"], "manager": "sysv", "systemd": "non collecté"}
+        for x in results
+        if x["type"] == "service_active"
+    }
+    hosts.observe(
+        conn,
+        h,
+        "services",
+        services,
+        "ok" if all(s["active"] for s in services.values()) else "error",
+        "rackloom-collect",
+        r.job["id"],
+    )
+    if "journals" in report:
+        logs = [
+            (name, j.get("path"), str(j.get("text") or "") if j.get("readable") else "")
+            for name, j in (report.get("journals") or {}).items()
+        ]
+    else:
+        logs = [("nginx", report.get("journal_source"), str(report.get("journal") or ""))]
+    for name, path, text in logs:
+        hosts.observe(
+            conn,
+            h,
+            "journal",
+            {"name": name, "source": path, "lines": text[:16384].splitlines()[-50:]},
+            "ok",
+            "rackloom-collect",
+            r.job["id"],
+            r.redactor,
+        )
+
+
+def _record_evidence(
+    conn: Conn, ctx: dict[str, Any], r: JobContext, h: dict[str, Any], results: list[dict[str, Any]]
+) -> None:
+    """Preuve par composant : ses contrôles ont réussi sur une machine réellement configurée."""
+    mode = conn.execute("SELECT mode FROM connectors WHERE kind = 'vsphere'").fetchone()
+    connector_mode = mode["mode"] if mode else "simulated"
+    level = "lab_validated" if connector_mode == "real" else "tested_locally"
+    for c in ctx["resolution"]["components"]:
+        row = registry.component(conn, c["slug"], c["version"])
+        if row is None:
+            continue
+        expected = {
+            str(s)
+            for x in registry.component_checks(row["contract"], c.get("config") or {})
+            if (s := x.get("package") or x.get("unit") or x.get("jail"))
+        }
+        mine = [
+            {"type": x["type"], "subject": x.get("subject"), "ok": x["ok"], "evidence": x["evidence"]}
+            for x in results
+            if x.get("subject") in expected
+        ]
+        if mine and all(x["ok"] for x in mine):
+            registry.record_evidence(
+                conn,
+                row["id"],
+                level=level,
+                job_id=r.job["id"],
+                deployment_id=h["deployment_id"],
+                host_id=h["id"],
+                connector_mode=connector_mode,
+                checks=mine,
+            )
+
+
 def handle_verify(r: JobContext) -> None:
     with r.tx() as conn:
         ctx = _load(conn, r.job)
         _admit(r, conn, ctx)
         if ctx["change"]["state"] == "executing":
-            transition(conn, ctx["change"], "verifying", reason_code="verify_started", actor_type="worker",
-                       actor_id=r.worker_id)
+            transition(
+                conn,
+                ctx["change"],
+                "verifying",
+                reason_code="verify_started",
+                actor_type="worker",
+                actor_id=r.worker_id,
+            )
         resolution = ctx["resolution"]
         dep = ctx["deployment"]
+        payload = r.job["payload"]
+        waves: list[list[str]] = payload.get("waves") or []
+        index = int(payload.get("wave", 0))
         all_hosts = conn.execute("SELECT * FROM hosts WHERE deployment_id = %s ORDER BY name", (dep["id"],)).fetchall()
-        targets = [h for h in all_hosts if h["deployment_state"] in ("configured", "verified", "verify_failed")]
+        scope = {n for w in waves[: index + 1] for n in w} if waves else {h["name"] for h in all_hosts}
+        later = [n for w in waves[index + 1 :] for n in w]
+        targets = [
+            h
+            for h in all_hosts
+            if h["name"] in scope and h["deployment_state"] in ("configured", "verified", "verify_failed")
+        ]
         run_id = f"{r.job['id']}-a{r.job['attempts']}"
         stdin = None
         if targets:
@@ -641,9 +1019,22 @@ def handle_verify(r: JobContext) -> None:
         probe_id = f"{r.job['id']}-p{r.job['attempts']}"
         pwork = r.workspace(probe_id)
         http = next((c for c in resolution["health_checks"] if c["type"] == "http_probe"), None)
-        (pwork / "job.json").write_text(json.dumps({"action": "http_probe", "targets": [
-            {"host": h["name"], "address": h["address"], "port": int(http["port"]) if http else 80,
-             "path": http["path"] if http else "/"} for h in targets]}))
+        (pwork / "job.json").write_text(
+            json.dumps(
+                {
+                    "action": "http_probe",
+                    "targets": [
+                        {
+                            "host": h["name"],
+                            "address": h["address"],
+                            "port": int(http["port"]) if http else 80,
+                            "path": http["path"] if http else "/",
+                        }
+                        for h in targets
+                    ],
+                }
+            )
+        )
         r.run({"run_id": probe_id, "kind": "probe", "timeout_seconds": 60})
         probes = {p["host"]: p for p in (read_json(pwork / "out" / "probe.json", []) or [])}
         r.cleanup(probe_id)
@@ -651,66 +1042,151 @@ def handle_verify(r: JobContext) -> None:
     host_results: list[dict[str, Any]] = []
     with r.tx() as conn:
         for h in all_hosts:
+            if h["name"] not in scope:
+                continue
             if h not in targets:
-                host_results.append({"host": h["name"], "state": "incomplete", "checks": [],
-                                     "reason": f"état du déploiement : {h['deployment_state']}"})
+                host_results.append(
+                    {
+                        "host": h["name"],
+                        "state": "incomplete",
+                        "checks": [],
+                        "reason": f"état du déploiement : {h['deployment_state']}",
+                    }
+                )
                 continue
             report = reports.get(h["name"])
             if h["name"] not in reachable or report is None:
-                hosts.observe(conn, h, "facts", {"error": "collecte impossible : hôte injoignable"}, "unreachable",
-                              "rackloom-collect", r.job["id"])
-                host_results.append({"host": h["name"], "state": "unavailable", "checks": [],
-                                     "reason": "hôte injoignable"})
+                hosts.observe(
+                    conn,
+                    h,
+                    "facts",
+                    {"error": "collecte impossible : hôte injoignable"},
+                    "unreachable",
+                    "rackloom-collect",
+                    r.job["id"],
+                )
+                host_results.append(
+                    {"host": h["name"], "state": "unavailable", "checks": [], "reason": "hôte injoignable"}
+                )
                 r.step(conn, f"Vérification ({h['name']})", "failed", summary={"reason": "hôte injoignable"})
                 continue
             results = evaluate_checks(resolution["health_checks"], report, probes.get(h["name"]), at)
             ok = all(x["ok"] for x in results)
-            hosts.observe(conn, h, "facts", {"os": report.get("os"), "kernel": report.get("kernel"),
-                                             "init": report.get("init")}, "ok", "rackloom-collect", r.job["id"])
-            hosts.observe(conn, h, "packages", {"nginx": report.get("package_nginx")},
-                          "ok" if report.get("package_nginx") else "error", "rackloom-collect", r.job["id"])
-            service_ok = next((x["ok"] for x in results if x["type"] == "service_active"), False)
-            hosts.observe(conn, h, "services", {"nginx": {"active": service_ok, "manager": "sysv",
-                                                          "systemd": "non collecté"}},
-                          "ok" if service_ok else "error", "rackloom-collect", r.job["id"])
-            journal = str(report.get("journal") or "")[:16384]
-            hosts.observe(conn, h, "journal", {"source": report.get("journal_source"),
-                                               "lines": journal.splitlines()[-50:]}, "ok", "rackloom-collect",
-                          r.job["id"], r.redactor)
+            _observe_report(r, conn, h, report, results)
             probe = probes.get(h["name"])
             if probe is not None:
                 hosts.observe(conn, h, "probe", probe, "ok" if probe.get("ok") else "error", "probe", r.job["id"])
-            conn.execute("UPDATE hosts SET deployment_state = %s WHERE id = %s",
-                         ("verified" if ok else "verify_failed", h["id"]))
-            r.step(conn, f"Vérification ({h['name']})", "succeeded" if ok else "failed",
-                   summary={"checks": [{"type": x["type"], "ok": x["ok"], "evidence": x["evidence"]}
-                                       for x in results]})
+            conn.execute(
+                "UPDATE hosts SET deployment_state = %s WHERE id = %s", ("verified" if ok else "verify_failed", h["id"])
+            )
+            r.step(
+                conn,
+                f"Vérification ({h['name']})",
+                "succeeded" if ok else "failed",
+                summary={"checks": [{"type": x["type"], "ok": x["ok"], "evidence": x["evidence"]} for x in results]},
+            )
             host_results.append({"host": h["name"], "state": "checked", "checks": results})
+            if ok:
+                _record_evidence(conn, ctx, r, h, results)
+        wave_names = set(waves[index]) if waves else scope
+        wave_results = [x for x in host_results if x["host"] in wave_names]
+        wave_ok = bool(wave_results) and all(
+            x["state"] == "checked" and all(c["ok"] for c in x["checks"]) for x in wave_results
+        )
+        if later and wave_ok:
+            message = f"{_wave_verified(index)} : vague {index + 2} lancée"
+            r.event(conn, "deployment.wave_passed", {"wave": index + 1, "message": message})
+            r.fenced(
+                conn,
+                "state = 'succeeded', finished_at = now(), result = %s",
+                (Jsonb({"wave": index + 1, "next_wave": index + 2}),),
+            )
+            change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (r.job["change_id"],)).fetchone()
+            if change["state"] == "verifying":
+                change = transition(
+                    conn,
+                    change,
+                    "executing",
+                    reason_code="wave_next",
+                    actor_type="worker",
+                    actor_id=r.worker_id,
+                    detail={"message": message},
+                )
+            _start_wave(
+                r, conn, change, waves, index + 1, {k: payload[k] for k in ("retry_approval_id",) if k in payload}
+            )
+            return
+        if later:
+            conn.execute(
+                "UPDATE hosts SET deployment_state = 'wave_blocked' WHERE deployment_id = %s "
+                "AND name = ANY(%s) AND deployment_state IN ('enrolled', 'wave_blocked')",
+                (dep["id"], later),
+            )
+            for w in range(index + 1, len(waves)):
+                why = f"vague {w + 1} bloquée après l'échec {_wave_of(index)}"
+                r.step(conn, f"Vague {w + 1} bloquée ({', '.join(waves[w])})", "skipped", summary={"reason": why})
+                for name in waves[w]:
+                    host_results.append(
+                        {"host": name, "state": "incomplete", "checks": [], "reason": why, "blocked": True}
+                    )
+            r.event(
+                conn,
+                "deployment.wave_blocked",
+                {
+                    "wave": index + 1,
+                    "blocked": later,
+                    "message": f"Échec {_wave_of(index)} : aucune configuration lancée sur {', '.join(later)}",
+                },
+                severity="error",
+            )
         status, reason = service_status(host_results)
-        conn.execute("UPDATE deployments SET service_status = %s, service_reason = %s, service_checked_at = now(), "
-                     "service_checks = %s WHERE id = %s", (status, reason, Jsonb(host_results), dep["id"]))
-        r.event(conn, "deployment.service_status", {"status": status, "message": reason,
-                                                    "deployment_id": str(dep["id"])},
-                severity="info" if status == "ready" else "warning")
-        r.fenced(conn, "state = 'succeeded', finished_at = now(), result = %s",
-                 (Jsonb({"service_status": status, "hosts": len(all_hosts)}),))
+        conn.execute(
+            "UPDATE deployments SET service_status = %s, service_reason = %s, service_checked_at = now(), "
+            "service_checks = %s WHERE id = %s",
+            (status, reason, Jsonb(host_results), dep["id"]),
+        )
+        r.event(
+            conn,
+            "deployment.service_status",
+            {"status": status, "message": reason, "deployment_id": str(dep["id"])},
+            severity="info" if status == "ready" else "warning",
+        )
+        r.fenced(
+            conn,
+            "state = 'succeeded', finished_at = now(), result = %s",
+            (Jsonb({"service_status": status, "hosts": len(all_hosts)}),),
+        )
         change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (r.job["change_id"],)).fetchone()
         if change["state"] == "executing":
-            change = transition(conn, change, "verifying", reason_code="verify_started", actor_type="worker",
-                                actor_id=r.worker_id)
-        conn.execute("UPDATE executions SET finished_at = now(), state = %s WHERE id = %s",
-                     ("succeeded" if status == "ready" else "partially_succeeded", r.job["execution_id"]))
+            change = transition(
+                conn, change, "verifying", reason_code="verify_started", actor_type="worker", actor_id=r.worker_id
+            )
+        conn.execute(
+            "UPDATE executions SET finished_at = now(), state = %s WHERE id = %s",
+            ("succeeded" if status == "ready" else "partially_succeeded", r.job["execution_id"]),
+        )
         if status == "ready":
-            transition(conn, change, "succeeded", reason_code="service_ready", actor_type="worker",
-                       actor_id=r.worker_id, detail={"message": f"Succès : service prêt ({len(all_hosts)} hôte(s))",
-                                                     "service_status": status})
+            transition(
+                conn,
+                change,
+                "succeeded",
+                reason_code="service_ready",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"message": f"Succès : service prêt ({len(all_hosts)} hôte(s))", "service_status": status},
+            )
         else:
-            transition(conn, change, "partially_succeeded", reason_code=f"service_{status}", actor_type="worker",
-                       actor_id=r.worker_id, severity="error",
-                       detail={"message": reason, "service_status": status})
+            transition(
+                conn,
+                change,
+                "partially_succeeded",
+                reason_code=f"service_{status}",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                severity="error",
+                detail={"message": reason, "service_status": status},
+            )
 
-
-# --- Réconciliation ----------------------------------------------------------------------
 
 def handle_reconcile(r: JobContext) -> None:
     """Lecture seule : statut du runner auprès du launcher, puis state Terraform. Jamais de relance."""

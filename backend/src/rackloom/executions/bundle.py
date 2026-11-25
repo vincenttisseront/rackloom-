@@ -7,6 +7,7 @@ variables générées, images runner, contrôles de santé, bundle de politiques
 L'admission le recalcule depuis l'état courant ; toute différence bloque l'exécution.
 """
 
+
 from __future__ import annotations
 
 from typing import Any
@@ -80,28 +81,58 @@ def _pinned(conn: Conn, resolution: dict[str, Any]) -> dict[str, Any]:
                         "variables_sha256": digest({"rackloom_components": ansible_components(resolution)})}}
 
 
-def build(conn: Conn, *, change: dict[str, Any], version: dict[str, Any], revision: dict[str, Any],
-          stack: dict[str, Any], plan_sha256: str, state_lineage: str | None, state_serial: int | None,
-          valid_until: str, terraform_version: str | None) -> dict[str, Any]:
+def build(
+    conn: Conn,
+    *,
+    change: dict[str, Any],
+    version: dict[str, Any],
+    revision: dict[str, Any],
+    stack: dict[str, Any],
+    plan_sha256: str,
+    state_lineage: str | None,
+    state_serial: int | None,
+    valid_until: str,
+    terraform_version: str | None,
+) -> dict[str, Any]:
     resolution = revision["resolved"]
-    connectors = {r["slug"]: {"mode": r["mode"], "config_version": r["config_version"]} for r in conn.execute(
-        "SELECT slug, mode, config_version FROM connectors ORDER BY slug").fetchall()}
+    connectors = {
+        r["slug"]: {"mode": r["mode"], "config_version": r["config_version"]}
+        for r in conn.execute("SELECT slug, mode, config_version FROM connectors ORDER BY slug").fetchall()
+    }
     env = resolution["environment"]
     return {
         "schema": "rackloom.execution-bundle/v1",
         "change_id": str(change["id"]),
         "project_id": str(change["project_id"]),
-        "request": {"version_no": version["version_no"], "need_sha256": version["need_sha256"],
-                    "revision_no": revision["revision_no"], "resolution_digest": revision["resolution_digest"]},
-        "environment": {"id": env["id"], "slug": env["slug"], "is_production": env["is_production"],
-                        "policy_version": env["policy_version"], "policy_digest": env["policy_digest"]},
-        "targets": {"deployment": str(change["deployment_id"]), "stack": stack["slug"],
-                    "instances": [i["name"] for i in resolution["instances"]],
-                    "placement": {k: v["stable_id"] for k, v in resolution["placement"].items() if isinstance(v, dict)},
-                    "connectors": connectors},
+        "request": {
+            "version_no": version["version_no"],
+            "need_sha256": version["need_sha256"],
+            "revision_no": revision["revision_no"],
+            "resolution_digest": revision["resolution_digest"],
+        },
+        "environment": {
+            "id": env["id"],
+            "slug": env["slug"],
+            "is_production": env["is_production"],
+            "policy_version": env["policy_version"],
+            "policy_digest": env["policy_digest"],
+        },
+        "targets": {
+            "deployment": str(change["deployment_id"]),
+            "stack": stack["slug"],
+            "instances": [i["name"] for i in resolution["instances"]],
+            "waves": resolution.get("waves") or [[i["name"] for i in resolution["instances"]]],
+            "placement": {k: v["stable_id"] for k, v in resolution["placement"].items() if isinstance(v, dict)},
+            "connectors": connectors,
+        },
         **_pinned(conn, resolution),
-        "plan": {"sha256": plan_sha256, "state_lineage": state_lineage, "state_serial": state_serial,
-                 "valid_until": valid_until, "terraform_version": terraform_version},
+        "plan": {
+            "sha256": plan_sha256,
+            "state_lineage": state_lineage,
+            "state_serial": state_serial,
+            "valid_until": valid_until,
+            "terraform_version": terraform_version,
+        },
         "runner_images": runner_images(conn),
         "health_checks": resolution["health_checks"],
         "policy_bundle": resolution["policy_bundle"],
