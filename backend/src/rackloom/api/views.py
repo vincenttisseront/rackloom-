@@ -158,6 +158,13 @@ def change_view(conn: Conn, principal: Principal, change: dict[str, Any]) -> dic
     project = conn.execute("SELECT * FROM projects WHERE id = %s", (change["project_id"],)).fetchone()
     version = conn.execute("SELECT * FROM request_versions WHERE change_id = %s AND version_no = %s",
                            (change["id"], change["current_version_no"])).fetchone()
+    if version is None and change["kind"] == "modify":
+        # Point de départ d'une modification : le besoin en vigueur sur le déploiement.
+        version = conn.execute(
+            "SELECT v.* FROM changes c JOIN request_versions v ON v.change_id = c.id "
+            "AND v.version_no = c.current_version_no WHERE c.deployment_id = %s "
+            "AND c.state IN ('succeeded', 'partially_succeeded') ORDER BY c.created_at DESC LIMIT 1",
+            (change["deployment_id"],)).fetchone()
     revision = conn.execute("SELECT * FROM request_revisions WHERE change_id = %s AND revision_no = %s",
                             (change["id"], change["current_revision_no"])).fetchone()
     plan = conn.execute("SELECT * FROM plans WHERE change_id = %s ORDER BY created_at DESC LIMIT 1",
