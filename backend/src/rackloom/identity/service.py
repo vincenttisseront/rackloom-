@@ -6,10 +6,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-import psycopg
-
 from .. import audit
 from ..config import get_settings
+from ..db import Conn
 from ..errors import ApiError
 from ..ids import uuid7
 from ..security import (
@@ -42,7 +41,7 @@ def now() -> datetime:
     return datetime.now(UTC)
 
 
-def create_user(conn: psycopg.Connection, email: str, display_name: str, password: str,
+def create_user(conn: Conn, email: str, display_name: str, password: str,
                 is_demo: bool = False) -> UUID:
     settings = get_settings()
     if is_demo and settings.profile == "production":
@@ -57,7 +56,7 @@ def create_user(conn: psycopg.Connection, email: str, display_name: str, passwor
     return user_id
 
 
-def _rate_limited(conn: psycopg.Connection, email: str) -> bool:
+def _rate_limited(conn: Conn, email: str) -> bool:
     settings = get_settings()
     row = conn.execute(
         "SELECT count(*) AS n FROM login_attempts WHERE email = %s AND NOT succeeded "
@@ -67,7 +66,7 @@ def _rate_limited(conn: psycopg.Connection, email: str) -> bool:
     return row["n"] >= settings.login_max_failures
 
 
-def login(conn: psycopg.Connection, email: str, password: str, client: str,
+def login(conn: Conn, email: str, password: str, client: str,
           previous_token: str | None = None) -> NewSession | ApiError:
     """Renvoie l'erreur au lieu de la lever : l'échec doit être enregistré (limitation de débit)."""
     settings = get_settings()
@@ -100,7 +99,7 @@ def login(conn: psycopg.Connection, email: str, password: str, client: str,
     return session
 
 
-def _create_session(conn: psycopg.Connection, user_id: UUID, epoch: int, method: str) -> NewSession:
+def _create_session(conn: Conn, user_id: UUID, epoch: int, method: str) -> NewSession:
     settings = get_settings()
     token = new_token()
     csrf = csrf_token_for(token)
@@ -119,13 +118,13 @@ def _create_session(conn: psycopg.Connection, user_id: UUID, epoch: int, method:
     return NewSession(token=token, csrf_token=csrf, session_id=session_id, user_id=user_id)
 
 
-def logout(conn: psycopg.Connection, principal: Principal) -> None:
+def logout(conn: Conn, principal: Principal) -> None:
     conn.execute("UPDATE sessions SET revoked_at = now(), revoked_reason = 'logout' WHERE id = %s",
                  (principal.session_id,))
     audit.record(conn, actor_type="user", actor_id=str(principal.user_id), action="auth.logout", outcome="ok")
 
 
-def resolve_session(conn: psycopg.Connection, token: str, touch: bool = True) -> Principal | None:
+def resolve_session(conn: Conn, token: str, touch: bool = True) -> Principal | None:
     row = conn.execute(
         """
         SELECT s.id, s.user_id, s.auth_method, s.auth_time, s.idle_expires_at, s.absolute_expires_at,
@@ -158,7 +157,7 @@ def resolve_session(conn: psycopg.Connection, token: str, touch: bool = True) ->
     )
 
 
-def session_is_active(conn: psycopg.Connection, session_id: UUID) -> bool:
+def session_is_active(conn: Conn, session_id: UUID) -> bool:
     row = conn.execute(
         """
         SELECT s.revoked_at, s.idle_expires_at, s.absolute_expires_at, s.privilege_epoch AS s_epoch,
@@ -173,7 +172,7 @@ def session_is_active(conn: psycopg.Connection, session_id: UUID) -> bool:
     return row["absolute_expires_at"] > t and row["s_epoch"] == row["u_epoch"]
 
 
-def bump_privilege_epoch(conn: psycopg.Connection, user_id: UUID, reason: str) -> None:
+def bump_privilege_epoch(conn: Conn, user_id: UUID, reason: str) -> None:
     """Changement de privilège : toutes les sessions de l'utilisateur deviennent invalides."""
     conn.execute("UPDATE users SET privilege_epoch = privilege_epoch + 1 WHERE id = %s", (user_id,))
     conn.execute(
@@ -182,7 +181,7 @@ def bump_privilege_epoch(conn: psycopg.Connection, user_id: UUID, reason: str) -
     )
 
 
-def create_bootstrap_token(conn: psycopg.Connection, minutes: int = 30) -> str:
+def create_bootstrap_token(conn: Conn, minutes: int = 30) -> str:
     token = new_token()
     conn.execute(
         "INSERT INTO bootstrap_tokens (id, token_hash, expires_at) VALUES (%s, %s, %s)",
@@ -193,7 +192,7 @@ def create_bootstrap_token(conn: psycopg.Connection, minutes: int = 30) -> str:
     return token
 
 
-def consume_bootstrap(conn: psycopg.Connection, token: str, email: str, display_name: str,
+def consume_bootstrap(conn: Conn, token: str, email: str, display_name: str,
                       password: str) -> UUID:
     row = conn.execute(
         "SELECT id FROM bootstrap_tokens WHERE token_hash = %s AND used_at IS NULL AND expires_at > now() "

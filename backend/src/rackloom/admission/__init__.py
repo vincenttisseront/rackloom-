@@ -12,10 +12,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import psycopg
-
 from .. import policy
-from ..db import Jsonb
+from ..db import Conn, Jsonb
 from ..identity.authz import Principal, load_bindings
 
 
@@ -28,7 +26,7 @@ class Verdict:
 
 @dataclass
 class Context:
-    conn: psycopg.Connection
+    conn: Conn
     job: dict[str, Any]
     change: dict[str, Any] | None
     environment: dict[str, Any] | None
@@ -52,7 +50,7 @@ def rule(order: int, rule_id: str, job_class: str) -> Callable[[Rule], Rule]:
     return register
 
 
-def _principal(conn: psycopg.Connection, user_id) -> Principal | None:
+def _principal(conn: Conn, user_id) -> Principal | None:
     user = conn.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
     if user is None or user["status"] != "active":
         return None
@@ -229,7 +227,7 @@ def evaluate(ctx: Context) -> dict[str, Any]:
     return {"outcome": outcome, "rules": results, "refusal": refusal, "policy": active}
 
 
-def release_stack(conn: psycopg.Connection, job: dict[str, Any]) -> None:
+def release_stack(conn: Conn, job: dict[str, Any]) -> None:
     if job.get("stack_id"):
         conn.execute("UPDATE stacks SET lock_job_id = NULL WHERE id = %s AND lock_job_id = %s",
                      (job["stack_id"], job["id"]))

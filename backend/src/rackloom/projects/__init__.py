@@ -5,17 +5,15 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-import psycopg
-
 from .. import audit
 from ..canonical import digest
-from ..db import Jsonb
+from ..db import Conn, Jsonb
 from ..errors import not_found
 from ..identity.authz import Principal, require_project
 from ..ids import uuid7
 
 
-def list_projects(conn: psycopg.Connection, principal: Principal) -> list[dict[str, Any]]:
+def list_projects(conn: Conn, principal: Principal) -> list[dict[str, Any]]:
     visible = principal.visible_project_ids()
     if visible is None:
         rows = conn.execute("SELECT * FROM projects ORDER BY slug").fetchall()
@@ -25,7 +23,7 @@ def list_projects(conn: psycopg.Connection, principal: Principal) -> list[dict[s
     return [dict(r, roles=principal.roles_for(r["id"])) for r in rows]
 
 
-def get_project(conn: psycopg.Connection, principal: Principal, project_ref: str) -> dict[str, Any]:
+def get_project(conn: Conn, principal: Principal, project_ref: str) -> dict[str, Any]:
     """Accepte un identifiant ou un slug. Hors périmètre : 404, comme une ressource absente."""
     try:
         row = conn.execute("SELECT * FROM projects WHERE id = %s", (UUID(project_ref),)).fetchone()
@@ -37,17 +35,17 @@ def get_project(conn: psycopg.Connection, principal: Principal, project_ref: str
     return row
 
 
-def environments(conn: psycopg.Connection, project_id: UUID) -> list[dict[str, Any]]:
+def environments(conn: Conn, project_id: UUID) -> list[dict[str, Any]]:
     return conn.execute(
         "SELECT * FROM environments WHERE project_id = %s ORDER BY kind = 'prod', slug", (project_id,)
     ).fetchall()
 
 
-def get_environment(conn: psycopg.Connection, environment_id: UUID) -> dict[str, Any] | None:
+def get_environment(conn: Conn, environment_id: UUID) -> dict[str, Any] | None:
     return conn.execute("SELECT * FROM environments WHERE id = %s", (environment_id,)).fetchone()
 
 
-def members(conn: psycopg.Connection, project_id: UUID) -> list[dict[str, Any]]:
+def members(conn: Conn, project_id: UUID) -> list[dict[str, Any]]:
     return conn.execute(
         """
         SELECT DISTINCT u.id, u.email, u.display_name FROM role_bindings rb JOIN users u ON u.id = rb.user_id
@@ -57,19 +55,19 @@ def members(conn: psycopg.Connection, project_id: UUID) -> list[dict[str, Any]]:
     ).fetchall()
 
 
-def current_policy(conn: psycopg.Connection, environment_id: UUID) -> dict[str, Any] | None:
+def current_policy(conn: Conn, environment_id: UUID) -> dict[str, Any] | None:
     return conn.execute(
         "SELECT * FROM environment_policies WHERE environment_id = %s ORDER BY version DESC LIMIT 1",
         (environment_id,),
     ).fetchone()
 
 
-def policy_version(conn: psycopg.Connection, environment_id: UUID, version: int) -> dict[str, Any] | None:
+def policy_version(conn: Conn, environment_id: UUID, version: int) -> dict[str, Any] | None:
     return conn.execute("SELECT * FROM environment_policies WHERE environment_id = %s AND version = %s",
                         (environment_id, version)).fetchone()
 
 
-def add_policy_version(conn: psycopg.Connection, environment_id: UUID, rules: dict[str, Any], actor_id: UUID | None,
+def add_policy_version(conn: Conn, environment_id: UUID, rules: dict[str, Any], actor_id: UUID | None,
                        reason: str) -> dict[str, Any]:
     """Une politique modifiée crée une nouvelle version ; les anciennes restent lisibles."""
     current = current_policy(conn, environment_id)
@@ -85,7 +83,7 @@ def add_policy_version(conn: psycopg.Connection, environment_id: UUID, rules: di
     return row
 
 
-def set_grants_revoked(conn: psycopg.Connection, project_slug: str, environment_slug: str, kind: str,
+def set_grants_revoked(conn: Conn, project_slug: str, environment_slug: str, kind: str,
                        revoked: bool, reason: str) -> list[str]:
     """Retire ou rétablit les octrois d'un type pour un environnement (exploitation, CLI de l'appliance)."""
     rows = conn.execute(
@@ -108,7 +106,7 @@ def set_grants_revoked(conn: psycopg.Connection, project_slug: str, environment_
     return sorted(r["stable_id"] for r in rows)
 
 
-def referent_name(conn: psycopg.Connection, project: dict[str, Any]) -> str:
+def referent_name(conn: Conn, project: dict[str, Any]) -> str:
     if project.get("referent_user_id") is None:
         return "désigné du projet"
     row = conn.execute("SELECT display_name FROM users WHERE id = %s", (project["referent_user_id"],)).fetchone()

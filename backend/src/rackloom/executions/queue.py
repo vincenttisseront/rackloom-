@@ -11,10 +11,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-import psycopg
-
 from .. import events
-from ..db import Jsonb
+from ..db import Conn, Jsonb
 from ..ids import uuid7
 
 JOB_CLASS = {
@@ -44,7 +42,7 @@ class LeaseLost(Exception):
     """Le bail a expiré ou a été repris : le worker doit s'arrêter sans écrire."""
 
 
-def enqueue(conn: psycopg.Connection, *, kind: str, idempotency_key: str, change: dict[str, Any] | None = None,
+def enqueue(conn: Conn, *, kind: str, idempotency_key: str, change: dict[str, Any] | None = None,
             project_id: UUID | None = None, payload: dict[str, Any] | None = None,
             stack_id: UUID | None = None, execution_id: UUID | None = None,
             run_after: datetime | None = None, max_attempts: int = 3, priority: int = 100) -> dict[str, Any]:
@@ -69,7 +67,7 @@ def enqueue(conn: psycopg.Connection, *, kind: str, idempotency_key: str, change
     return row
 
 
-def claim(conn: psycopg.Connection, worker_id: str, lease_seconds: int,
+def claim(conn: Conn, worker_id: str, lease_seconds: int,
           kinds: list[str] | None = None) -> dict[str, Any] | None:
     """Réclame un job en transaction courte. Renvoie le job avec sa nouvelle époque."""
     query = """
@@ -95,7 +93,7 @@ def claim(conn: psycopg.Connection, worker_id: str, lease_seconds: int,
     ).fetchone()
 
 
-def fenced_update(conn: psycopg.Connection, job: dict[str, Any], sets: str, params: tuple = ()) -> dict[str, Any]:
+def fenced_update(conn: Conn, job: dict[str, Any], sets: str, params: tuple = ()) -> dict[str, Any]:
     """UPDATE conditionné par le propriétaire et l'époque du bail ; lève LeaseLost sinon."""
     row = conn.execute(
         f"UPDATE jobs SET {sets}, updated_at = now() "
@@ -108,19 +106,19 @@ def fenced_update(conn: psycopg.Connection, job: dict[str, Any], sets: str, para
     return row
 
 
-def heartbeat(conn: psycopg.Connection, job: dict[str, Any], lease_seconds: int) -> dict[str, Any]:
+def heartbeat(conn: Conn, job: dict[str, Any], lease_seconds: int) -> dict[str, Any]:
     return fenced_update(conn, job, "heartbeat_at = now(), lease_expires_at = now() + make_interval(secs => %s)",
                          (lease_seconds,))
 
 
-def expired_leases(conn: psycopg.Connection) -> list[dict[str, Any]]:
+def expired_leases(conn: Conn) -> list[dict[str, Any]]:
     return conn.execute(
         "SELECT * FROM jobs WHERE state IN ('leased', 'running') AND lease_expires_at < now() "
         "ORDER BY lease_expires_at FOR UPDATE SKIP LOCKED"
     ).fetchall()
 
 
-def add_step(conn: psycopg.Connection, job_id: UUID, name: str, state: str, *, simulated: bool = False,
+def add_step(conn: Conn, job_id: UUID, name: str, state: str, *, simulated: bool = False,
              summary: dict[str, Any] | None = None) -> None:
     seq = conn.execute("SELECT coalesce(max(seq), 0) + 1 AS n FROM job_steps WHERE job_id = %s",
                        (job_id,)).fetchone()["n"]
@@ -131,7 +129,7 @@ def add_step(conn: psycopg.Connection, job_id: UUID, name: str, state: str, *, s
     )
 
 
-def retry_later(conn: psycopg.Connection, job: dict[str, Any], seconds: int) -> None:
+def retry_later(conn: Conn, job: dict[str, Any], seconds: int) -> None:
     conn.execute(
         "UPDATE jobs SET state = 'queued', lease_owner = NULL, lease_expires_at = NULL, "
         "run_after = now() + make_interval(secs => %s), updated_at = now() WHERE id = %s",

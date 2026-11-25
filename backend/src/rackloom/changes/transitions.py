@@ -6,10 +6,8 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-import psycopg
-
 from .. import audit, events
-from ..db import Jsonb
+from ..db import Conn, Jsonb
 from ..errors import ApiError
 
 STATES = {
@@ -68,7 +66,7 @@ RELEASES_NAMES = {"cancelled", "rejected", "plan_failed", "failed"}
 TERMINAL = {"failed", "cancelled"}
 
 
-def transition(conn: psycopg.Connection, change: dict[str, Any], to_state: str, *, reason_code: str,
+def transition(conn: Conn, change: dict[str, Any], to_state: str, *, reason_code: str,
                actor_type: str, actor_id: str | None, detail: dict[str, Any] | None = None,
                severity: str = "info", request_id: str | None = None) -> dict[str, Any]:
     """Transition contrôlée avec verrou optimiste (row_version)."""
@@ -110,11 +108,11 @@ def transition(conn: psycopg.Connection, change: dict[str, Any], to_state: str, 
     return row
 
 
-def lock_change(conn: psycopg.Connection, change_id: UUID) -> dict[str, Any] | None:
+def lock_change(conn: Conn, change_id: UUID) -> dict[str, Any] | None:
     return conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (change_id,)).fetchone()
 
 
-def release_names(conn: psycopg.Connection, change: dict[str, Any]) -> int:
+def release_names(conn: Conn, change: dict[str, Any]) -> int:
     """Libère les noms réservés par ce changement qui ne désignent aucune ressource créée."""
     rows = conn.execute(
         """

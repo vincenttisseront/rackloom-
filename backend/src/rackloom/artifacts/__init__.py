@@ -11,10 +11,9 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-import psycopg
-
 from .. import security
 from ..config import get_settings
+from ..db import Conn
 from ..ids import uuid7
 
 KEY_NAMES = {"A": "artifact-a", "B": "artifact-b"}
@@ -24,7 +23,7 @@ def _key(key_class: str) -> bytes:
     return security.load_key(get_settings().keys_dir, KEY_NAMES[key_class])
 
 
-def store(conn: psycopg.Connection, *, project_id: UUID, change_id: UUID | None, kind: str, key_class: str,
+def store(conn: Conn, *, project_id: UUID, change_id: UUID | None, kind: str, key_class: str,
           plaintext: bytes) -> dict[str, Any]:
     artifact_id = uuid7()
     rel = Path(str(project_id)) / f"{artifact_id}.bin"

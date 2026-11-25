@@ -5,12 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-import psycopg
-
 from .. import hosts as hosts_mod
 from .. import registry, resolver, workflow
 from ..changes.service import change_ref
 from ..changes.transitions import STATES
+from ..db import Conn
 from ..identity.authz import Principal
 
 SERVICE_STATUS = {
@@ -81,7 +80,7 @@ def ansible_contract(resolution: dict[str, Any]) -> dict[str, Any]:
             "identities": {"configure": "rackloom-config (élévation)", "collect": "rackloom-collect (sans élévation)"}}
 
 
-def revision_view(conn: psycopg.Connection, revision: dict[str, Any], project: dict[str, Any]) -> dict[str, Any]:
+def revision_view(conn: Conn, revision: dict[str, Any], project: dict[str, Any]) -> dict[str, Any]:
     resolution = revision["resolved"]
     return {
         "revision_no": revision["revision_no"], "version_no": revision["version_no"],
@@ -100,7 +99,7 @@ def revision_view(conn: psycopg.Connection, revision: dict[str, Any], project: d
     }
 
 
-def plan_view(conn: psycopg.Connection, plan: dict[str, Any], revision: dict[str, Any]) -> dict[str, Any]:
+def plan_view(conn: Conn, plan: dict[str, Any], revision: dict[str, Any]) -> dict[str, Any]:
     resolution = revision["resolved"]
     summary = plan["summary"]
     counts = summary["vm_counts"]
@@ -137,12 +136,12 @@ def plan_view(conn: psycopg.Connection, plan: dict[str, Any], revision: dict[str
     }
 
 
-def _last_transition(conn: psycopg.Connection, change_id) -> dict[str, Any] | None:
+def _last_transition(conn: Conn, change_id) -> dict[str, Any] | None:
     return conn.execute("SELECT * FROM state_transitions WHERE change_id = %s ORDER BY id DESC LIMIT 1",
                         (change_id,)).fetchone()
 
 
-def change_summary(conn: psycopg.Connection, change: dict[str, Any]) -> dict[str, Any]:
+def change_summary(conn: Conn, change: dict[str, Any]) -> dict[str, Any]:
     env = conn.execute("SELECT slug, name, is_production FROM environments WHERE id = %s",
                        (change["environment_id"],)).fetchone() if change["environment_id"] else None
     last = _last_transition(conn, change["id"])
@@ -155,7 +154,7 @@ def change_summary(conn: psycopg.Connection, change: dict[str, Any]) -> dict[str
             "created_at": iso(change["created_at"]), "updated_at": iso(change["updated_at"])}
 
 
-def change_view(conn: psycopg.Connection, principal: Principal, change: dict[str, Any]) -> dict[str, Any]:
+def change_view(conn: Conn, principal: Principal, change: dict[str, Any]) -> dict[str, Any]:
     project = conn.execute("SELECT * FROM projects WHERE id = %s", (change["project_id"],)).fetchone()
     version = conn.execute("SELECT * FROM request_versions WHERE change_id = %s AND version_no = %s",
                            (change["id"], change["current_version_no"])).fetchone()
@@ -187,7 +186,7 @@ def change_view(conn: psycopg.Connection, principal: Principal, change: dict[str
     }
 
 
-def deployment_summary(conn: psycopg.Connection, dep: dict[str, Any]) -> dict[str, Any]:
+def deployment_summary(conn: Conn, dep: dict[str, Any]) -> dict[str, Any]:
     tpl = registry.template_by_id(conn, dep["template_version_id"])
     env = conn.execute("SELECT slug, name, is_production FROM environments WHERE id = %s",
                        (dep["environment_id"],)).fetchone()
@@ -200,7 +199,7 @@ def deployment_summary(conn: psycopg.Connection, dep: dict[str, Any]) -> dict[st
             "created_at": iso(dep["created_at"])}
 
 
-def deployment_view(conn: psycopg.Connection, principal: Principal, dep: dict[str, Any]) -> dict[str, Any]:
+def deployment_view(conn: Conn, principal: Principal, dep: dict[str, Any]) -> dict[str, Any]:
     changes = conn.execute("SELECT * FROM changes WHERE deployment_id = %s ORDER BY created_at", (dep["id"],))
     host_rows = conn.execute("SELECT * FROM hosts WHERE deployment_id = %s ORDER BY name", (dep["id"],)).fetchall()
     return {**deployment_summary(conn, dep), "project_id": str(dep["project_id"]),
@@ -211,7 +210,7 @@ def deployment_view(conn: psycopg.Connection, principal: Principal, dep: dict[st
             "allowed_actions": workflow.available_actions(conn, principal, "deployment", dep)}
 
 
-def job_view(conn: psycopg.Connection, job: dict[str, Any]) -> dict[str, Any]:
+def job_view(conn: Conn, job: dict[str, Any]) -> dict[str, Any]:
     steps = conn.execute("SELECT * FROM job_steps WHERE job_id = %s ORDER BY seq", (job["id"],)).fetchall()
     return {"id": str(job["id"]), "kind": job["kind"], "class": job["class"], "state": job["state"],
             "attempts": job["attempts"], "blocked_reason": job["blocked_reason"],
@@ -229,7 +228,7 @@ def event_view(row: dict[str, Any]) -> dict[str, Any]:
             "data": row["data"]}
 
 
-def host_view(conn: psycopg.Connection, host: dict[str, Any]) -> dict[str, Any]:
+def host_view(conn: Conn, host: dict[str, Any]) -> dict[str, Any]:
     base = hosts_mod.view(conn, host)
     dep = conn.execute("SELECT * FROM deployments WHERE id = %s", (host["deployment_id"],)).fetchone()
     tpl = registry.template_by_id(conn, host["template_version_id"])

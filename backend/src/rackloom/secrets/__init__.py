@@ -8,10 +8,9 @@ from __future__ import annotations
 
 from uuid import UUID
 
-import psycopg
-
 from .. import security
 from ..config import get_settings
+from ..db import Conn
 from ..ids import uuid7
 
 
@@ -19,7 +18,7 @@ def _pub() -> bytes:
     return (get_settings().keys_dir / security.KEY_FILES["secrets-box-public"]).read_bytes()
 
 
-def put(conn: psycopg.Connection, ref: str, plaintext: bytes, created_by: UUID | None = None) -> None:
+def put(conn: Conn, ref: str, plaintext: bytes, created_by: UUID | None = None) -> None:
     if not ref.startswith("secret://"):
         raise ValueError("référence secret:// attendue")
     pub = _pub()
@@ -33,7 +32,7 @@ def put(conn: psycopg.Connection, ref: str, plaintext: bytes, created_by: UUID |
     )
 
 
-def reveal(conn: psycopg.Connection, ref: str) -> bytes:
+def reveal(conn: Conn, ref: str) -> bytes:
     """Worker uniquement (le rôle API n'a pas le droit de lire `ciphertext`)."""
     row = conn.execute("SELECT ciphertext FROM secrets WHERE ref = %s", (ref,)).fetchone()
     if row is None:
@@ -42,5 +41,5 @@ def reveal(conn: psycopg.Connection, ref: str) -> bytes:
     return security.unseal(private, bytes(row["ciphertext"]), ref.encode())
 
 
-def exists(conn: psycopg.Connection, ref: str) -> bool:
+def exists(conn: Conn, ref: str) -> bool:
     return conn.execute("SELECT 1 FROM secrets WHERE ref = %s", (ref,)).fetchone() is not None

@@ -13,7 +13,7 @@ from typing import Any
 import psycopg
 
 from ..canonical import canonical_json, sha256_hex
-from ..db import Jsonb
+from ..db import Conn, Jsonb
 from ..redact import redact
 
 GENESIS = "0" * 64
@@ -40,7 +40,7 @@ def _normalize(value: Any) -> Any:
     return json.loads(json.dumps(value, default=str))
 
 
-def record(conn: psycopg.Connection, *, actor_type: str, actor_id: str | None, action: str,
+def record(conn: Conn, *, actor_type: str, actor_id: str | None, action: str,
            outcome: str, project_id=None, correlation_id=None, targets: dict | None = None,
            versions: dict | None = None, policy_decision: dict | None = None,
            request_id: str | None = None) -> int:
@@ -76,7 +76,7 @@ def record(conn: psycopg.Connection, *, actor_type: str, actor_id: str | None, a
     return result["id"] if isinstance(result, dict) else result[0]
 
 
-def verify(conn: psycopg.Connection) -> dict[str, Any]:
+def verify(conn: Conn) -> dict[str, Any]:
     prev = GENESIS
     count = 0
     with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:

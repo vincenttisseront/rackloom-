@@ -13,9 +13,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-import psycopg
-
-from ..db import Jsonb
+from ..db import Conn, Jsonb
 from ..ids import uuid7
 from ..redact import Redactor
 
@@ -37,7 +35,7 @@ def fingerprint(public_key_line: str) -> str:
     return "SHA256:" + base64.b64encode(hashlib.sha256(raw).digest()).decode().rstrip("=")
 
 
-def import_anchor(conn: psycopg.Connection, address: str, public_key_line: str, source: str,
+def import_anchor(conn: Conn, address: str, public_key_line: str, source: str,
                   imported_by: UUID | None = None) -> dict[str, Any]:
     parts = public_key_line.strip().split()
     if len(parts) < 2 or parts[0] not in ("ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa"):
@@ -55,18 +53,18 @@ def import_anchor(conn: psycopg.Connection, address: str, public_key_line: str, 
     ).fetchone()
 
 
-def known_hosts(conn: psycopg.Connection, addresses: list[str]) -> str:
+def known_hosts(conn: Conn, addresses: list[str]) -> str:
     rows = conn.execute("SELECT address, public_key FROM trust_anchors WHERE address = ANY(%s) ORDER BY address",
                         (addresses,)).fetchall()
     return "".join(f"{r['address']} {r['public_key']}\n" for r in rows)
 
 
-def anchor_for(conn: psycopg.Connection, address: str) -> dict[str, Any] | None:
+def anchor_for(conn: Conn, address: str) -> dict[str, Any] | None:
     return conn.execute("SELECT * FROM trust_anchors WHERE address = %s ORDER BY key_type LIMIT 1",
                         (address,)).fetchone()
 
 
-def observe(conn: psycopg.Connection, host: dict[str, Any], kind: str, data: dict[str, Any], status: str,
+def observe(conn: Conn, host: dict[str, Any], kind: str, data: dict[str, Any], status: str,
             source: str, job_id: UUID | None, redactor: Redactor | None = None) -> None:
     redactor = redactor or Redactor()
     conn.execute(
@@ -75,14 +73,14 @@ def observe(conn: psycopg.Connection, host: dict[str, Any], kind: str, data: dic
         (host["id"], host["project_id"], kind, Jsonb(redactor.data(data)), status, source, job_id))
 
 
-def latest_observations(conn: psycopg.Connection, host_id: UUID) -> dict[str, dict[str, Any]]:
+def latest_observations(conn: Conn, host_id: UUID) -> dict[str, dict[str, Any]]:
     rows = conn.execute(
         "SELECT DISTINCT ON (kind) * FROM host_observations WHERE host_id = %s ORDER BY kind, collected_at DESC",
         (host_id,)).fetchall()
     return {r["kind"]: r for r in rows}
 
 
-def health(conn: psycopg.Connection, host: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
+def health(conn: Conn, host: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
     now = now or datetime.now(UTC)
     obs = latest_observations(conn, host["id"])
     if not obs:
@@ -102,7 +100,7 @@ def health(conn: psycopg.Connection, host: dict[str, Any], now: datetime | None 
     return result
 
 
-def view(conn: psycopg.Connection, host: dict[str, Any]) -> dict[str, Any]:
+def view(conn: Conn, host: dict[str, Any]) -> dict[str, Any]:
     obs = latest_observations(conn, host["id"])
     stack = conn.execute("SELECT slug FROM stacks WHERE id = %s", (host["stack_id"],)).fetchone()
     change = conn.execute("SELECT seq, state FROM changes WHERE id = %s", (host["change_id"],)).fetchone()

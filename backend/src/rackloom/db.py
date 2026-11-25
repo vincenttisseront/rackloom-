@@ -11,6 +11,7 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
@@ -19,11 +20,13 @@ from psycopg_pool import ConnectionPool
 
 from .config import get_settings
 
+type Conn = psycopg.Connection[dict[str, Any]]
+
 log = logging.getLogger(__name__)
 
 _pool: ConnectionPool | None = None
 
-__all__ = ["Jsonb", "close_pool", "connect", "get_pool", "migrate", "transaction"]
+__all__ = ["Conn", "Jsonb", "close_pool", "connect", "get_pool", "migrate", "transaction"]
 
 
 def get_pool() -> ConnectionPool:
@@ -48,13 +51,13 @@ def close_pool() -> None:
 
 
 @contextmanager
-def transaction() -> Iterator[psycopg.Connection]:
+def transaction() -> Iterator[Conn]:
     with get_pool().connection() as conn:
         with conn.transaction():
             yield conn
 
 
-def connect(url: str | None = None, autocommit: bool = True) -> psycopg.Connection:
+def connect(url: str | None = None, autocommit: bool = True) -> Conn:
     return psycopg.connect(url or get_settings().resolved_database_url(), row_factory=dict_row,
                            autocommit=autocommit)
 

@@ -17,7 +17,7 @@ from psycopg.rows import dict_row
 from .. import projects, workflow
 from ..changes import service
 from ..config import get_settings
-from ..db import get_pool
+from ..db import Conn, get_pool
 from ..errors import not_found
 from ..events import CHANNEL
 from ..identity import service as identity
@@ -29,7 +29,7 @@ router = APIRouter(tags=["suivi"], dependencies=[Depends(csrf_guard)])
 EVENT_COLUMNS = "id, type, source, severity, occurred_at, job_id, correlation_id, data"
 
 
-def _job(conn: psycopg.Connection, principal, job_id: UUID) -> dict[str, Any]:
+def _job(conn: Conn, principal, job_id: UUID) -> dict[str, Any]:
     job = conn.execute("SELECT * FROM jobs WHERE id = %s", (job_id,)).fetchone()
     if job is None or job["project_id"] is None or not principal.can_see_project(job["project_id"]):
         raise not_found("job")

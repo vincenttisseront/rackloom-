@@ -11,10 +11,9 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-import psycopg
 import yaml
 
-from ..db import Jsonb
+from ..db import Conn, Jsonb
 from ..ids import uuid7
 
 
@@ -23,7 +22,7 @@ def load_fixture(path: Path) -> dict[str, Any]:
         return yaml.safe_load(fh)
 
 
-def record_snapshot(conn: psycopg.Connection, connector_id: UUID, items: list[dict[str, Any]],
+def record_snapshot(conn: Conn, connector_id: UUID, items: list[dict[str, Any]],
                     observed_at: datetime | None = None) -> UUID:
     observed = observed_at or datetime.now(UTC)
     snapshot_id = uuid7()
@@ -45,7 +44,7 @@ def record_snapshot(conn: psycopg.Connection, connector_id: UUID, items: list[di
     return snapshot_id
 
 
-def record_failure(conn: psycopg.Connection, connector_id: UUID, error: str) -> None:
+def record_failure(conn: Conn, connector_id: UUID, error: str) -> None:
     conn.execute(
         "INSERT INTO inventory_snapshots (id, connector_id, observed_at, status, error) "
         "VALUES (%s, %s, now(), 'error', %s)",
@@ -53,7 +52,7 @@ def record_failure(conn: psycopg.Connection, connector_id: UUID, error: str) -> 
     )
 
 
-def latest_snapshot(conn: psycopg.Connection, connector_id: UUID | None = None) -> dict[str, Any] | None:
+def latest_snapshot(conn: Conn, connector_id: UUID | None = None) -> dict[str, Any] | None:
     if connector_id is None:
         return conn.execute(
             "SELECT * FROM inventory_snapshots WHERE status = 'ok' ORDER BY observed_at DESC LIMIT 1"
@@ -65,7 +64,7 @@ def latest_snapshot(conn: psycopg.Connection, connector_id: UUID | None = None) 
     ).fetchone()
 
 
-def granted_items(conn: psycopg.Connection, project_id: UUID, environment_id: UUID | None = None,
+def granted_items(conn: Conn, project_id: UUID, environment_id: UUID | None = None,
                   kind: str | None = None) -> list[dict[str, Any]]:
     """Éléments du dernier instantané octroyés au projet (et à l'environnement si fourni)."""
     snap = latest_snapshot(conn)
@@ -90,7 +89,7 @@ def granted_items(conn: psycopg.Connection, project_id: UUID, environment_id: UU
     return conn.execute(query, params).fetchall()
 
 
-def freshness(conn: psycopg.Connection, max_age_hours: int) -> dict[str, Any]:
+def freshness(conn: Conn, max_age_hours: int) -> dict[str, Any]:
     snap = latest_snapshot(conn)
     if snap is None:
         return {"snapshot_id": None, "observed_at": None, "age_seconds": None, "stale": True}

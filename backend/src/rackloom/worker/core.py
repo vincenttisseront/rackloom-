@@ -20,7 +20,7 @@ import psycopg
 
 from .. import events
 from ..config import Settings
-from ..db import transaction
+from ..db import Conn, transaction
 from ..executions import queue
 from ..redact import Redactor
 from .launcher_client import Launcher
@@ -82,7 +82,7 @@ class JobContext:
                 log.exception("heartbeat en échec (job %s)", self.job["id"])
 
     @contextmanager
-    def tx(self) -> Iterator[psycopg.Connection]:
+    def tx(self) -> Iterator[Conn]:
         """Transaction courte. Un refus (`Refused`) valide ce qui a été écrit avant de se propager."""
         if self.lost.is_set():
             raise queue.LeaseLost(str(self.job["id"]))
@@ -95,20 +95,20 @@ class JobContext:
         if refused is not None:
             raise refused
 
-    def fenced(self, conn: psycopg.Connection, sets: str, params: tuple = ()) -> dict[str, Any]:
+    def fenced(self, conn: Conn, sets: str, params: tuple = ()) -> dict[str, Any]:
         row = queue.fenced_update(conn, self.job, sets, params)
         self.job = row
         return row
 
     # --- Événements -----------------------------------------------------------------------
 
-    def event(self, conn: psycopg.Connection, type_: str, data: dict[str, Any], severity: str = "info",
+    def event(self, conn: Conn, type_: str, data: dict[str, Any], severity: str = "info",
               dedupe: str | None = None) -> None:
         events.emit(conn, type=type_, source="worker", project_id=self.job["project_id"],
                     correlation_id=self.job["change_id"], job_id=self.job["id"], data=data, severity=severity,
                     dedupe_key=dedupe, redactor=self.redactor)
 
-    def step(self, conn: psycopg.Connection, name: str, state: str, *, simulated: bool = False,
+    def step(self, conn: Conn, name: str, state: str, *, simulated: bool = False,
              summary: dict[str, Any] | None = None) -> None:
         queue.add_step(conn, self.job["id"], name, state, simulated=simulated,
                        summary=self.redactor.data(summary or {}))

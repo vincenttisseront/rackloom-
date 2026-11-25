@@ -20,12 +20,11 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-import psycopg
 
 from .. import audit, events, projects, registry
 from ..changes import need as need_schema
 from ..config import get_settings
-from ..db import Jsonb
+from ..db import Conn, Jsonb
 from ..errors import ApiError, not_found
 from ..identity.authz import Principal, require_project, require_role
 from ..ids import uuid7
@@ -71,7 +70,7 @@ class TurnInvalid(Exception):
 
 # --- Contexte filtré ----------------------------------------------------------------------
 
-def build_context(conn: psycopg.Connection, principal: Principal, project: dict[str, Any],
+def build_context(conn: Conn, principal: Principal, project: dict[str, Any],
                   need: dict[str, Any]) -> dict[str, Any]:
     """Seules des données de catégorie A : aucun réseau, datastore, image ni valeur résolue."""
     services = []
@@ -289,7 +288,7 @@ def fake_turn(scenario: str, message: str, context: dict[str, Any], untrusted: l
     return _turn(reply, questions=questions, patch=patch, production=production)
 
 
-def ollama_turn(conn: psycopg.Connection, message: str, context: dict[str, Any], untrusted: list[dict[str, Any]],
+def ollama_turn(conn: Conn, message: str, context: dict[str, Any], untrusted: list[dict[str, Any]],
                 mode: str) -> str:
     settings = get_settings()
     if not settings.ollama_url:
@@ -321,7 +320,7 @@ def ollama_turn(conn: psycopg.Connection, message: str, context: dict[str, Any],
     return resp.json().get("message", {}).get("content", "")
 
 
-def assistant_settings(conn: psycopg.Connection) -> dict[str, Any]:
+def assistant_settings(conn: Conn) -> dict[str, Any]:
     row = conn.execute("SELECT value FROM platform_settings WHERE key = 'assistant'").fetchone()
     value = row["value"] if row else {}
     adapter = value.get("adapter") or get_settings().chat_adapter
@@ -329,7 +328,7 @@ def assistant_settings(conn: psycopg.Connection) -> dict[str, Any]:
             "simulated": adapter == "fake", "available": adapter != "disabled"}
 
 
-def set_assistant(conn: psycopg.Connection, principal: Principal, adapter: str, scenario: str) -> dict[str, Any]:
+def set_assistant(conn: Conn, principal: Principal, adapter: str, scenario: str) -> dict[str, Any]:
     if adapter not in ("fake", "ollama", "disabled"):
         raise ApiError(422, "invalid_adapter", "adaptateur attendu : fake, ollama ou disabled", field="/adapter")
     if scenario not in SCENARIOS:
@@ -346,7 +345,7 @@ def set_assistant(conn: psycopg.Connection, principal: Principal, adapter: str, 
 
 # --- Conversations ------------------------------------------------------------------------
 
-def create_conversation(conn: psycopg.Connection, principal: Principal, project: dict[str, Any],
+def create_conversation(conn: Conn, principal: Principal, project: dict[str, Any],
                         change_id: UUID | None) -> dict[str, Any]:
     require_role(principal, "operator", project["id"])
     if change_id is not None:
@@ -358,7 +357,7 @@ def create_conversation(conn: psycopg.Connection, principal: Principal, project:
         (uuid7(), project["id"], change_id, principal.user_id)).fetchone()
 
 
-def _untrusted_events(conn: psycopg.Connection, project_id: UUID, job_id: UUID,
+def _untrusted_events(conn: Conn, project_id: UUID, job_id: UUID,
                       redactor: Redactor) -> list[dict[str, Any]]:
     job = conn.execute("SELECT * FROM jobs WHERE id = %s AND project_id = %s", (job_id, project_id)).fetchone()
     if job is None:
@@ -383,7 +382,7 @@ def _untrusted_events(conn: psycopg.Connection, project_id: UUID, job_id: UUID,
     return result
 
 
-def post_message(conn: psycopg.Connection, principal: Principal, conversation_id: UUID,
+def post_message(conn: Conn, principal: Principal, conversation_id: UUID,
                  body: dict[str, Any]) -> dict[str, Any]:
     conv = conn.execute("SELECT * FROM chat_conversations WHERE id = %s", (conversation_id,)).fetchone()
     if conv is None or conv["user_id"] != principal.user_id:
