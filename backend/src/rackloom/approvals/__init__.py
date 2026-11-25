@@ -7,11 +7,10 @@ Le contexte d'authentification de l'approbateur est enregistré (base de F12).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from .. import audit, events
+from .. import audit, clock, events
 from ..changes.service import get_change
 from ..changes.transitions import transition
 from ..db import Conn, Jsonb
@@ -19,7 +18,7 @@ from ..errors import ApiError
 from ..executions import queue
 from ..identity.authz import Principal, require_role
 from ..ids import uuid7
-from ..projects import freezes
+from ..projects import calendars, freezes
 
 
 def _auth_context(principal: Principal) -> dict[str, Any]:
@@ -63,7 +62,7 @@ def decide(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, An
                        "le plan supprime ou remplace des ressources : approbation impossible au lot 1")
     if plan["status"] != "ready" or change["state"] != "plan_ready":
         raise ApiError(409, "plan_not_ready", f"plan dans l'état « {plan['status']} »")
-    if plan["valid_until"] <= datetime.now(UTC):
+    if plan["valid_until"] <= clock.now():
         conn.execute("UPDATE plans SET status = 'expired' WHERE id = %s", (plan_id,))
         transition(conn, change, "plan_expired", reason_code="plan_expired", actor_type="system", actor_id=None)
         raise ApiError(409, "plan_expired", "le plan a expiré : un nouveau plan doit être calculé puis approuvé",
@@ -111,10 +110,12 @@ def decide(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, An
     change = transition(conn, change, "approved", reason_code="approved", actor_type="user",
                         actor_id=str(principal.user_id),
                         detail={"bundle_digest": plan["bundle_digest"][:12]}, request_id=request_id)
+    run_after = calendars.schedule_run_after(conn, change["environment_id"])
     job = queue.enqueue(conn, kind="tf_apply", change=change, stack_id=plan["stack_id"], execution_id=execution_id,
-                        idempotency_key=f"tf_apply:{execution_id}", payload={"plan_id": str(plan_id)})
+                        idempotency_key=f"tf_apply:{execution_id}", payload={"plan_id": str(plan_id)},
+                        run_after=run_after)
     return {"approval_id": approval_id, "decision": decision, "execution_id": execution_id, "job_id": job["id"],
-            "change": change}
+            "change": change, "run_after": run_after}
 
 
 def request_retry(
@@ -268,6 +269,7 @@ def _decide_retry(
     }
     targets = plan["bundle"]["targets"]
     waves = [[n for n in w if n in names] for w in targets.get("waves") or [targets["instances"]]]
+    run_after = calendars.schedule_run_after(conn, change["environment_id"])
     job = queue.enqueue(
         conn,
         kind="ansible_configure",
@@ -280,5 +282,6 @@ def _decide_retry(
             "waves": [w for w in waves if w],
             "wave": 0,
         },
+        run_after=run_after,
     )
     return {"approval_id": approval_id, "decision": decision, "job_id": job["id"], "change": change}

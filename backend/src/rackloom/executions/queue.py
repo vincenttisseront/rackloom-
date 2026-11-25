@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from .. import events
+from .. import clock, events
 from ..db import Conn, Jsonb
 from ..ids import uuid7
 
@@ -59,7 +59,7 @@ def enqueue(conn: Conn, *, kind: str, idempotency_key: str, change: dict[str, An
         VALUES (%s, %s, %s, %s, %s, %s, 'queued', %s, %s, %s, %s, %s, %s) RETURNING *
         """,
         (job_id, change["id"] if change else None, pid, execution_id, kind, JOB_CLASS[kind], stack_id,
-         Jsonb(payload or {}), idempotency_key, priority, run_after or datetime.now(UTC), max_attempts),
+         Jsonb(payload or {}), idempotency_key, priority, run_after or clock.now(), max_attempts),
     ).fetchone()
     events.emit(conn, type="job.queued", source="rackloom", project_id=pid,
                 correlation_id=change["id"] if change else None, job_id=job_id,

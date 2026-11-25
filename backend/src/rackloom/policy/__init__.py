@@ -5,7 +5,8 @@ appliquées par le résolveur. Sa version et son empreinte sont enregistrées da
 décision d'admission, chaque résolution et chaque dossier d'exécution : un plan approuvé sous
 une version antérieure est refusé à l'admission (`policy_changed`) et doit être réapprouvé.
 
-Historique : `builtin@1` (lot 1), `builtin@2` (F28 : règle R080, gel d'environnement).
+Historique : `builtin@1` (lot 1), `builtin@2` (F28 : R080), `builtin@3` (F27 : R090 ;
+R065 AT01 documenté dans le même bundle).
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from typing import Any
 from ..canonical import digest
 from ..db import Conn, Jsonb
 
-BUILTIN_VERSION = "builtin@2"
+BUILTIN_VERSION = "builtin@3"
 
 BUILTIN_RULES: dict[str, Any] = {
     "admission": [
@@ -25,13 +26,17 @@ BUILTIN_RULES: dict[str, Any] = {
         {"id": "R040", "order": 40, "class": "write", "title": "approbation valide, non révoquée, non consommée"},
         {"id": "R050", "order": 50, "class": "write", "title": "empreinte du dossier recalculée identique"},
         {"id": "R060", "order": 60, "class": "write", "title": "plan non expiré, sans suppression ni remplacement"},
+        {"id": "R065", "order": 65, "class": "write",
+         "title": "configuration limitée aux cibles de la liste approuvée"},
         {"id": "R070", "order": 70, "class": "all", "title": "annulation non demandée"},
         {"id": "R080", "order": 80, "class": "write", "stages": ["start", "dispatch"],
          "title": "environnement non gelé, au démarrage et à l'envoi au fournisseur"},
+        {"id": "R090", "order": 90, "class": "write", "stages": ["start", "dispatch"],
+         "title": "dans une fenêtre de maintenance, hors gel calendaire"},
         {"id": "R900", "order": 900, "class": "write", "title": "verrou de stack acquis"},
     ],
     # Emplacements réservés au backlog, documentés mais non encore enregistrés.
-    "reserved": {"90": "F27", "100": "F11", "110": "F05", "120": "F03", "130": "F16", "140": "F10"},
+    "reserved": {"100": "F11", "110": "F05", "120": "F03", "130": "F16", "140": "F10"},
     "platform": {
         "production_requires_explicit_environment": True,
         "production_requires_distinct_approver": True,

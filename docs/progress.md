@@ -4,7 +4,7 @@
 
 - **Lot 0 (cadrage)** : fusionné dans `main` (PR #1).
 - **Lot 1 (parcours Compose avec résolveur central et modèle template/composant)** : **terminé, testé localement**. Livré en trois PR : #2 et #3 fusionnées en avance, puis la PR de clôture #4 (`cursor/lot-1-cloture-e231`).
-- **Lot A** : **F28** (gel d'urgence) en cours de livraison sur `cursor/lot-a-f28-gel-20f1` ; F27 puis F21 suivent. AT01 avance en parallèle sur une autre branche.
+- **Lot A** : **F28** fusionné (PR #6) ; **F27** (calendriers) sur `cursor/lot-a-f27-calendriers-20f1` (PR #7) ; F21 suit. **AT01** fusionné (PR #5) ; **F60** fusionné (PR #8) ; **F57** fusionné (PR #9).
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -50,7 +50,8 @@
 | Assistant de conception, adaptateur Ollama | code livré | non vérifié contre un vrai modèle | l'atelier est exercé avec l'adaptateur fictif |
 | Template depuis un serveur de référence (F60) | livré (observations fictives explicites) | testé localement | `tests/integration/test_f60_reference.py` ; `web/e2e/96-atelier-f60.spec.ts` ; collecteur réel indisponible (D21) |
 | Fiche « Votre service est prêt » (F57) | livré | testé localement | `tests/integration/test_f57_service_card.py` ; `web/e2e/97-atelier-f57.spec.ts` ; T41 pour le calcul réel |
-| Fonctions F01 à F56 / F58 à F59 (hors F28) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : F55 |
+| Calendriers de changement (F27, règle R090, bundle `builtin@3`, migration `0004`) | en cours | testé localement | `test_calendars.py`, `70-f27-calendriers.spec.ts` ; vidéo `media/lot-a-f27-calendriers.webm` |
+| Fonctions F01 à F56 / F58 à F59 (hors F28, F27, F57, F60) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas lot A : F21 après fusion F27 ; atelier : F55 |
 
 ## Démonstrations D1 à D6
 
@@ -212,12 +213,15 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### AT01 : atelier, Fail2ban et vagues (2026-11-25)
 
-- Branche `cursor/atelier-at01-88f4`, d'abord depuis `main` (`d61d602`), puis rebasée sur F28 (`8211386`). Migration atelier renumérotée en `0003_atelier` (F28 occupe `0002`).
-- Commandes exécutées sur le poste de travail (Europe/Paris) :
-  - `uv run ruff check` / `lint-imports` / `nuxi typecheck` / `make openapi` : verts ;
-  - `uv run pytest` backend : **188 passed** avant fusion F28 ; rejeu CI après correctifs T25/DOM.
-- CI PR #5 : 4/4 verts sur `1919102` avant conflit F28 ; merge de `main` en cours.
-- Résultat : atelier et vagues testés localement. Aucune capacité validée en laboratoire. L'adaptateur Ollama de conception n'a pas été appelé. Double validation : ADR-0010 proposé.
+- Fusionné dans `main` (PR #5). Migration `0003_atelier` (après F28 `0002`).
+- Résultat : atelier et vagues testés localement. Aucune capacité validée en laboratoire. Double validation : ADR-0010 proposé.
+
+### Lot A : F27 calendriers (2026-11-25, heure de Paris)
+
+- Branche `cursor/lot-a-f27-calendriers-20f1` rebasée sur `main` (F28 + AT01 + F60 + F57). Migration **`0004`** (`down_revision = 0003_atelier`) — F57 n'ajoute aucune migration Alembic. R090 (`start`/`dispatch`), `builtin@3`, tables `environment_calendars` / `change_windows` / `calendar_freezes`, horloge injectable `rackloom.clock`, programmation `run_after` à l'approbation (y compris vagues ansible AT01).
+- Conflit post-F57 : seulement `docs/progress.md` (simple). Aucun conflit d'intention.
+- Preuves : `test_calendars.py` ; Playwright `70-f27-calendriers.spec.ts` ; vidéo magasin `media/lot-a-f27-calendriers.webm`.
+- Suite : **F21** après fusion de F27 (PR #7).
 
 ### F60 : serveur de référence (2026-11-25)
 
@@ -234,7 +238,7 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ## Prochain jalon
 
-1. Fusionner F57 après CI verte.
-2. Suite atelier : **F55**.
-3. Finir le lot A : **F27 → F21** (si pas déjà fusionné).
+1. Fusionner **F27** (PR #7) sur `main` après CI verte (rebasée AT01 + F60 + F57).
+2. Puis **F21**, entièrement testable localement.
+3. Suite atelier : **F55**.
 4. Ensuite **F31 → F37 → F46**. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

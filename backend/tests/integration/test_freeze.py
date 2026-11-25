@@ -240,7 +240,7 @@ def test_f28_droits_audit_evenements(conn, demo, api):
     view = r.json()
     assert view["frozen"] and view["freeze"]["frozen_by"] == "Bruno (approbateur)"
     assert "hunter2" not in r.text and "[secret masqué]" in view["freeze"]["reason"]
-    assert [a["action"] for a in view["allowed_actions"]] == ["unfreeze"]
+    assert [a["action"] for a in view["allowed_actions"]] == ["unfreeze", "manage_calendar"]
     replay = bruno.post(f"{url}/freeze", json={"reason": "Incident, password=hunter2-demo"},
                         headers={"Idempotency-Key": "f28-gel-1"})
     assert replay.status_code == 200 and replay.json()["freeze"]["id"] == view["freeze"]["id"]
@@ -257,7 +257,7 @@ def test_f28_droits_audit_evenements(conn, demo, api):
     listing = {f"{e['project']['slug']}/{e['slug']}": e for e in admin.get(f"{API}/admin/environments").json()}
     assert set(listing) == {"vitrine/dev", "vitrine/prod", "compta/dev"}
     assert listing["vitrine/dev"]["frozen"]
-    assert [a["action"] for a in listing["vitrine/dev"]["allowed_actions"]] == ["unfreeze"]
+    assert [a["action"] for a in listing["vitrine/dev"]["allowed_actions"]] == ["unfreeze", "manage_calendar"]
     audit_view = david.get(f"{API}/admin/environments")
     assert audit_view.status_code == 200 and all(e["allowed_actions"] == [] for e in audit_view.json())
     assert alice.get(f"{API}/admin/environments").status_code == 403
