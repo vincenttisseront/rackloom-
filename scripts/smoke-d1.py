@@ -5,8 +5,10 @@ Alice décrit le besoin et soumet, Bruno approuve l'empreinte du plan, puis le s
 le résultat du service. Lancer depuis la racine : `uv run --project backend python scripts/smoke-d1.py`.
 
 `--restart-during KIND` (T25) : dès qu'un job de ce type est en cours, `docker compose down` des services
-de l'appliance sans suppression de volumes, puis `up`. Le script vérifie ensuite que les données sont
-conservées, que la modification aboutit (reprise ou réconciliation) et qu'aucun job ni hôte n'est en double.
+de l'appliance sans suppression de volumes, puis `up`. Si la réconciliation laisse un succès partiel
+(Ansible interrompu : aucune relance automatique), Alice demande une reprise et Bruno l'approuve.
+Le script vérifie ensuite que les données sont conservées, que la modification aboutit et qu'aucun
+job ni hôte n'est en double.
 """
 
 from __future__ import annotations
@@ -121,6 +123,13 @@ def main() -> int:
 
     terminal = ("succeeded", "partially_succeeded", "failed", "cancelled")
     view = wait(alice, cid, lambda x: x["state"] in terminal, "fin de la modification")
+    # Ansible interrompu : réconciliation sans relance → succès partiel ; reprise humaine approuvée.
+    if args.restart_during and view["state"] == "partially_succeeded":
+        print("T25 : succès partiel après redémarrage — demande de reprise ansible_configure")
+        retry = post(alice, f"/changes/{cid}/retries", {"step": "ansible_configure"})
+        post(bruno, f"/changes/{cid}/approvals",
+             {"retry_id": retry["retry_id"], "bundle_digest": retry["bundle_digest"], "decision": "approved"})
+        view = wait(alice, cid, lambda x: x["state"] in terminal, "fin après reprise")
     dep = view["deployment"]
     print("modification :", view["state"], "| service :", dep["service_status"], "—", dep.get("service_reason"))
     jobs = alice.get(f"{API}/changes/{cid}/jobs").json()
