@@ -44,6 +44,41 @@ def test_worker_refuse_de_demarrer_avec_un_connecteur_simule(production):
         worker.register()
 
 
+def test_identites_et_donnees_de_demo_refusees(production, conn, demo):
+    from pathlib import Path
+
+    from rackloom import chat
+    from rackloom import demo as demo_profile
+    from rackloom.errors import ApiError
+    from rackloom.identity import service as identity
+
+    with pytest.raises(demo_profile.DemoRefused):
+        demo_profile.seed(conn, Path(__file__).resolve().parents[3])
+    for kwargs in ({"email": "eve@exemple.test", "is_demo": True}, {"email": "eve@demo.invalid"}):
+        with pytest.raises(ApiError) as exc:
+            identity.create_user(conn, display_name="Eve", password="x" * 16, **kwargs)
+        assert exc.value.code == "demo_identity_refused"
+    with pytest.raises(ApiError) as exc:
+        chat.set_assistant(conn, demo.principal("admin"), "fake", "nominal")
+    assert exc.value.code == "fake_refused"
+
+
+def test_session_de_demo_refusee_en_production(api, conn, monkeypatch):
+    from conftest import DEMO_PASSWORD
+
+    alice = api("alice")
+    assert alice.get("/api/v1/session").status_code == 200
+    monkeypatch.setenv("RACKLOOM_PROFILE", "production")
+    get_settings.cache_clear()
+    try:
+        assert alice.get("/api/v1/session").status_code == 401
+        r = api().post("/api/v1/auth/login", json={"email": "alice@demo.invalid", "password": DEMO_PASSWORD})
+        assert r.status_code == 401
+    finally:
+        monkeypatch.setenv("RACKLOOM_PROFILE", "demo")
+        get_settings.cache_clear()
+
+
 def test_profil_demo_inchange(db_url):
     from fastapi.testclient import TestClient
 
