@@ -60,3 +60,19 @@ def test_role_allowed(conn: psycopg.Connection, role: str, query: str) -> None:
 def test_role_denied(conn: psycopg.Connection, role: str, query: str) -> None:
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         _run_as(conn, role, query)
+
+
+def test_api_scelle_et_remplace_un_secret_sans_le_relire(conn: psycopg.Connection, tmp_path, monkeypatch) -> None:
+    """Saisie d'un secret de connecteur par l'API (route admin) : création puis remplacement."""
+    from rackloom import secrets, security
+    from rackloom.config import get_settings
+
+    security.generate_keys(tmp_path)
+    monkeypatch.setenv("RACKLOOM_KEYS_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    with conn.transaction(force_rollback=True):
+        conn.execute("SET LOCAL ROLE rackloom_api")
+        secrets.put(conn, "secret://connectors/test/password", b"premier")
+        secrets.put(conn, "secret://connectors/test/password", b"second")
+        assert secrets.exists(conn, "secret://connectors/test/password")
+    get_settings.cache_clear()

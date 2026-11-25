@@ -24,11 +24,12 @@ def put(conn: psycopg.Connection, ref: str, plaintext: bytes, created_by: UUID |
         raise ValueError("référence secret:// attendue")
     pub = _pub()
     blob = security.seal(pub, plaintext, ref.encode())
+    key_id = security.key_id_for(pub)
+    # Pas de EXCLUDED.ciphertext : le lire exige SELECT sur la colonne, refusé au rôle API.
     conn.execute(
         "INSERT INTO secrets (id, ref, ciphertext, key_id, created_by) VALUES (%s, %s, %s, %s, %s) "
-        "ON CONFLICT (ref) DO UPDATE SET ciphertext = EXCLUDED.ciphertext, key_id = EXCLUDED.key_id, "
-        "created_by = EXCLUDED.created_by, created_at = now()",
-        (uuid7(), ref, blob, security.key_id_for(pub), created_by),
+        "ON CONFLICT (ref) DO UPDATE SET ciphertext = %s, key_id = %s, created_by = %s, created_at = now()",
+        (uuid7(), ref, blob, key_id, created_by, blob, key_id, created_by),
     )
 
 
