@@ -64,7 +64,8 @@ test('F21 — chronologie corrélée, reprise sans doublon, cloisonnement', asyn
     const flat = JSON.stringify(events)
     expect(flat).not.toMatch(/"stdout"|"stderr"|"plan_json"|"tfstate"/)
 
-    // Worker arrêté : approbation en file sans apply (pas de nœud consommé pour la suite F57).
+    // Worker arrêté : approbation + annulation du tf_apply avant redémarrage, sinon l'apply
+    // consommerait un nœud et ferait échouer F57 (no_address) plus loin dans la suite.
     compose('stop', 'worker')
     try {
       await logout(page)
@@ -78,11 +79,24 @@ test('F21 — chronologie corrélée, reprise sans doublon, cloisonnement', asyn
       })
       await expect(page.getByTestId('timeline')).toContainText(/Application du plan(?: approuvé)? : en file/i)
       await expect(page.getByTestId('job').filter({ hasText: 'Application du plan' })).toContainText('En file')
+
+      const jobs = (await alice.call('GET', `/changes/${planned.id}/jobs`)).body as any[]
+      const apply = jobs.find((j: any) => j.kind === 'tf_apply' && j.state === 'queued')
+      expect(apply, JSON.stringify(jobs)).toBeTruthy()
+      const cancel = await alice.call('POST', `/jobs/${apply.id}/cancel`)
+      expect(cancel.status, JSON.stringify(cancel.body)).toBe(200)
       await expectAccessible(page, 'F21 chronologie après approbation')
       await beat(page)
     } finally {
       compose('start', 'worker')
     }
+
+    // Admission refuse l'écriture annulée : aucun nœud de labo consommé.
+    await page.goto(`/demandes/${planned.id}`)
+    await expect.poll(async () => {
+      const jobs = (await alice.call('GET', `/changes/${planned.id}/jobs`)).body as any[]
+      return jobs.find((j: any) => j.kind === 'tf_apply')?.state
+    }, { timeout: 60_000 }).toMatch(/cancelled|blocked/)
 
     // Sources vCenter / Ansible / vérification : couverture intégration (test_f21_timeline parcours).
   } finally {
