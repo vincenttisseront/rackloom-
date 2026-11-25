@@ -40,6 +40,19 @@ def generate_identities(conn: psycopg.Connection, pub_dir: Path) -> dict[str, st
     return publics
 
 
+def identities_present(conn: psycopg.Connection, pub_dir: Path) -> bool:
+    row = conn.execute("SELECT value FROM platform_settings WHERE key = 'lab_ssh_public_keys'").fetchone()
+    if not row:
+        return False
+    for identity in IDENTITIES:
+        path = pub_dir / f"{identity}.pub"
+        if not path.exists() or path.read_text(encoding="utf-8").strip() != row["value"].get(identity):
+            return False
+        if not secrets.exists(conn, f"secret://lab/ssh/{identity}"):
+            return False
+    return True
+
+
 def import_anchor(conn: psycopg.Connection, address: str, public_key_line: str) -> dict[str, Any]:
     row = hosts.import_anchor(conn, address, public_key_line, "lab-node")
     audit.record(conn, actor_type="system", actor_id="lab", action="lab.host_anchor.import", outcome="ok",

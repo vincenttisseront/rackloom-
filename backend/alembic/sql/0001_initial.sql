@@ -679,6 +679,8 @@ BEGIN
         GRANT SELECT (id, ref, key_id, created_by, created_at) ON secrets TO rackloom_api;
         GRANT SELECT, INSERT ON audit_log TO rackloom_api;
         GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO rackloom_api;
+        -- Lu par /health/ready ; la table existe déjà, Alembic la crée avant la première révision.
+        GRANT SELECT ON alembic_version TO rackloom_api;
     END IF;
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rackloom_worker') THEN
         GRANT USAGE ON SCHEMA public TO rackloom_worker;
@@ -690,6 +692,7 @@ BEGIN
         GRANT SELECT (id, user_id, revoked_at) ON sessions TO rackloom_worker;
         GRANT SELECT, INSERT ON audit_log TO rackloom_worker;
         GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO rackloom_worker;
+        GRANT SELECT ON alembic_version TO rackloom_worker;
     END IF;
 END;
 $$;

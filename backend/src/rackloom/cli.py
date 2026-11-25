@@ -150,8 +150,12 @@ def cmd_ci_submit(args: argparse.Namespace) -> int:
 def cmd_lab_keys(args: argparse.Namespace) -> int:
     from . import lab
 
+    pub_dir = Path(args.pub_dir)
     with _conn() as conn:
-        publics = lab.generate_identities(conn, Path(args.pub_dir))
+        if args.if_missing and lab.identities_present(conn, pub_dir):
+            print("identités SSH de labo déjà présentes ; conservées")
+            return 0
+        publics = lab.generate_identities(conn, pub_dir)
         conn.commit()
     print(f"{len(publics)} identité(s) SSH de labo régénérée(s) ; clés publiques dans {args.pub_dir}")
     return 0
@@ -216,6 +220,7 @@ def build_parser() -> argparse.ArgumentParser:
     lab = sub.add_parser("lab").add_subparsers(dest="lab_command", required=True)
     lk = lab.add_parser("keys", help="régénère les identités SSH de labo (clés privées scellées en base)")
     lk.add_argument("--pub-dir", default=".lab/lab-keys")
+    lk.add_argument("--if-missing", action="store_true", help="ne régénère pas des identités déjà présentes")
     lk.set_defaults(func=cmd_lab_keys)
     la = lab.add_parser("anchor", help="importe la clé d'hôte d'un nœud (ligne OpenSSH sur l'entrée standard)")
     la.add_argument("--address", required=True)

@@ -27,6 +27,7 @@ __pycache__/
 node_modules/
 web/.nuxt/
 web/.output/
+web/dist
 web/.data/
 web/test-results/
 web/playwright-report/
