@@ -445,6 +445,10 @@ def resolve(conn: psycopg.Connection, *, principal: Principal, project: dict[str
         val(f"/instances/{index}/name", name, "template", ref=f"environments.{env['kind']}.naming")
         for key in ("vcpu", "memory_mb", "disk_gb"):
             val(f"/instances/{index}/{key}", dims[key], "template", ref=tier_ref)
+    if previous:
+        # Annoncé dès l'étape 2 ; le plan correspondant sera bloqué (aucune suppression au lot 1).
+        out["modification"] = {"removes": [n for n in previous if n not in names],
+                               "replaces": [n for n in names if n in previous and previous[n]["size_tier"] != tier]}
 
     # Composants, module, rôles, exécution, gouvernance.
     comps = registry.template_components(conn, contract)
@@ -522,5 +526,7 @@ def summary(resolution: dict[str, Any], project: dict[str, Any]) -> dict[str, An
     return {"outcome": resolution["outcome"], "headline": headline, "verifications": checks, "approval": approver,
             "creates": [i["name"] for i in resolution["instances"] if not i["existing"]],
             "keeps": [i["name"] for i in resolution["instances"] if i["existing"]],
+            "removes": resolution.get("modification", {}).get("removes", []),
+            "replaces": resolution.get("modification", {}).get("replaces", []),
             "production": env["is_production"], "missing": resolution["missing"],
             "simulated_steps": resolution["simulated_steps"], "preview_limits": resolution["preview_limits"]}

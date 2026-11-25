@@ -216,6 +216,9 @@ def test_t26_changement_de_niveau_ou_reduction_bloques(conn, demo, worker, worke
     c = _deployed(conn, demo, worker, quantity=2)
     m, res, plan = _modify(conn, demo, worker, c["deployment_id"], size_tier="standard")
     assert [i["existing"] for i in res["revision"]["resolved"]["instances"]] == [True, True]
+    names = [i["name"] for i in res["revision"]["resolved"]["instances"]]
+    # Risque annoncé dès l'étape 2, avant tout plan.
+    assert res["summary"]["replaces"] == names and res["summary"]["removes"] == []
     assert plan["status"] == "blocked_destructive"
     assert plan["summary"]["vm_counts"]["replace"] == 2
     with pytest.raises(ApiError) as exc:
@@ -224,7 +227,8 @@ def test_t26_changement_de_niveau_ou_reduction_bloques(conn, demo, worker, worke
     conn.rollback()
     service.cancel(conn, demo.principal("alice"), m["id"])
     conn.commit()
-    m2, _, plan2 = _modify(conn, demo, worker, c["deployment_id"], quantity=1)
+    m2, res2, plan2 = _modify(conn, demo, worker, c["deployment_id"], quantity=1)
+    assert res2["summary"]["removes"] == names[1:] and res2["summary"]["replaces"] == []
     assert plan2["status"] == "blocked_destructive"
     assert plan2["summary"]["vm_counts"]["delete"] == 1
     with pytest.raises(ApiError) as exc:

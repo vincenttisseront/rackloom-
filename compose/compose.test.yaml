@@ -1,0 +1,18 @@
+# Pile de test de bout en bout (make test-e2e) : trois nœuds de labo de plus, car chaque VM
+# simulée occupe un nœud pour toute sa vie et le parcours Playwright en crée jusqu'à six.
+services:
+  lab-node-4: &lab-node
+    image: rackloom/lab-node:dev
+    hostname: lab-node-4
+    networks: [rn-lab]
+    restart: unless-stopped
+    volumes: ["lab-keys:/lab-keys:ro"]
+    profiles: [lab]
+
+  lab-node-5:
+    <<: *lab-node
+    hostname: lab-node-5
+
+  lab-node-6:
+    <<: *lab-node
+    hostname: lab-node-6
