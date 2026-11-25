@@ -147,6 +147,41 @@ def cmd_ci_submit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_lab_keys(args: argparse.Namespace) -> int:
+    from . import lab
+
+    with _conn() as conn:
+        publics = lab.generate_identities(conn, Path(args.pub_dir))
+        conn.commit()
+    print(f"{len(publics)} identité(s) SSH de labo régénérée(s) ; clés publiques dans {args.pub_dir}")
+    return 0
+
+
+def cmd_lab_anchor(args: argparse.Namespace) -> int:
+    from . import lab
+
+    line = sys.stdin.readline().strip()
+    with _conn() as conn:
+        row = lab.import_anchor(conn, args.address, line)
+        conn.commit()
+    print(f"ancre importée pour {args.address} : {row['fingerprint']}")
+    return 0
+
+
+def cmd_lab_nodes(args: argparse.Namespace) -> int:
+    from . import lab
+
+    nodes = []
+    for item in args.node:
+        name, _, address = item.partition("=")
+        nodes.append({"name": name, "address": address or name})
+    with _conn() as conn:
+        lab.set_nodes(conn, nodes)
+        conn.commit()
+    print(f"{len(nodes)} nœud(s) de labo déclaré(s)")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="rackloom")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -178,6 +213,16 @@ def build_parser() -> argparse.ArgumentParser:
     o = openapi.add_parser("export")
     o.add_argument("--output", default="openapi/openapi.json")
     o.set_defaults(func=cmd_openapi_export)
+    lab = sub.add_parser("lab").add_subparsers(dest="lab_command", required=True)
+    lk = lab.add_parser("keys", help="régénère les identités SSH de labo (clés privées scellées en base)")
+    lk.add_argument("--pub-dir", default=".lab/lab-keys")
+    lk.set_defaults(func=cmd_lab_keys)
+    la = lab.add_parser("anchor", help="importe la clé d'hôte d'un nœud (ligne OpenSSH sur l'entrée standard)")
+    la.add_argument("--address", required=True)
+    la.set_defaults(func=cmd_lab_anchor)
+    ln = lab.add_parser("nodes", help="déclare les nœuds de labo (nom=adresse)")
+    ln.add_argument("node", nargs="+")
+    ln.set_defaults(func=cmd_lab_nodes)
     ci = sub.add_parser("ci").add_subparsers(dest="ci_command", required=True)
     s = ci.add_parser("submit", help="dépose un besoin (JSON, catégorie A) par l'API")
     s.add_argument("--url", required=True)

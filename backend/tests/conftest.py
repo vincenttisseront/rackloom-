@@ -173,6 +173,106 @@ def worker_env(db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     return data
 
 
+def docker(*args: str, check: bool = True) -> str:
+    import subprocess
+
+    proc = subprocess.run(["docker", *args], capture_output=True, text=True, timeout=180)
+    if check and proc.returncode != 0:
+        raise RuntimeError(f"docker {args[0]} : {proc.stderr.strip()[:300]}")
+    return proc.stdout.strip()
+
+
+class Lab:
+    """Nœuds de labo jetables : conteneurs `lab-node` sur un réseau bridge dédié au test."""
+
+    def __init__(self, conn: psycopg.Connection, pub_dir: Path, image: str) -> None:
+        self.conn = conn
+        self.pub_dir = pub_dir
+        self.image = image
+        self.tag = secrets.token_hex(3)
+        self.network = f"rl-test-{self.tag}"
+        self.nodes: list[dict[str, str]] = []
+
+    def start(self, count: int) -> None:
+        import socket
+        import time
+
+        from rackloom import lab
+
+        docker("network", "create", self.network)
+        lab.generate_identities(self.conn, self.pub_dir)
+        for path in [self.pub_dir, *self.pub_dir.iterdir()]:
+            path.chmod(0o755 if path.is_dir() else 0o644)
+        for i in range(1, count + 1):
+            name = f"rl-lab-{self.tag}-{i}"
+            docker("run", "-d", "--name", name, "--hostname", name, "--network", self.network,
+                   "-v", f"{self.pub_dir}:/lab-keys:ro", self.image)
+            self.nodes.append({"name": name, "address": ""})
+        for node in self.nodes:
+            node["address"] = docker("inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+                                     node["name"])
+            self.import_anchor(node)
+            deadline = time.monotonic() + 30
+            while True:
+                try:
+                    with socket.create_connection((node["address"], 22), timeout=1):
+                        break
+                except OSError:
+                    if time.monotonic() > deadline:
+                        raise
+                    time.sleep(0.3)
+        lab.set_nodes(self.conn, self.nodes)
+        self.conn.commit()
+
+    def import_anchor(self, node: dict[str, str]) -> None:
+        import time
+
+        from rackloom import lab
+
+        deadline = time.monotonic() + 30
+        while True:
+            key = docker("exec", node["name"], "cat", "/var/lib/lab-node/host_key.pub", check=False)
+            if key.startswith("ssh-"):
+                break
+            if time.monotonic() > deadline:
+                raise RuntimeError("clé d'hôte du nœud absente")
+            time.sleep(0.3)
+        lab.import_anchor(self.conn, node["address"], key)
+        self.conn.commit()
+
+    def exec(self, index: int, *cmd: str) -> str:
+        return docker("exec", "-u", "root", self.nodes[index]["name"], *cmd)
+
+    def node_of(self, host_address: str) -> int:
+        return next(i for i, n in enumerate(self.nodes) if n["address"] == host_address)
+
+    def stop(self, index: int) -> None:
+        docker("stop", "-t", "1", self.nodes[index]["name"])
+
+    def regenerate_host_key(self, index: int) -> None:
+        """Nouvelle clé d'hôte, ancre inchangée : la connexion doit être refusée (T20)."""
+        self.exec(index, "sh", "-c", "rm -f /var/lib/lab-node/ssh_host_ed25519_key*")
+        docker("restart", "-t", "1", self.nodes[index]["name"])
+
+    def close(self) -> None:
+        for node in self.nodes:
+            docker("rm", "-f", node["name"], check=False)
+        docker("network", "rm", self.network, check=False)
+
+
+@pytest.fixture
+def lab(conn: psycopg.Connection, worker_env: Path, tmp_path: Path) -> Iterator[Lab]:
+    """Laboratoire local jetable. Exige le moteur de conteneurs et l'image `rackloom/lab-node:dev`."""
+    from rackloom.config import get_settings
+
+    get_settings.cache_clear()
+    env = Lab(conn, tmp_path / "lab-keys", os.environ.get("RACKLOOM_LAB_NODE_IMAGE", "rackloom/lab-node:dev"))
+    try:
+        yield env
+    finally:
+        env.close()
+
+
 @pytest.fixture
 def worker(worker_env: Path):
     from rackloom.worker.main import Worker

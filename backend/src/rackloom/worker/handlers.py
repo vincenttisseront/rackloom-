@@ -543,8 +543,11 @@ def service_status(host_results: list[dict[str, Any]]) -> tuple[str, str]:
     if incomplete:
         return "created_not_ready", "VM créée, configuration incomplète"
     if failing:
-        first = next(c for c in failing[0]["checks"] if not c["ok"])
-        return "created_not_ready", f"VM créée, {first['failure']}"
+        # La sonde HTTP est le symptôme visible par l'utilisateur : elle mène la raison affichée.
+        failed = sorted((c for h in failing for c in h["checks"] if not c["ok"]),
+                        key=lambda c: c["type"] != "http_probe")
+        reasons = list(dict.fromkeys(c["failure"] for c in failed))
+        return "created_not_ready", "VM créée, " + " ; ".join(reasons)
     if unavailable:
         return "verification_unavailable", "vérification indisponible"
     return "ready", "tous les contrôles de santé ont réussi"

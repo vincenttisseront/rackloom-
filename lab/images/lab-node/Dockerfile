@@ -26,7 +26,7 @@ RUN apt-get update \
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openssh-server python3 sudo tini ca-certificates \
+ && apt-get install -y --no-install-recommends openssh-server python3 python3-apt sudo tini ca-certificates \
       iproute2 procps \
  && apt-get clean && rm -rf /var/lib/apt/lists/* \
  && rm -f /etc/ssh/ssh_host_* \
