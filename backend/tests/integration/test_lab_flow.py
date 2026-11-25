@@ -1,18 +1,24 @@
 """Parcours complet sur nœuds de labo jetables : préparation invitée, Ansible, vérification, état du service.
 
-Couvre D1 jusqu'à « Succès », T10, T20, T22 et T41. Ressources locales uniquement : conteneurs
-`lab-node` sur un réseau bridge propre au test, détruits à la fin. La personnalisation invitée et
-l'attribution d'adresse restent SIMULÉES (vCenter fictif) ; SSH, Ansible et la sonde HTTP sont réels.
-Niveau de preuve : testé localement (Terraform CLI, ansible-runner, OpenSSH réels ; aucun vCenter).
+Couvre D1 jusqu'à « Succès », T10, T20, T22, T25 (réconciliation Ansible) et T41. Ressources locales
+uniquement : conteneurs `lab-node` sur un réseau bridge propre au test, détruits à la fin. La
+personnalisation invitée et l'attribution d'adresse restent SIMULÉES (vCenter fictif) ; SSH, Ansible
+et la sonde HTTP sont réels. Niveau de preuve : testé localement (Terraform CLI, ansible-runner,
+OpenSSH réels ; aucun vCenter).
 """
 
 from __future__ import annotations
+
+import json
 
 import pytest
 
 import flows
 from rackloom import approvals
+from rackloom.changes.transitions import transition
+from rackloom.db import transaction
 from rackloom.errors import ApiError
+from rackloom.executions import queue
 from rackloom.projects import freezes
 
 pytestmark = [pytest.mark.terraform, pytest.mark.ansible, pytest.mark.docker]
@@ -150,6 +156,44 @@ def test_t22_echec_partiel_puis_reprise_ciblee(conn, demo, worker, lab):
     assert configure["payload"]["host_ids"] == [str(second["id"])]
     assert flows.change(conn, c["id"])["state"] == "succeeded"
     assert flows.deployment(conn, c["deployment_id"])["service_status"] == "ready"
+
+
+def test_t25_reconcile_ansible_depuis_sorties(conn, demo, worker, lab, worker_env):
+    """T25 : configure terminé sur disque, worker mort avant écriture → réconciliation, aucune relance."""
+    lab.start(1)
+    c = _approved_and_applied(conn, demo, worker)
+    assert worker.drain(kinds=["guest_ready"]) == ["guest_ready"]
+    configure = flows.jobs_of(conn, c["id"], "ansible_configure")[0]
+    host = _hosts(conn, c["deployment_id"])[0]
+    run_id = str(configure["id"])
+    work = worker_env / "workspaces" / run_id
+    (work / "out").mkdir(parents=True)
+    (work / ".run.json").write_text(json.dumps({"run_id": run_id, "job_id": run_id}), encoding="utf-8")
+    (work / "out" / "exit_code").write_text("0", encoding="utf-8")
+    (work / "out" / "ansible_summary.json").write_text(json.dumps({
+        "status": "successful",
+        "hosts": {host["name"]: {"ok": 3, "changed": 1, "failures": 0, "dark": 0, "skipped": 0, "tasks": []}},
+        "reports": {},
+    }), encoding="utf-8")
+    with transaction() as tx:
+        tx.execute(
+            "UPDATE jobs SET state = 'uncertain', dispatched_at = now(), provider_ref = %s, "
+            "lease_owner = NULL, updated_at = now() WHERE id = %s",
+            (run_id, configure["id"]))
+        change = tx.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (c["id"],)).fetchone()
+        transition(tx, change, "uncertain", reason_code="lease_lost_after_dispatch", actor_type="worker",
+                   actor_id="test-worker-1",
+                   detail={"message": "Résultat incertain : réconciliation en lecture seule"})
+        queue.enqueue(tx, kind="reconcile", change=change, idempotency_key=f"reconcile:{configure['id']}",
+                      payload={"job_id": str(configure["id"])}, priority=10)
+    assert worker.drain(kinds=["reconcile", "verify"]) == ["reconcile", "verify"]
+    job = flows.job(conn, configure["id"])
+    assert job["state"] == "succeeded" and job["result"]["source"] == "workspace"
+    # Sorties fictives : pas d'installation réelle → verify peut conclure partiel ; l'essentiel
+    # est qu'aucune seconde configuration n'ait été lancée et que le job incertain soit clos.
+    assert flows.change(conn, c["id"])["state"] in ("succeeded", "partially_succeeded")
+    assert len(flows.jobs_of(conn, c["id"], "ansible_configure")) == 1
+    assert flows.jobs_of(conn, c["id"], "reconcile")[0]["state"] == "succeeded"
 
 
 def test_f28_configuration_bloquee_par_le_gel_puis_reprise(conn, demo, worker, lab):

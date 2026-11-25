@@ -197,7 +197,8 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 - Branche `cursor/lot-a-f28-gel-20f1`. Migration `0002` (`environment_freezes`), règle d'admission R080 (étapes `start` et `dispatch`), bundle `builtin@2`, API `/environments/{id}/freeze|unfreeze`, `/admin/environments`, bandeaux UI, D8 provisoire (admin plateforme ou approbateur).
 - Commandes : `make test` → **193 tests passés** (dont 7 `test_freeze` + 1 labo F28) ; `RACKLOOM_E2E_VIDEO=1 ./scripts/test-e2e.sh 60-f28-gel` → Playwright F28 OK (~19 s de vidéo), T25/T24/T28 OK. E2e de référence sur `main` avant changement : 6 Playwright verts + T25/T24/T28 OK.
-- Preuves : `backend/tests/integration/test_freeze.py`, `test_lab_flow.py::test_f28_…`, `web/e2e/60-f28-gel.spec.ts`, vidéo magasin `/cursor/stores/…/media/lot-a-f28-gel-urgence.webm` (vérifiée : motif, Gelé, Bloquée/R080, diagnostic, dégel). Niveau : **testé localement**. Labo réel : non (D2).
+- Suivi CI : e2e a échoué une fois sur T25 (course : `ansible_configure` interrompu → `partially_succeeded` + réconciliation OK, données conservées, un seul `tf_apply`). Correctif : `finish_configure` (sorties runner, miroir de `finish_apply`) ; `smoke-d1.py` accepte reprise **ou** réconciliation sans doublon (lot-1-plan T25).
+- Preuves : `backend/tests/integration/test_freeze.py`, `test_lab_flow.py::test_f28_…` et `test_t25_reconcile_ansible_depuis_sorties`, `web/e2e/60-f28-gel.spec.ts`, vidéo magasin `/cursor/stores/…/media/lot-a-f28-gel-urgence.webm`. Niveau : **testé localement**. Labo réel : non (D2).
 - Limites : un job déjà `dispatched` n'est pas stoppé (suivi seulement) ; un job bloqué ne repart pas au dégel (nouvelle version ou reprise) ; D8 non tranchée formellement ; pas de job réellement envoyé à vCenter.
 - Suite du lot A : **F27** (calendriers), puis **F21** (chronologie unifiée).
 
