@@ -1,0 +1,21 @@
+# Profil de démonstration : nœuds de labo jetables sur le réseau interne rn-lab.
+# Ils jouent les VM créées (personnalisation invitée et attribution d'adresse SIMULÉES) ;
+# SSH, Ansible, nginx et la sonde HTTP sont réels. Aucun accès sortant.
+services:
+  lab-node-1: &lab-node
+    image: rackloom/lab-node:dev
+    build: {context: ../lab/images/lab-node}
+    hostname: lab-node-1
+    networks: [rn-lab]
+    # Pas de no-new-privileges : le nœud joue une VM, Ansible y élève ses droits via sudo.
+    restart: unless-stopped
+    volumes: ["lab-keys:/lab-keys:ro"]
+    profiles: [lab]
+
+  lab-node-2:
+    <<: *lab-node
+    hostname: lab-node-2
+
+  lab-node-3:
+    <<: *lab-node
+    hostname: lab-node-3

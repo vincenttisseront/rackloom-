@@ -1,0 +1,62 @@
+"""Droits des rôles de connexion PostgreSQL de l'API et du worker.
+
+Les autres tests se connectent en propriétaire ; ceux-ci rejouent les requêtes sous
+`SET ROLE` pour vérifier les GRANT de la migration. Niveau de preuve : testé localement.
+"""
+
+from __future__ import annotations
+
+import psycopg
+import pytest
+
+ALLOWED = {
+    "rackloom_api": [
+        "SELECT version_num FROM alembic_version",
+        "SELECT id, ref, key_id FROM secrets",
+        "SELECT id_hash FROM sessions",
+        "SELECT count(*) FROM audit_log",
+    ],
+    "rackloom_worker": [
+        "SELECT version_num FROM alembic_version",
+        "SELECT ciphertext FROM secrets",
+        "SELECT id, user_id, revoked_at FROM sessions",
+        "SELECT count(*) FROM audit_log",
+    ],
+}
+
+DENIED = {
+    "rackloom_api": [
+        "SELECT ciphertext FROM secrets",
+        "UPDATE audit_log SET action = action",
+        "DELETE FROM audit_log",
+        "DELETE FROM secrets",
+        "UPDATE alembic_version SET version_num = version_num",
+    ],
+    "rackloom_worker": [
+        "SELECT id_hash FROM sessions",
+        "SELECT csrf_hash FROM sessions",
+        "SELECT * FROM login_attempts",
+        "SELECT * FROM bootstrap_tokens",
+        "SELECT * FROM idempotency_keys",
+        "UPDATE audit_log SET action = action",
+        "DELETE FROM audit_log",
+        "UPDATE alembic_version SET version_num = version_num",
+    ],
+}
+
+
+def _run_as(conn: psycopg.Connection, role: str, query: str) -> None:
+    with conn.transaction(force_rollback=True):
+        conn.execute(f"SET LOCAL ROLE {role}")
+        conn.execute(query)
+
+
+@pytest.mark.parametrize(("role", "query"), [(r, q) for r, qs in ALLOWED.items() for q in qs])
+def test_role_allowed(conn: psycopg.Connection, role: str, query: str) -> None:
+    _run_as(conn, role, query)
+
+
+@pytest.mark.parametrize(("role", "query"), [(r, q) for r, qs in DENIED.items() for q in qs])
+def test_role_denied(conn: psycopg.Connection, role: str, query: str) -> None:
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        _run_as(conn, role, query)

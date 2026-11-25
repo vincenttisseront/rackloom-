@@ -1,0 +1,5 @@
+# Terraform CLI du runner. Le hachage est vérifié à la construction de l'image (sha256sum -c).
+# Source : https://releases.hashicorp.com/terraform/1.17.2/terraform_1.17.2_SHA256SUMS
+terraform 1.17.2 linux_amd64 e6f16b2f0b137ee5729caa8c4e79a3bae4ee261acd198a1fcfa8584a6296605b
+# Providers : versions et hachages fixés par catalog/terraform/lab-vm/1.0.0/.terraform.lock.hcl
+# (init -lockfile=readonly), servis par le miroir local de l'image.

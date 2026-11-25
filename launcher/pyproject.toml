@@ -1,0 +1,32 @@
+[project]
+name = "rackloom-launcher"
+version = "0.1.0"
+description = "Launcher Rackloom : API Unix étroite vers le moteur de conteneurs, sans accès base"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.165.0",
+  "uvicorn==0.54.0",
+  "httpx==0.28.1",
+  "pydantic==2.14.4",
+]
+
+[project.scripts]
+rackloom-launcher = "rackloom_launcher.server:run"
+
+[dependency-groups]
+dev = ["pytest==9.2.0", "ruff==0.17.6"]
+
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rackloom_launcher"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101", "S603", "S607", "B008"]

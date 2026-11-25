@@ -1,0 +1,23 @@
+schema: rackloom.component/v1
+slug: nginx
+version: 1.1.0
+title: "Serveur web Nginx"
+supports: {os: [ubuntu-24.04], prerequisites: [apt_signed_repository]}
+parameters:
+  listen_port: {type: integer, min: 1, max: 65535, default: 80}
+  server_tokens: {type: boolean, default: false}
+  security_headers: {type: boolean, default: true}
+secret_refs: {}
+depends_on: []
+incompatible_with: [apache2]
+effects:
+  packages: [nginx]
+  services: [{unit: nginx, enabled: true, state: started}]
+  ports: [{port: "{listen_port}", proto: tcp}]
+  files: [/etc/nginx/conf.d/rackloom.conf, /etc/nginx/sites-available/default]
+  reboot: never
+checks:
+  - {type: package_installed, package: nginx}
+  - {type: service_active, unit: nginx}
+  - {type: http_probe, port: "{listen_port}", path: /, expect_status: 200}
+implementation: {ansible_role: rackloom.nginx, version: 1.1.0}

@@ -1,0 +1,47 @@
+---
+- name: Contrôler les paramètres reçus
+  ansible.builtin.assert:
+    that:
+      - rackloom_params.listen_port | int >= 1
+      - rackloom_params.listen_port | int <= 65535
+      - rackloom_params.server_tokens in [true, false]
+    quiet: true
+
+- name: Installer nginx depuis le dépôt approuvé et signé
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: true
+    install_recommends: false
+
+- name: Configuration globale Rackloom
+  ansible.builtin.template:
+    src: rackloom.conf.j2
+    dest: /etc/nginx/conf.d/rackloom.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Recharger nginx
+
+- name: Site par défaut sur le port déclaré
+  ansible.builtin.template:
+    src: default-site.j2
+    dest: /etc/nginx/sites-available/default
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Recharger nginx
+
+- name: Démarrer nginx et l'activer au démarrage
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Marquer nginx comme activé au redémarrage du nœud de labo
+  ansible.builtin.file:
+    path: /var/lib/lab-node/nginx-enabled
+    state: touch
+    mode: "0644"
+    modification_time: preserve
+    access_time: preserve

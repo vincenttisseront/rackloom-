@@ -1,0 +1,17 @@
+schema: rackloom.role-contract/v1
+name: rackloom.nginx
+version: 1.1.0
+# Seuls ces paramètres sont transmis au rôle (configuration déclarée du composant).
+parameters: [listen_port, server_tokens, security_headers]
+packages: [nginx]
+services: [{name: nginx, state: started, enabled: true}]
+privilege_escalation: required
+identity: rackloom-config
+check_mode:
+  covered:
+    - "présence du paquet nginx (installation simulée)"
+    - "contenu des fichiers de configuration rendus"
+    - "état démarré et activé du service nginx"
+  not_covered:
+    - "téléchargement et intégrité des paquets (seulement à l'exécution réelle)"
+    - "réponse HTTP du service (vérification après exécution)"

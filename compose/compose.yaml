@@ -1,0 +1,194 @@
+# Services de l'appliance Rackloom (lot 1, profil de démonstration local).
+# Seul Caddy publie un port, sur 127.0.0.1:8443 (T28). core, ai et rn-lab sont internes.
+# Aucun conteneur privilégié, aucun network_mode: host ; le socket du moteur de conteneurs
+# n'est monté que dans le launcher, qui n'a aucun réseau.
+name: rackloom
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+
+x-backend-env: &backend-env
+  RACKLOOM_PROFILE: demo
+  RACKLOOM_PUBLIC_ORIGIN: ${RACKLOOM_PUBLIC_ORIGIN:-https://localhost:8443}
+  RACKLOOM_KEYS_DIR: /run/rackloom-keys
+  RACKLOOM_DATA_DIR: /var/lib/rackloom
+  RACKLOOM_CHAT_ADAPTER: ${RACKLOOM_CHAT_ADAPTER:-fake}
+
+services:
+  caddy:
+    <<: *hardened
+    image: rackloom/web:dev
+    build: {context: .., dockerfile: compose/caddy/Dockerfile}
+    ports: ["127.0.0.1:8443:8443"]
+    networks: [edge, core]
+    volumes: ["caddy-data:/data", "caddy-config:/config"]
+    depends_on:
+      api: {condition: service_healthy}
+
+  postgres:
+    <<: *hardened
+    image: postgres:16.11-bookworm
+    user: "999:999"
+    networks: [core]
+    environment:
+      POSTGRES_USER: rackloom_owner
+      POSTGRES_DB: rackloom
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_owner
+    secrets: [pg_owner, pg_api, pg_worker]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m", "/var/run/postgresql:rw,nosuid,size=8m,uid=999,gid=999"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/10-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "rackloom_owner", "-d", "rackloom"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # Tâches ponctuelles : clés, migrations, chargement du registre, labo (docker compose run --rm).
+  cli:
+    <<: *hardened
+    image: rackloom/backend:dev
+    build: {context: .., dockerfile: backend/Dockerfile}
+    restart: "no"
+    profiles: [tools]
+    entrypoint: ["rackloom"]
+    networks: [core]
+    environment:
+      <<: *backend-env
+      RACKLOOM_DATABASE_URL: postgresql://rackloom_owner@postgres:5432/rackloom
+      RACKLOOM_DATABASE_PASSWORD_FILE: /run/secrets/pg_owner
+      RACKLOOM_MIGRATOR_PASSWORD_FILE: /run/secrets/pg_owner
+    secrets: [pg_owner]
+    volumes:
+      - keys-api:/run/rackloom-keys:ro
+      - lab-keys:/lab-keys
+      - ../.lab:/lab
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  # Initialisation ponctuelle (root, sans réseau) : génère les clés hors base une fois et les
+  # répartit (le worker reçoit tout, l'API seulement la clé des artefacts de classe B et la clé
+  # publique de la boîte scellée), puis donne à l'utilisateur 10001 les racines des volumes écrits.
+  init:
+    <<: *hardened
+    image: rackloom/backend:dev
+    restart: "no"
+    profiles: [tools]
+    user: "0:0"
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
+    network_mode: none
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        rackloom keys init --dir /keys/worker
+        && cp /keys/worker/artifact-b.key /keys/worker/secrets-box.pub /keys/api/
+        && chown -R 10001:10001 /keys/worker /keys/api /keys/lab
+        && chmod 0600 /keys/api/artifact-b.key
+        && chmod 0755 /keys/lab
+        && chown 10001:10001 /vol/workspaces /vol/artifacts
+        && chmod 0770 /vol/workspaces /vol/artifacts
+    volumes:
+      - keys-worker:/keys/worker
+      - keys-api:/keys/api
+      - lab-keys:/keys/lab
+      - workspaces:/vol/workspaces
+      - artifacts:/vol/artifacts
+
+  api:
+    <<: *hardened
+    image: rackloom/backend:dev
+    networks: [core, ai]
+    environment:
+      <<: *backend-env
+      RACKLOOM_DATABASE_URL: postgresql://rackloom_api@postgres:5432/rackloom
+      RACKLOOM_DATABASE_PASSWORD_FILE: /run/secrets/pg_api
+    secrets: [pg_api]
+    volumes:
+      - keys-api:/run/rackloom-keys:ro
+      - artifacts:/var/lib/rackloom/artifacts:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3).status != 200)"]
+      interval: 3s
+      timeout: 4s
+      retries: 40
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  worker:
+    <<: *hardened
+    image: rackloom/backend:dev
+    command: ["python", "-m", "rackloom.worker.main"]
+    networks: [core, ai]
+    environment:
+      <<: *backend-env
+      RACKLOOM_DATABASE_URL: postgresql://rackloom_worker@postgres:5432/rackloom
+      RACKLOOM_DATABASE_PASSWORD_FILE: /run/secrets/pg_worker
+      RACKLOOM_LAUNCHER_MODE: socket
+      RACKLOOM_LAUNCHER_SOCKET: /run/rackloom/launcher.sock
+      RACKLOOM_WORKER_SLOTS: ${RACKLOOM_WORKER_SLOTS:-2}
+    secrets: [pg_worker]
+    volumes:
+      - keys-worker:/run/rackloom-keys:ro
+      - artifacts:/var/lib/rackloom/artifacts
+      - workspaces:/var/lib/rackloom/workspaces
+      - launcher-sock:/run/rackloom
+    depends_on:
+      postgres: {condition: service_healthy}
+      launcher: {condition: service_started}
+
+  launcher:
+    <<: *hardened
+    image: rackloom/launcher:dev
+    build: {context: .., dockerfile: launcher/Dockerfile}
+    # root pour le socket du moteur ; groupe 10001 pour que le worker joigne le socket Unix du launcher.
+    user: "0:10001"
+    cap_add: [CHOWN]
+    network_mode: none
+    environment:
+      RACKLOOM_RUNNER_IMAGE_TERRAFORM: rackloom/runner-terraform:dev
+      RACKLOOM_RUNNER_IMAGE_ANSIBLE: rackloom/runner-ansible:dev
+      RACKLOOM_VOLUME_WORKSPACES: rackloom_workspaces
+      RACKLOOM_VOLUME_TFSTATE: rackloom_tfstate
+      RACKLOOM_VOLUME_DEMO_INFRA: rackloom_demo_infra
+      RACKLOOM_NETWORK_RN_LAB: rackloom_rn-lab
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - launcher-sock:/run/rackloom
+      - workspaces:/volumes/workspaces
+      - tfstate:/volumes/tfstate
+      - demo-infra:/volumes/demo-infra
+
+# Réseaux internes en mode « isolated » : le pont n'a pas d'adresse côté hôte, donc l'hôte
+# n'a aucune route vers PostgreSQL, l'API, Ollama ou les runners (T28). Seul edge est routé.
+x-isolated: &isolated
+  internal: true
+  driver_opts: {com.docker.network.bridge.gateway_mode_ipv4: isolated}
+
+networks:
+  edge: {name: rackloom_edge}
+  core: {<<: *isolated, name: rackloom_core}
+  ai: {<<: *isolated, name: rackloom_ai}
+  rn-lab: {<<: *isolated, name: rackloom_rn-lab}
+
+volumes:
+  pgdata: {name: rackloom_pgdata}
+  keys-worker: {name: rackloom_keys_worker}
+  keys-api: {name: rackloom_keys_api}
+  artifacts: {name: rackloom_artifacts}
+  workspaces: {name: rackloom_workspaces}
+  tfstate: {name: rackloom_tfstate}
+  demo-infra: {name: rackloom_demo_infra}
+  launcher-sock: {name: rackloom_launcher_sock}
+  lab-keys: {name: rackloom_lab_keys}
+  caddy-data: {name: rackloom_caddy_data}
+  caddy-config: {name: rackloom_caddy_config}
+
+secrets:
+  pg_owner: {file: ../.lab/secrets/pg_owner}
+  pg_api: {file: ../.lab/secrets/pg_api}
+  pg_worker: {file: ../.lab/secrets/pg_worker}

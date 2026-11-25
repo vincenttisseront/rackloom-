@@ -1,0 +1,7 @@
+# Géré par Rackloom (composant nginx {{ rackloom_component_version }}). Ne pas modifier à la main.
+server_tokens {{ 'on' if rackloom_params.server_tokens else 'off' }};
+{% if rackloom_params.security_headers %}
+add_header X-Content-Type-Options nosniff always;
+add_header X-Frame-Options DENY always;
+add_header Referrer-Policy no-referrer always;
+{% endif %}

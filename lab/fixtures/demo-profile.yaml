@@ -1,0 +1,69 @@
+schema: rackloom.demo-profile/v1
+# Profil de démonstration (docs/lot-1-plan.md §5). Refusé en profil production. Identités
+# fictives en .demo.invalid ; mots de passe générés à chaque chargement, jamais dans le dépôt.
+users:
+  - {key: admin, email: admin@demo.invalid, name: "Admin (démo)", roles: [{role: platform_admin}]}
+  - {key: pub, email: pub@demo.invalid, name: "Paul (publicateur)", roles: [{role: template_publisher}]}
+  - {key: alice, email: alice@demo.invalid, name: "Alice (opératrice)", roles: [{role: operator, project: vitrine}]}
+  - {key: bruno, email: bruno@demo.invalid, name: "Bruno (approbateur)", roles: [{role: approver, project: vitrine}]}
+  - {key: chloe, email: chloe@demo.invalid, name: "Chloé (opératrice)", roles: [{role: operator, project: compta}]}
+  - {key: david, email: david@demo.invalid, name: "David (auditeur)", roles: [{role: auditor}]}
+
+projects:
+  - slug: vitrine
+    code: vit
+    name: Vitrine
+    referent: bruno
+    environments:
+      - {slug: dev, name: dev, kind: dev, plan_ttl_seconds: 14400, policy: dev}
+      - {slug: prod, name: prod, kind: prod, plan_ttl_seconds: 3600, policy: prod}
+  - slug: compta
+    code: cpt
+    name: Compta
+    referent: chloe
+    environments:
+      - {slug: dev, name: dev, kind: dev, plan_ttl_seconds: 14400, policy: dev}
+
+# Politiques d'environnement (version 1, immuables ; une modification crée une version).
+policies:
+  dev:
+    explicit_request: false
+    lifetime: {required: true, max_days: 30}
+    approval: {required: true, distinct_approver: true}
+  prod:
+    explicit_request: true
+    lifetime: {required: false}
+    approval: {required: true, distinct_approver: true}
+
+# Octrois d'inventaire et de services. compta/dev ne reçoit aucun réseau (démonstration D3).
+grants:
+  vitrine/dev:
+    service_template: [ubuntu-web]
+    image: [vm-500]
+    cluster: [domain-c10]
+    datastore: [datastore-201]
+    folder: [group-v21]
+    network: [network-101, network-102]
+  vitrine/prod:
+    service_template: [ubuntu-web]
+    image: [vm-500]
+    cluster: [domain-c20]
+    datastore: [datastore-301]
+    folder: [group-v22]
+    network: [network-301]
+  compta/dev:
+    service_template: [ubuntu-web]
+    image: [vm-500]
+    cluster: [domain-c10]
+    datastore: [datastore-201]
+    folder: [group-v23]
+
+# Version de template publiée au chargement ; 1.1.0 reste candidate (validée, non publiée).
+publish:
+  - {template: ubuntu-web, version: 1.0.0, reason: "Template de démonstration du lot 1"}
+
+connectors:
+  - {slug: vsphere-fake, kind: vsphere, mode: simulated}
+  - {slug: terraform-cli, kind: terraform, mode: real}
+  - {slug: ansible-runner, kind: ansible, mode: real}
+  - {slug: model-fake, kind: model, mode: simulated}
