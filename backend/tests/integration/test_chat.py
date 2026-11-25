@@ -50,6 +50,18 @@ def _apply(need: dict, patch: list[dict]) -> dict:
     return need
 
 
+def test_configuration_assistant_reservee_a_l_admin(api):
+    assert api("alice").get(f"{API}/admin/assistant").status_code == 403
+    assert api("alice").put(f"{API}/admin/assistant", json={"adapter": "disabled"}).status_code == 403
+    _scenario(api, "unavailable")
+    cfg = api("admin").get(f"{API}/admin/assistant").json()
+    assert cfg["adapter"] == "fake" and cfg["scenario"] == "unavailable" and cfg["simulated"] is True
+    assert set(cfg["scenarios"]) == set(chat.SCENARIOS)
+    _scenario(api, "nominal", adapter="disabled")
+    assert api("alice").get(f"{API}/assistant/status").json() == {"available": False, "simulated": False,
+                                                                  "adapter": "disabled"}
+
+
 def test_d1_une_seule_question_puis_formulaire(api):
     alice = api("alice")
     res = _ask(alice, D1)

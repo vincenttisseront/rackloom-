@@ -201,6 +201,25 @@ def test_t34_d4_jamais_la_production_par_defaut(conn, demo):
     assert res["summary"]["approval"].endswith("(circuit de production)")
 
 
+def test_cli_grants_retrait_et_retablissement(conn, demo, db_url):
+    from rackloom import cli
+
+    args = ["--project", "vitrine", "--environment", "dev", "--kind", "network", "--reason", "D4"]
+    assert cli.main(["grants", "revoke", *args]) == 0
+    conn.commit()
+    _, res = _version(conn, demo)
+    assert [b["code"] for b in res["revision"]["block_reasons"]] == ["no_authorized_network"]
+    assert res["revision"]["resolved"]["environment"]["slug"] == "dev"
+    conn.commit()
+    assert cli.main(["grants", "restore", *args]) == 0
+    conn.commit()
+    _, res = _version(conn, demo)
+    assert res["revision"]["outcome"] == "resolved"
+    actions = [r["action"] for r in conn.execute(
+        "SELECT action FROM audit_log WHERE action LIKE 'grant.%' ORDER BY id").fetchall()]
+    assert actions == ["grant.revoke", "grant.restore"]
+
+
 def test_d13_plusieurs_environnements_hors_production(conn, demo):
     project = demo.project("vitrine")
     env_id = conn.execute(

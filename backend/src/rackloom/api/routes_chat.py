@@ -22,6 +22,15 @@ def assistant_status(request: Request) -> dict[str, Any]:
         return {"available": cfg["available"], "simulated": cfg["simulated"], "adapter": cfg["adapter"]}
 
 
+@router.get("/admin/assistant")
+def assistant_config(request: Request) -> dict[str, Any]:
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        cfg = chat.assistant_settings(u.conn)
+        return {"adapter": cfg["adapter"], "scenario": cfg["scenario"], "simulated": cfg["simulated"],
+                "adapters": ["fake", "ollama", "disabled"], "scenarios": list(chat.SCENARIOS)}
+
+
 @router.put("/admin/assistant")
 def configure_assistant(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     extra = set(body) - {"adapter", "scenario"}

@@ -117,6 +117,27 @@
   "openapi": "3.1.0",
   "paths": {
     "/api/v1/admin/assistant": {
+      "get": {
+        "operationId": "assistant_config_api_v1_admin_assistant_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Assistant Config Api V1 Admin Assistant Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Assistant Config",
+        "tags": [
+          "assistant"
+        ]
+      },
       "put": {
         "operationId": "configure_assistant_api_v1_admin_assistant_put",
         "requestBody": {

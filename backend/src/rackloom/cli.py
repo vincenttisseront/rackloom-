@@ -186,6 +186,19 @@ def cmd_lab_nodes(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_grants(args: argparse.Namespace) -> int:
+    from . import projects
+
+    revoked = args.grants_command == "revoke"
+    with _conn() as conn:
+        ids = projects.set_grants_revoked(conn, args.project, args.environment, args.kind, revoked, args.reason)
+        conn.commit()
+    verb = "retiré(s)" if revoked else "rétabli(s)"
+    print(f"{len(ids)} octroi(s) {args.kind} {verb} pour {args.project}/{args.environment}"
+          + (f" : {', '.join(ids)}" if ids else ""))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="rackloom")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -228,6 +241,15 @@ def build_parser() -> argparse.ArgumentParser:
     ln = lab.add_parser("nodes", help="déclare les nœuds de labo (nom=adresse)")
     ln.add_argument("node", nargs="+")
     ln.set_defaults(func=cmd_lab_nodes)
+    grants = sub.add_parser("grants", help="octrois de ressources d'un environnement").add_subparsers(
+        dest="grants_command", required=True)
+    for name in ("revoke", "restore"):
+        g = grants.add_parser(name)
+        g.add_argument("--project", required=True)
+        g.add_argument("--environment", required=True)
+        g.add_argument("--kind", required=True, choices=["network", "image", "cluster", "datastore", "folder"])
+        g.add_argument("--reason", required=True)
+        g.set_defaults(func=cmd_grants)
     ci = sub.add_parser("ci").add_subparsers(dest="ci_command", required=True)
     s = ci.add_parser("submit", help="dépose un besoin (JSON, catégorie A) par l'API")
     s.add_argument("--url", required=True)

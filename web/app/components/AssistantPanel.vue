@@ -11,6 +11,7 @@ const message = ref('')
 const sending = ref(false)
 const turns = ref<{ who: 'me' | 'bot'; text: string; patch?: any[]; questions?: any[]; notice?: string | null; tone?: string }[]>([])
 const applied = ref<Set<string>>(new Set())
+const down = ref<string | null>(null)
 
 const PATH_LABELS: Record<string, string> = {
   '/service/template': 'Service',
@@ -41,6 +42,7 @@ async function send() {
     }
     const res = await api.post(`/conversations/${conversationId.value}/messages`, { message: text, need: props.need() })
     emit('used')
+    down.value = res.status === 'unavailable' ? res.notice : null
     if (res.status === 'ok' && res.turn) {
       turns.value.push({ who: 'bot', text: res.turn.reply, patch: res.turn.need_patch, questions: res.turn.questions, notice: res.notice })
     } else {
@@ -70,6 +72,10 @@ function apply(p: { path: string; value: any }, key: string) {
       tout le besoin ; les contrôles et l'approbation sont les mêmes.
     </div>
     <template v-else>
+      <div v-if="down" class="banner warn" role="status" data-testid="assistant-unavailable">
+        L'assistant est indisponible pour le moment. Le formulaire permet de décrire tout le besoin ; les contrôles
+        et l'approbation sont les mêmes.
+      </div>
       <p class="small muted">
         Décrivez votre besoin en langage courant. L'assistant propose ; vous confirmez chaque valeur dans le formulaire.
         Il ne peut ni soumettre, ni approuver.

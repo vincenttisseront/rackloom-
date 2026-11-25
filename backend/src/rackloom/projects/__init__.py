@@ -85,6 +85,29 @@ def add_policy_version(conn: psycopg.Connection, environment_id: UUID, rules: di
     return row
 
 
+def set_grants_revoked(conn: psycopg.Connection, project_slug: str, environment_slug: str, kind: str,
+                       revoked: bool, reason: str) -> list[str]:
+    """Retire ou rétablit les octrois d'un type pour un environnement (exploitation, CLI de l'appliance)."""
+    rows = conn.execute(
+        """
+        UPDATE resource_grants g SET revoked_at = CASE WHEN %(revoked)s THEN now() END,
+               granted_at = CASE WHEN %(revoked)s THEN g.granted_at ELSE now() END
+        FROM environments e JOIN projects p ON p.id = e.project_id
+        WHERE g.environment_id = e.id AND p.slug = %(project)s AND e.slug = %(env)s AND g.kind = %(kind)s
+          AND (g.revoked_at IS NULL) = %(revoked)s
+        RETURNING g.stable_id, g.project_id, g.environment_id
+        """,
+        {"revoked": revoked, "project": project_slug, "env": environment_slug, "kind": kind},
+    ).fetchall()
+    if rows:
+        audit.record(conn, actor_type="system", actor_id="cli", action="grant.revoke" if revoked else "grant.restore",
+                     outcome="ok", project_id=rows[0]["project_id"],
+                     targets={"environment_id": str(rows[0]["environment_id"]), "kind": kind,
+                              "stable_ids": sorted(r["stable_id"] for r in rows)},
+                     policy_decision={"reason": reason})
+    return sorted(r["stable_id"] for r in rows)
+
+
 def referent_name(conn: psycopg.Connection, project: dict[str, Any]) -> str:
     if project.get("referent_user_id") is None:
         return "désigné du projet"
