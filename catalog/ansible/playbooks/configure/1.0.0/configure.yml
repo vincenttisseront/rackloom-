@@ -1,9 +1,18 @@
 ---
-# Configuration approuvée : applique les rôles du profil de service aux hôtes enrôlés.
-# Aucune variable utilisateur ne peut changer la destination, la connexion ou les privilèges.
+# Configuration approuvée : applique les composants de la version de template aux hôtes enrôlés.
+# Les rôles et leurs paramètres viennent de la configuration déclarée des composants
+# (rackloom_components, généré par le serveur) ; aucune variable utilisateur.
 - name: Configurer les hôtes enrôlés
   hosts: enrolled
   gather_facts: true
   become: true
-  roles:
-    - role: rackloom.nginx
+  tasks:
+    - name: Appliquer les composants du template
+      ansible.builtin.include_role:
+        name: "{{ item.role }}"
+      vars:
+        rackloom_params: "{{ item.params }}"
+        rackloom_component_version: "{{ item.version }}"
+      loop: "{{ rackloom_components }}"
+      loop_control:
+        label: "{{ item.slug }}@{{ item.version }}"

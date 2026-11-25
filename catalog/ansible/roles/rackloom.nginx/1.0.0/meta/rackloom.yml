@@ -1,18 +1,17 @@
 schema: rackloom.role-contract/v1
 name: rackloom.nginx
 version: 1.0.0
+# Seuls ces paramètres sont transmis au rôle (configuration déclarée du composant).
+parameters: [listen_port, server_tokens]
 packages: [nginx]
 services: [{name: nginx, state: started, enabled: true}]
 privilege_escalation: required
 identity: rackloom-config
-parameters: {}
 check_mode:
   covered:
     - "présence du paquet nginx (installation simulée)"
+    - "contenu des fichiers de configuration rendus"
     - "état démarré et activé du service nginx"
   not_covered:
     - "téléchargement et intégrité des paquets (seulement à l'exécution réelle)"
     - "réponse HTTP du service (vérification après exécution)"
-service_manager_note: >-
-  Nœuds de labo sans systemd (hypothèse H4 infirmée) : le service est géré par son script
-  SysV ; les contrôles propres à systemd sont affichés « non collecté ».

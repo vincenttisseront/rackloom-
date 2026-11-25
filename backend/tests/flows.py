@@ -2,30 +2,44 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 
 from rackloom import approvals
 from rackloom.changes import service
 
 
-def need(**kw: Any) -> dict[str, Any]:
-    base = {"schema": "rackloom.need/v1", "template": "ubuntu-web", "usage": "test"}
-    base.update(kw)
-    return base
+def until(days: int = 14) -> str:
+    return (date.today() + timedelta(days=days)).isoformat()
+
+
+def need(*, template: str = "ubuntu-web", environment: str | None = None, confirm_production: bool = False,
+         **inputs: Any) -> dict[str, Any]:
+    """Besoin catégorie A uniquement. Par défaut : date de fin dans 14 jours (D14)."""
+    inputs.setdefault("lifetime_until", until())
+    return {"schema": "rackloom.need/v1", "service": {"template": template}, "environment": environment,
+            "confirm_production": confirm_production, "inputs": {k: v for k, v in inputs.items() if v is not None}}
 
 
 def create_and_submit(conn, demo, *, who: str = "alice", project: str = "vitrine", **need_kw: Any) -> dict[str, Any]:
     p = demo.principal(who)
     change = service.create_change(conn, p, demo.project(project), "Serveur web de test")
     res = service.add_version(conn, p, change["id"], {"need": need(**need_kw), "base_version_no": 0})
-    sub = service.submit(conn, p, change["id"], res["version_no"])
+    assert res["revision"]["outcome"] == "resolved", res["revision"]
+    sub = service.submit(conn, p, change["id"], res["revision_no"])
     conn.commit()
-    return {"id": change["id"], "version_no": res["version_no"], "job_id": sub["job_id"]}
+    return {"id": change["id"], "version_no": res["version_no"], "revision_no": res["revision_no"],
+            "job_id": sub["job_id"], "deployment_id": sub["deployment_id"]}
 
 
 def change(conn, change_id) -> dict[str, Any]:
     conn.commit()
     return conn.execute("SELECT * FROM changes WHERE id = %s", (change_id,)).fetchone()
+
+
+def deployment(conn, deployment_id) -> dict[str, Any]:
+    conn.commit()
+    return conn.execute("SELECT * FROM deployments WHERE id = %s", (deployment_id,)).fetchone()
 
 
 def latest_plan(conn, change_id) -> dict[str, Any]:

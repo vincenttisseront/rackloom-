@@ -15,6 +15,7 @@ from ..errors import ApiError
 STATES = {
     "draft": "Brouillon",
     "needs_info": "Précisions requises",
+    "resolution_blocked": "Résolution impossible",
     "validated": "Validée",
     "planning": "Plan en cours",
     "plan_failed": "Échec du plan",
@@ -34,35 +35,36 @@ STATES = {
 }
 
 ALLOWED: dict[str, set[str]] = {
-    "draft": {"needs_info", "validated", "draft", "cancelled"},
-    "needs_info": {"draft", "needs_info", "validated", "cancelled"},
+    "draft": {"needs_info", "resolution_blocked", "validated", "draft", "cancelled"},
+    "needs_info": {"draft", "needs_info", "resolution_blocked", "cancelled"},
+    "resolution_blocked": {"draft", "needs_info", "resolution_blocked", "cancelled"},
     "validated": {"planning", "cancelled"},
     # planning → succeeded : nouvelle planification après succès sans aucun changement (T27).
     "planning": {"plan_ready", "plan_failed", "cancelled", "succeeded"},
-    "plan_failed": {"draft", "needs_info", "cancelled"},
-    "plan_ready": {"approved", "rejected", "plan_expired", "draft", "needs_info", "cancelled"},
-    "plan_expired": {"planning", "draft", "needs_info", "cancelled"},
-    "rejected": {"draft", "needs_info", "cancelled"},
-    "approved": {"executing", "blocked", "plan_expired", "draft", "needs_info", "cancelled"},
-    "blocked": {"planning", "draft", "needs_info", "cancelled"},
+    "plan_failed": {"draft", "needs_info", "resolution_blocked", "cancelled"},
+    "plan_ready": {"approved", "rejected", "plan_expired", "draft", "needs_info", "resolution_blocked", "cancelled"},
+    "plan_expired": {"planning", "draft", "needs_info", "resolution_blocked", "cancelled"},
+    "rejected": {"draft", "needs_info", "resolution_blocked", "cancelled"},
+    "approved": {"executing", "blocked", "plan_expired", "draft", "needs_info", "resolution_blocked", "cancelled"},
+    "blocked": {"draft", "needs_info", "resolution_blocked", "cancelled"},
     # executing → plan_expired : Terraform refuse un plan sauvegardé périmé (aucune ressource touchée).
     # executing → cancelled : annulation effective avant toute création de ressource.
-    "executing": {"verifying", "failed", "partially_succeeded", "uncertain", "succeeded", "plan_expired",
-                  "cancelled"},
+    "executing": {"verifying", "failed", "partially_succeeded", "uncertain", "plan_expired", "cancelled"},
     "verifying": {"succeeded", "partially_succeeded", "failed", "uncertain"},
     "uncertain": {"reconciling"},
-    # Écart au diagramme d'architecture : une réconciliation concluant « appliqué » reprend
-    # les étapes suivantes (invités, configuration) avant la vérification.
+    # Une réconciliation concluant « appliqué » reprend les étapes suivantes (invités, configuration).
     "reconciling": {"executing", "verifying", "failed", "uncertain"},
-    # Révision d'une demande déjà déployée : le nouveau plan montre l'écart (remplacement bloqué).
-    "partially_succeeded": {"executing", "draft", "needs_info"},
-    "succeeded": {"planning", "draft", "needs_info"},
+    "partially_succeeded": {"executing"},
+    "succeeded": {"planning"},
     "failed": set(),
     "cancelled": set(),
 }
 
-EDITABLE = {"draft", "needs_info", "plan_failed", "plan_ready", "plan_expired", "rejected", "approved", "blocked",
-            "succeeded", "partially_succeeded"}
+EDITABLE = {"draft", "needs_info", "resolution_blocked", "plan_failed", "plan_ready", "plan_expired", "rejected",
+            "approved", "blocked"}
+BEFORE_EXECUTION = EDITABLE | {"validated", "planning"}
+# États finaux d'un changement sans ressource créée par lui : ses noms réservés sont libérés.
+RELEASES_NAMES = {"cancelled", "rejected", "plan_failed", "failed"}
 TERMINAL = {"failed", "cancelled"}
 
 
@@ -96,6 +98,11 @@ def transition(conn: psycopg.Connection, change: dict[str, Any], to_state: str, 
                 data={"from": from_state, "to": to_state, "label": STATES[to_state], "reason": reason_code,
                       **(detail or {})},
                 dedupe_key=f"change.state:{change['id']}:{row['row_version']}")
+    if to_state in RELEASES_NAMES:
+        release_names(conn, row)
+        if row["kind"] == "create" and row["deployment_id"] is not None:
+            conn.execute("UPDATE deployments SET status = 'abandoned' WHERE id = %s AND status = 'pending'",
+                         (row["deployment_id"],))
     audit.record(conn, actor_type=actor_type, actor_id=actor_id, action="change.transition",
                  outcome=to_state, project_id=change["project_id"], correlation_id=change["id"],
                  targets={"change": str(change["id"])}, versions={"from": from_state, "to": to_state},
@@ -105,3 +112,19 @@ def transition(conn: psycopg.Connection, change: dict[str, Any], to_state: str, 
 
 def lock_change(conn: psycopg.Connection, change_id: UUID) -> dict[str, Any] | None:
     return conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (change_id,)).fetchone()
+
+
+def release_names(conn: psycopg.Connection, change: dict[str, Any]) -> int:
+    """Libère les noms réservés par ce changement qui ne désignent aucune ressource créée."""
+    rows = conn.execute(
+        """
+        UPDATE name_reservations r SET released_at = now()
+        WHERE r.change_id = %s AND r.released_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM hosts h WHERE h.project_id = r.project_id AND h.name = r.name)
+          AND NOT EXISTS (SELECT 1 FROM deployments d, jsonb_array_elements(d.instances) i
+                          WHERE d.id = %s AND i->>'name' = r.name)
+        RETURNING r.id
+        """,
+        (change["id"], change.get("deployment_id")),
+    ).fetchall()
+    return len(rows)

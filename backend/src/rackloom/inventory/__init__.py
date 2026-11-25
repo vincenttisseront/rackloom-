@@ -75,7 +75,7 @@ def granted_items(conn: psycopg.Connection, project_id: UUID, environment_id: UU
         SELECT DISTINCT ON (i.kind, i.stable_id) i.kind, i.stable_id, i.name, i.parent_stable_id, i.attributes,
                i.observed_at, g.environment_id, c.slug AS connector, c.mode AS connector_mode
         FROM inventory_items i
-        JOIN resource_grants g ON g.kind = i.kind AND g.stable_id = i.stable_id AND g.connector_id = i.connector_id
+        JOIN resource_grants g ON g.kind = i.kind AND g.stable_id = i.stable_id AND g.revoked_at IS NULL
         JOIN connectors c ON c.id = i.connector_id
         WHERE i.snapshot_id = %s AND g.project_id = %s
     """
@@ -96,4 +96,4 @@ def freshness(conn: psycopg.Connection, max_age_hours: int) -> dict[str, Any]:
         return {"snapshot_id": None, "observed_at": None, "age_seconds": None, "stale": True}
     age = (datetime.now(UTC) - snap["observed_at"]).total_seconds()
     return {"snapshot_id": str(snap["id"]), "observed_at": snap["observed_at"].isoformat(),
-            "age_seconds": int(age), "stale": age > max_age_hours * 3600}
+            "age_seconds": int(age), "stale": age > max_age_hours * 3600, "connector_mode": "simulated"}

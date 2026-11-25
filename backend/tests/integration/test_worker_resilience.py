@@ -126,7 +126,7 @@ def test_t13_worker_tue_apres_envoi(conn, demo, worker, worker_env):
     # Une seule exécution du runner, exactement 2 VM de labo, aucune relance automatique.
     assert len(_runs_for(worker_env, job_id)) <= 1
     assert sorted(p.name for p in (worker_env / "demo-infra").glob("*/*.json")) == [
-        "vitrine-lab-web-01.json", "vitrine-lab-web-02.json"]
+        "vit-dev-web-01.json", "vit-dev-web-02.json"]
     assert len(flows.jobs_of(conn, c["id"], "tf_apply")) == 1
     types = [e["type"] for e in conn.execute("SELECT type FROM events WHERE correlation_id = %s ORDER BY id",
                                              (c["id"],)).fetchall()]
@@ -157,7 +157,7 @@ def test_t23_annulation_pendant_application(conn, demo, worker, worker_env):
 
 def test_t02_state_modifie_apres_le_plan(conn, demo, worker, worker_env, tmp_path):
     c, plan, job_id = _approved(conn, demo, worker)
-    stack = conn.execute("SELECT slug FROM stacks WHERE change_id = %s", (c["id"],)).fetchone()["slug"]
+    stack = str(c["deployment_id"])
     # Application hors Rackloom sur le même state (simule « une autre application »).
     tf = tmp_path / "intrus"
     shutil.copytree(ROOT / "catalog" / "terraform" / "lab-vm" / "1.0.0", tf)
@@ -166,8 +166,10 @@ def test_t02_state_modifie_apres_le_plan(conn, demo, worker, worker_env, tmp_pat
     labvms = worker_env / "demo-infra" / stack
     state.mkdir(parents=True, exist_ok=True)
     labvms.mkdir(parents=True, exist_ok=True)
-    (tf / "x.auto.tfvars.json").write_text(json.dumps({"stack_id": stack, "labvms_dir": str(labvms), "vms": [
-        {"name": "intrus", "size": "light", "cpu": 1, "memory_mb": 1024, "template_ref": "x", "network_ref": "y"}]}))
+    (tf / "x.auto.tfvars.json").write_text(json.dumps({"deployment_id": stack, "labvms_dir": str(labvms),
+                                                       "instances": [
+        {"name": "intrus", "size_tier": "test_leger", "vcpu": 1, "memory_mb": 1024, "disk_gb": 10, "image_ref": "x",
+         "network_ref": "y"}]}))
     env = {**os.environ, "TF_PLUGIN_CACHE_DIR": os.environ["RACKLOOM_PROCESS_TF_PLUGIN_CACHE_DIR"], "TF_INPUT": "0"}
     subprocess.run(["terraform", "init", "-input=false", "-lockfile=readonly",
                     f"-backend-config=path={state / 'terraform.tfstate'}"], cwd=tf, env=env, check=True,
@@ -198,3 +200,21 @@ def test_t27_seconde_planification_sans_changement(conn, demo, worker, worker_en
                         (c["id"],)).fetchone()
     assert last["reason_code"] == "no_changes"
     assert len(list((worker_env / "demo-infra").glob("*/*.json"))) == 1
+    # Modification quantité 1 → 2 : une seule création, l'instance existante est conservée.
+    alice = demo.principal("alice")
+    m = service.create_modify_change(conn, alice, c["deployment_id"])
+    res = service.add_version(conn, alice, m["id"], {"need": flows.need(quantity=2), "base_version_no": 0})
+    assert [(i["name"], i["existing"]) for i in res["revision"]["resolved"]["instances"]] == [
+        ("vit-dev-web-01", True), ("vit-dev-web-02", False)]
+    service.submit(conn, alice, m["id"], res["revision_no"])
+    conn.commit()
+    worker.drain(kinds=["tf_plan"])
+    plan3 = flows.latest_plan(conn, m["id"])
+    assert plan3["status"] == "ready"
+    assert plan3["summary"]["vm_counts"] == {"create": 1, "update": 0, "replace": 0, "delete": 0, "no-op": 1}
+    flows.approve(conn, demo, m["id"], plan3)
+    worker.drain(kinds=["tf_apply"])
+    files = sorted(p.name for p in (worker_env / "demo-infra" / str(c["deployment_id"])).glob("*.json"))
+    assert files == ["vit-dev-web-01.json", "vit-dev-web-02.json"]
+    dep = flows.deployment(conn, c["deployment_id"])
+    assert [i["name"] for i in dep["instances"]] == ["vit-dev-web-01", "vit-dev-web-02"]

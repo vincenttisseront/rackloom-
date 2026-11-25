@@ -3,26 +3,31 @@ schema: rackloom.fake-inventory/v1
 # entièrement fictifs. Aucune donnée d'infrastructure réelle.
 items:
   - {kind: datacenter, stable_id: datacenter-1, name: dc-demo}
-  - {kind: cluster, stable_id: domain-c10, name: cl-lab, parent: datacenter-1}
-  - {kind: resource_pool, stable_id: resgroup-11, name: rp-lab, parent: domain-c10}
-  - {kind: folder, stable_id: group-v21, name: vitrine, parent: datacenter-1}
-  - {kind: folder, stable_id: group-v22, name: compta, parent: datacenter-1}
-  - {kind: datastore, stable_id: datastore-201, name: ds-lab-01, parent: datacenter-1,
-     attributes: {capacity_gb: 1000, free_gb: 420}}
-  - {kind: datastore, stable_id: datastore-202, name: ds-lab-02, parent: datacenter-1,
-     attributes: {capacity_gb: 1000, free_gb: 610}}
-  - {kind: network, stable_id: network-101, name: net-lab-vitrine, parent: datacenter-1,
-     attributes: {vlan: 101, tags: [web], free_ips: 40, ip_mode: lab-node}}
-  - {kind: network, stable_id: network-102, name: net-lab-compta, parent: datacenter-1,
-     attributes: {vlan: 102, tags: [web], free_ips: 25, ip_mode: lab-node}}
-  - {kind: network, stable_id: network-103, name: net-prod-dmz, parent: datacenter-1,
-     attributes: {vlan: 300, tags: [web], free_ips: 10, ip_mode: none}}
-  - {kind: image, stable_id: vm-500, name: tpl-ubuntu-2404, parent: datacenter-1,
-     attributes: {tags: [ubuntu-24.04], guest_os: "Ubuntu 24.04 LTS"}}
-  - {kind: image, stable_id: vm-501, name: tpl-windows-2022, parent: datacenter-1,
-     attributes: {tags: [windows-2022], guest_os: "Windows Server 2022"}}
-# Nœuds de labo qui jouent le rôle des invités (adresse IP SIMULÉE : le vCenter fictif
-# associe chaque VM créée par Terraform au premier nœud libre).
+  - {kind: cluster, stable_id: domain-c10, name: cl-dev, parent: datacenter-1, attributes: {tags: {env: dev}}}
+  - {kind: cluster, stable_id: domain-c20, name: cl-prod, parent: datacenter-1, attributes: {tags: {env: prod}}}
+  - {kind: folder, stable_id: group-v21, name: vitrine/dev, parent: datacenter-1}
+  - {kind: folder, stable_id: group-v22, name: vitrine/prod, parent: datacenter-1}
+  - {kind: folder, stable_id: group-v23, name: compta/dev, parent: datacenter-1}
+  - {kind: datastore, stable_id: datastore-201, name: ds-dev-01, parent: datacenter-1,
+     attributes: {tags: {tier: standard}, capacity_gb: 1000, free_gb: 420}}
+  - {kind: datastore, stable_id: datastore-301, name: ds-prod-01, parent: datacenter-1,
+     attributes: {tags: {tier: standard}, capacity_gb: 2000, free_gb: 900}}
+  # Deux réseaux équivalents pour vitrine/dev : le départage (rang, puis identifiant stable)
+  # retient net-dev-vitrine-a.
+  - {kind: network, stable_id: network-101, name: net-dev-vitrine-a, parent: datacenter-1,
+     attributes: {role: app, vlan: 101}}
+  - {kind: network, stable_id: network-102, name: net-dev-vitrine-b, parent: datacenter-1,
+     attributes: {role: app, vlan: 102}}
+  - {kind: network, stable_id: network-301, name: net-prod-vitrine, parent: datacenter-1,
+     attributes: {role: app, vlan: 301}}
+  - {kind: image, stable_id: vm-500, name: img-ubuntu-2404-std, parent: datacenter-1,
+     attributes: {os: ubuntu-24.04, layout_id: std-v1, vmware_tools: true, cloud_init: true,
+                  guest_os: "Ubuntu 24.04 LTS"}}
+  - {kind: image, stable_id: vm-501, name: img-windows-2022, parent: datacenter-1,
+     attributes: {os: windows-2022, layout_id: std-v1, vmware_tools: true, cloud_init: false,
+                  guest_os: "Windows Server 2022"}}
+# Nœuds de labo qui jouent le rôle des invités (adresse SIMULÉE : le vCenter fictif
+# associe chaque instance créée par Terraform au premier nœud libre).
 lab_nodes:
   - {name: lab-node-1, address: lab-node-1}
   - {name: lab-node-2, address: lab-node-2}

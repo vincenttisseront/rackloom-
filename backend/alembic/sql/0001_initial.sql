@@ -15,7 +15,9 @@ CREATE TABLE users (
 CREATE TABLE projects (
     id uuid PRIMARY KEY,
     slug text NOT NULL UNIQUE CHECK (slug ~ '^[a-z][a-z0-9-]{1,40}$'),
+    code text NOT NULL UNIQUE CHECK (code ~ '^[a-z]{2,6}$'),
     name text NOT NULL,
+    referent_user_id uuid REFERENCES users(id),
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -24,17 +26,33 @@ CREATE TABLE environments (
     project_id uuid NOT NULL REFERENCES projects(id),
     slug text NOT NULL CHECK (slug ~ '^[a-z][a-z0-9-]{1,40}$'),
     name text NOT NULL,
-    kind text NOT NULL CHECK (kind IN ('lab', 'dev', 'preprod', 'prod')),
+    kind text NOT NULL CHECK (kind IN ('dev', 'test', 'preprod', 'prod')),
+    is_production boolean NOT NULL DEFAULT false,
     requires_distinct_approver boolean NOT NULL DEFAULT true,
     plan_ttl_seconds integer NOT NULL DEFAULT 14400 CHECK (plan_ttl_seconds > 0),
-    UNIQUE (project_id, slug)
+    UNIQUE (project_id, slug),
+    CHECK (kind <> 'prod' OR is_production),
+    CHECK (NOT is_production OR requires_distinct_approver)
+);
+
+-- Politiques d'environnement versionnées : une modification crée une nouvelle version.
+CREATE TABLE environment_policies (
+    id uuid PRIMARY KEY,
+    environment_id uuid NOT NULL REFERENCES environments(id),
+    version integer NOT NULL CHECK (version > 0),
+    digest text NOT NULL,
+    rules jsonb NOT NULL,
+    created_by uuid,
+    reason text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (environment_id, version)
 );
 
 CREATE TABLE role_bindings (
     id uuid PRIMARY KEY,
     user_id uuid NOT NULL REFERENCES users(id),
-    role text NOT NULL CHECK (role IN ('platform_admin', 'template_publisher', 'operator', 'approver',
-                                       'auditor')),
+    role text NOT NULL CHECK (role IN ('platform_admin', 'template_publisher', 'template_author', 'operator',
+                                       'approver', 'auditor')),
     project_id uuid REFERENCES projects(id),
     environment_id uuid REFERENCES environments(id),
     granted_by uuid REFERENCES users(id),
@@ -107,10 +125,12 @@ CREATE TABLE resource_grants (
     id uuid PRIMARY KEY,
     project_id uuid NOT NULL REFERENCES projects(id),
     environment_id uuid NOT NULL REFERENCES environments(id),
-    connector_id uuid NOT NULL REFERENCES connectors(id),
-    kind text NOT NULL,
+    kind text NOT NULL CHECK (kind IN ('network', 'image', 'cluster', 'datastore', 'folder', 'service_template')),
     stable_id text NOT NULL,
-    UNIQUE (project_id, environment_id, connector_id, kind, stable_id)
+    granted_by uuid REFERENCES users(id),
+    granted_at timestamptz NOT NULL DEFAULT now(),
+    revoked_at timestamptz,
+    UNIQUE (project_id, environment_id, kind, stable_id)
 );
 
 CREATE TABLE secrets (
@@ -144,30 +164,62 @@ CREATE TABLE inventory_items (
     UNIQUE (snapshot_id, kind, stable_id)
 );
 
--- Catalogue : templates Rackloom publiés (servent de profils de service au résolveur),
--- composants du registre et éléments techniques épinglés. Une version publiée est immuable ;
--- une nouvelle version ne modifie aucune révision de demande, aucun plan ni aucune ressource.
-CREATE TABLE catalog_items (
+-- Registre : versions de composants et de templates Rackloom (profils de service du résolveur)
+-- et artefacts techniques épinglés. Le contenu d'une version est immuable ; seul le statut évolue.
+-- draft, lab_tested et in_review sont réservés à l'atelier (AT01).
+CREATE TABLE component_versions (
     id uuid PRIMARY KEY,
-    kind text NOT NULL CHECK (kind IN ('template', 'component', 'tf_module', 'ansible_role', 'playbook')),
+    slug text NOT NULL,
+    version text NOT NULL,
+    status text NOT NULL DEFAULT 'validated'
+        CHECK (status IN ('draft', 'lab_tested', 'in_review', 'validated', 'published', 'deprecated', 'withdrawn')),
+    contract jsonb NOT NULL,
+    implementation jsonb NOT NULL,
+    verification_level text NOT NULL DEFAULT 'not_tested'
+        CHECK (verification_level IN ('not_tested', 'tested_locally', 'lab_validated')),
+    digest text NOT NULL,
+    source_ref text NOT NULL,
+    loaded_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (slug, version)
+);
+
+CREATE TABLE template_versions (
+    id uuid PRIMARY KEY,
+    slug text NOT NULL,
+    version text NOT NULL,
+    status text NOT NULL DEFAULT 'validated'
+        CHECK (status IN ('draft', 'lab_tested', 'in_review', 'validated', 'published', 'deprecated', 'withdrawn')),
+    contract jsonb NOT NULL,
+    digest text NOT NULL,
+    source_ref text NOT NULL,
+    loaded_at timestamptz NOT NULL DEFAULT now(),
+    published_by uuid REFERENCES users(id),
+    published_at timestamptz,
+    publish_reason text,
+    UNIQUE (slug, version)
+);
+
+CREATE TABLE template_events (
+    id bigserial PRIMARY KEY,
+    template_version_id uuid NOT NULL REFERENCES template_versions(id),
+    action text NOT NULL CHECK (action IN ('loaded', 'published', 'deprecated', 'withdrawn')),
+    actor_id uuid,
+    reason text NOT NULL,
+    impact jsonb NOT NULL DEFAULT '{}'::jsonb,
+    at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE catalog_artifacts (
+    id uuid PRIMARY KEY,
+    kind text NOT NULL CHECK (kind IN ('tf_module', 'playbook', 'ansible_role')),
     slug text NOT NULL,
     version text NOT NULL,
     digest text NOT NULL,
-    manifest jsonb NOT NULL,
+    lockfile_sha256 text,
+    manifest jsonb NOT NULL DEFAULT '{}'::jsonb,
     source_ref text NOT NULL,
-    status text NOT NULL DEFAULT 'published' CHECK (status IN ('published', 'deprecated', 'withdrawn')),
-    published_by uuid REFERENCES users(id),
-    reason text NOT NULL DEFAULT '',
     loaded_at timestamptz NOT NULL DEFAULT now(),
-    status_changed_at timestamptz,
     UNIQUE (kind, slug, version)
-);
-
-CREATE TABLE project_templates (
-    project_id uuid NOT NULL REFERENCES projects(id),
-    template_slug text NOT NULL,
-    enabled_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (project_id, template_slug)
 );
 
 CREATE TABLE runner_images (
@@ -184,37 +236,93 @@ CREATE TABLE policy_bundles (
     activated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE stacks (
+    id uuid PRIMARY KEY,
+    slug text NOT NULL UNIQUE CHECK (slug ~ '^[a-z0-9][a-z0-9-]{0,62}$'),
+    project_id uuid NOT NULL REFERENCES projects(id),
+    environment_id uuid NOT NULL REFERENCES environments(id),
+    backend_kind text NOT NULL CHECK (backend_kind IN ('local_demo')),
+    backend_ref text NOT NULL,
+    lock_job_id uuid,
+    lock_epoch integer NOT NULL DEFAULT 0,
+    last_lineage text,
+    last_serial integer
+);
+
+-- Un déploiement = une stack, une version de template épinglée. Son état de service est
+-- calculé par le serveur à partir des contrôles de santé, indépendamment du succès des jobs.
+CREATE TABLE deployments (
+    id uuid PRIMARY KEY,
+    project_id uuid NOT NULL REFERENCES projects(id),
+    environment_id uuid NOT NULL REFERENCES environments(id),
+    template_slug text NOT NULL,
+    template_version_id uuid NOT NULL REFERENCES template_versions(id),
+    stack_id uuid NOT NULL UNIQUE REFERENCES stacks(id),
+    created_by_change_id uuid NOT NULL,
+    owner_id uuid NOT NULL REFERENCES users(id),
+    status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'failed', 'abandoned')),
+    instances jsonb NOT NULL DEFAULT '[]'::jsonb,
+    service_status text NOT NULL DEFAULT 'unknown'
+        CHECK (service_status IN ('unknown', 'ready', 'created_not_ready', 'failed', 'verification_unavailable')),
+    service_reason text,
+    service_checked_at timestamptz,
+    service_checks jsonb NOT NULL DEFAULT '[]'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE changes (
     id uuid PRIMARY KEY,
     seq bigserial UNIQUE,
+    kind text NOT NULL DEFAULT 'create' CHECK (kind IN ('create', 'modify')),
+    deployment_id uuid REFERENCES deployments(id),
     project_id uuid NOT NULL REFERENCES projects(id),
     environment_id uuid REFERENCES environments(id),
     title text NOT NULL DEFAULT '',
     state text NOT NULL,
     current_version_no integer NOT NULL DEFAULT 0,
+    current_revision_no integer NOT NULL DEFAULT 0,
     row_version integer NOT NULL DEFAULT 0,
     created_by uuid NOT NULL REFERENCES users(id),
     created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (kind = 'create' OR deployment_id IS NOT NULL)
 );
 CREATE INDEX changes_project ON changes (project_id, created_at DESC);
+ALTER TABLE deployments ADD FOREIGN KEY (created_by_change_id) REFERENCES changes(id) DEFERRABLE INITIALLY DEFERRED;
 
--- Révision immuable : le besoin exprimé (content) et sa résolution technique par le serveur
--- (valeurs, provenance, versions du profil et des politiques, fraîcheur de l'inventaire).
+-- Besoin exprimé (catégorie A seulement), immuable.
 CREATE TABLE request_versions (
     id uuid PRIMARY KEY,
     change_id uuid NOT NULL REFERENCES changes(id),
     version_no integer NOT NULL,
-    content jsonb NOT NULL,
+    need jsonb NOT NULL,
     provenance jsonb NOT NULL,
-    content_sha256 text NOT NULL,
-    resolution jsonb NOT NULL,
-    resolution_sha256 text NOT NULL,
-    source text NOT NULL CHECK (source IN ('form', 'chat', 'api')),
+    need_sha256 text NOT NULL,
+    source text NOT NULL CHECK (source IN ('webui', 'chat', 'api', 'ci', 'duplicate')),
     created_by uuid NOT NULL REFERENCES users(id),
     created_at timestamptz NOT NULL DEFAULT now(),
-    validation jsonb NOT NULL,
     UNIQUE (change_id, version_no)
+);
+
+-- Révision : résolution technique d'une version du besoin par le résolveur, immuable.
+CREATE TABLE request_revisions (
+    id uuid PRIMARY KEY,
+    change_id uuid NOT NULL REFERENCES changes(id),
+    revision_no integer NOT NULL,
+    version_no integer NOT NULL,
+    outcome text NOT NULL CHECK (outcome IN ('resolved', 'blocked', 'incomplete')),
+    template_version_id uuid REFERENCES template_versions(id),
+    environment_id uuid REFERENCES environments(id),
+    environment_policy_version integer,
+    policy_bundle_version text NOT NULL,
+    inventory_snapshot_id uuid,
+    inventory_observed_at timestamptz,
+    resolved jsonb NOT NULL,
+    provenance jsonb NOT NULL,
+    block_reasons jsonb NOT NULL DEFAULT '[]'::jsonb,
+    resolution_digest text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (change_id, revision_no)
 );
 
 CREATE FUNCTION rackloom_refuse_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -227,6 +335,47 @@ $$;
 CREATE TRIGGER request_versions_immutable
     BEFORE UPDATE OR DELETE ON request_versions
     FOR EACH ROW EXECUTE FUNCTION rackloom_refuse_mutation();
+CREATE TRIGGER request_revisions_immutable
+    BEFORE UPDATE OR DELETE ON request_revisions
+    FOR EACH ROW EXECUTE FUNCTION rackloom_refuse_mutation();
+CREATE TRIGGER environment_policies_immutable
+    BEFORE UPDATE OR DELETE ON environment_policies
+    FOR EACH ROW EXECUTE FUNCTION rackloom_refuse_mutation();
+CREATE TRIGGER template_events_append_only
+    BEFORE UPDATE OR DELETE ON template_events
+    FOR EACH ROW EXECUTE FUNCTION rackloom_refuse_mutation();
+
+-- Contenu des versions du registre immuable : seuls le statut et la publication évoluent.
+CREATE FUNCTION rackloom_registry_content_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP = 'DELETE' OR NEW.digest <> OLD.digest OR NEW.contract <> OLD.contract
+       OR NEW.slug <> OLD.slug OR NEW.version <> OLD.version THEN
+        RAISE EXCEPTION 'version % %@% immuable : publiez une nouvelle version', TG_TABLE_NAME, OLD.slug,
+            OLD.version USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+CREATE TRIGGER component_versions_content
+    BEFORE UPDATE OR DELETE ON component_versions
+    FOR EACH ROW EXECUTE FUNCTION rackloom_registry_content_immutable();
+CREATE TRIGGER template_versions_content
+    BEFORE UPDATE OR DELETE ON template_versions
+    FOR EACH ROW EXECUTE FUNCTION rackloom_registry_content_immutable();
+
+-- Noms réservés à la soumission, libérés si le changement se termine sans ressource créée.
+CREATE TABLE name_reservations (
+    id uuid PRIMARY KEY,
+    project_id uuid NOT NULL REFERENCES projects(id),
+    environment_id uuid NOT NULL REFERENCES environments(id),
+    name text NOT NULL,
+    change_id uuid NOT NULL REFERENCES changes(id),
+    revision_no integer NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    released_at timestamptz
+);
+CREATE UNIQUE INDEX name_reservations_active ON name_reservations (project_id, environment_id, name)
+    WHERE released_at IS NULL;
 
 CREATE TABLE state_transitions (
     id bigserial PRIMARY KEY,
@@ -240,21 +389,6 @@ CREATE TABLE state_transitions (
     detail jsonb NOT NULL DEFAULT '{}'::jsonb
 );
 CREATE INDEX state_transitions_change ON state_transitions (change_id, id);
-
-CREATE TABLE stacks (
-    id uuid PRIMARY KEY,
-    slug text NOT NULL UNIQUE CHECK (slug ~ '^[a-z0-9][a-z0-9-]{0,62}$'),
-    project_id uuid NOT NULL REFERENCES projects(id),
-    environment_id uuid NOT NULL REFERENCES environments(id),
-    change_id uuid NOT NULL UNIQUE REFERENCES changes(id),
-    blueprint_slug text NOT NULL,
-    backend_kind text NOT NULL CHECK (backend_kind IN ('local_demo')),
-    backend_ref text NOT NULL,
-    lock_job_id uuid,
-    lock_epoch integer NOT NULL DEFAULT 0,
-    last_lineage text,
-    last_serial integer
-);
 
 CREATE TABLE artifacts (
     id uuid PRIMARY KEY,
@@ -273,6 +407,7 @@ CREATE TABLE plans (
     id uuid PRIMARY KEY,
     change_id uuid NOT NULL REFERENCES changes(id),
     version_no integer NOT NULL,
+    revision_no integer NOT NULL,
     stack_id uuid NOT NULL REFERENCES stacks(id),
     job_id uuid,
     status text NOT NULL CHECK (status IN ('ready', 'expired', 'superseded', 'applied', 'failed',
@@ -306,6 +441,7 @@ CREATE TABLE retry_requests (
 CREATE TABLE approvals (
     id uuid PRIMARY KEY,
     change_id uuid NOT NULL REFERENCES changes(id),
+    revision_no integer NOT NULL,
     plan_id uuid REFERENCES plans(id),
     execution_id uuid,
     retry_request_id uuid REFERENCES retry_requests(id),
@@ -421,6 +557,8 @@ CREATE TABLE hosts (
     id uuid PRIMARY KEY,
     project_id uuid NOT NULL REFERENCES projects(id),
     environment_id uuid NOT NULL REFERENCES environments(id),
+    deployment_id uuid NOT NULL REFERENCES deployments(id),
+    template_version_id uuid NOT NULL REFERENCES template_versions(id),
     change_id uuid NOT NULL REFERENCES changes(id),
     stack_id uuid NOT NULL REFERENCES stacks(id),
     vm_stable_id text NOT NULL,

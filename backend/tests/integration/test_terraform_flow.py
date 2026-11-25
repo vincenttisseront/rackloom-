@@ -1,6 +1,6 @@
 """Plan Terraform réel sur ressources locales jetables, approbation liée à l'empreinte, admission.
 
-Couvre T01, T03, T04, T05, T07, T08, T26 et l'acceptation de E5 (plan chiffré, 2 créations).
+Couvre T01, T03, T04, T05, T07, T08, T26, T35, T40 et l'acceptation de E5 (plan chiffré, 2 créations).
 Niveau de preuve : testé localement (Terraform CLI réel, launcher en mode processus).
 """
 
@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 import flows
-from rackloom import approvals, artifacts
+from rackloom import approvals, artifacts, registry
 from rackloom.changes import service
 from rackloom.errors import ApiError
 
@@ -31,7 +31,11 @@ def test_plan_reel_deux_creations_chiffre(conn, demo, worker):
     assert plan["status"] == "ready"
     assert plan["counts"]["create"] == 2 and plan["counts"]["delete"] == 0
     assert plan["summary"]["terraform_version"]
-    assert {vm["name"] for vm in plan["summary"]["vms"]} == {"vitrine-lab-web-01", "vitrine-lab-web-02"}
+    assert {vm["name"] for vm in plan["summary"]["vms"]} == {"vit-dev-web-01", "vit-dev-web-02"}
+    assert plan["revision_no"] == c["revision_no"]
+    assert plan["bundle"]["request"]["resolution_digest"].startswith("sha256:")
+    assert plan["bundle"]["template"]["version"] == "1.0.0"
+    assert plan["bundle"]["environment"]["policy_version"] == 1
     # Ni plan.bin ni plan.json en base ; le fichier chiffré n'est pas une archive lisible.
     art = conn.execute("SELECT * FROM artifacts WHERE id = %s", (plan["artifact_id"],)).fetchone()
     assert art["key_class"] == "A"
@@ -52,8 +56,12 @@ def test_application_cree_exactement_les_vm(conn, demo, worker, worker_env):
     job = flows.job(conn, res["job_id"])
     assert job["state"] == "succeeded", job
     assert job["dispatched_at"] is not None
-    files = sorted(p.name for p in (worker_env / "demo-infra").glob("*/*.json"))
-    assert files == ["vitrine-lab-web-01.json", "vitrine-lab-web-02.json"]
+    files = sorted(p.name for p in (worker_env / "demo-infra" / str(c["deployment_id"])).glob("*.json"))
+    assert files == ["vit-dev-web-01.json", "vit-dev-web-02.json"]
+    dep = flows.deployment(conn, c["deployment_id"])
+    assert dep["status"] == "active"
+    assert [i["name"] for i in dep["instances"]] == ["vit-dev-web-01", "vit-dev-web-02"]
+    assert dep["service_status"] == "unknown"
     assert flows.change(conn, c["id"])["state"] == "executing"
     assert [j["kind"] for j in flows.jobs_of(conn, c["id"])][-1] == "guest_ready"
     decisions = conn.execute("SELECT outcome FROM admission_decisions WHERE job_id = %s", (job["id"],)).fetchall()
@@ -80,7 +88,7 @@ def test_t01_plan_remplace_bloque_par_empreinte(conn, demo, worker, worker_env):
     """Plan binaire substitué par un autre plan valide : SHA-256 différent, admission refusée."""
     c, plan = _plan_ready(conn, demo, worker)
     flows.approve(conn, demo, c["id"], plan)
-    other, other_plan = _plan_ready(conn, demo, worker, size="light")
+    other, other_plan = _plan_ready(conn, demo, worker, size_tier="standard")
     conn.execute("UPDATE plans SET artifact_id = %s WHERE id = %s", (other_plan["artifact_id"], plan["id"]))
     conn.commit()
     worker.drain(kinds=["tf_apply"])
@@ -94,7 +102,7 @@ def test_t03_nouvelle_version_revoque_et_bloque(conn, demo, worker, worker_env):
     c, plan = _plan_ready(conn, demo, worker)
     res = flows.approve(conn, demo, c["id"], plan)
     service.add_version(conn, demo.principal("alice"), c["id"],
-                        {"need": flows.need(size="high"), "base_version_no": c["version_no"]})
+                        {"need": flows.need(size_tier="standard"), "base_version_no": c["version_no"]})
     conn.commit()
     approval = conn.execute("SELECT * FROM approvals WHERE id = %s", (res["approval_id"],)).fetchone()
     assert approval["revoked_reason"] == "new_version"
@@ -182,25 +190,101 @@ def test_t08_separation_des_roles(conn, demo, worker):
     conn.rollback()
 
 
-def test_t26_changement_de_taille_bloque(conn, demo, worker, worker_env):
-    c, plan = _plan_ready(conn, demo, worker)
+def _deployed(conn, demo, worker, **kw):
+    """Déploiement actif (application réelle), sans les étapes invité ; changement clos en succès."""
+    c, plan = _plan_ready(conn, demo, worker, **kw)
     flows.approve(conn, demo, c["id"], plan)
     worker.drain(kinds=["tf_apply"])
-    conn.execute("UPDATE changes SET state = 'succeeded' WHERE id = %s", (c["id"],))
     conn.execute("UPDATE jobs SET state = 'cancelled' WHERE change_id = %s AND state = 'queued'", (c["id"],))
+    conn.execute("UPDATE changes SET state = 'succeeded' WHERE id = %s", (c["id"],))
     conn.commit()
+    return c
+
+
+def _modify(conn, demo, worker, deployment_id, **need_kw):
     alice = demo.principal("alice")
-    res = service.add_version(conn, alice, c["id"], {"need": flows.need(size="high"), "base_version_no": 1})
-    service.submit(conn, alice, c["id"], res["version_no"])
+    m = service.create_modify_change(conn, alice, deployment_id)
+    res = service.add_version(conn, alice, m["id"], {"need": flows.need(**need_kw), "base_version_no": 0})
+    assert res["revision"]["outcome"] == "resolved", res["revision"]
+    service.submit(conn, alice, m["id"], res["revision_no"])
     conn.commit()
     worker.drain(kinds=["tf_plan"])
-    plan2 = flows.latest_plan(conn, c["id"])
-    assert plan2["status"] == "blocked_destructive"
-    assert plan2["summary"]["vm_counts"]["replace"] == 1
+    return m, res, flows.latest_plan(conn, m["id"])
+
+
+def test_t26_changement_de_niveau_ou_reduction_bloques(conn, demo, worker, worker_env):
+    c = _deployed(conn, demo, worker, quantity=2)
+    m, res, plan = _modify(conn, demo, worker, c["deployment_id"], size_tier="standard")
+    assert [i["existing"] for i in res["revision"]["resolved"]["instances"]] == [True, True]
+    assert plan["status"] == "blocked_destructive"
+    assert plan["summary"]["vm_counts"]["replace"] == 2
     with pytest.raises(ApiError) as exc:
-        flows.approve(conn, demo, c["id"], plan2)
+        flows.approve(conn, demo, m["id"], plan)
     assert exc.value.code == "destructive_plan"
     conn.rollback()
+    service.cancel(conn, demo.principal("alice"), m["id"])
+    conn.commit()
+    m2, _, plan2 = _modify(conn, demo, worker, c["deployment_id"], quantity=1)
+    assert plan2["status"] == "blocked_destructive"
+    assert plan2["summary"]["vm_counts"]["delete"] == 1
+    with pytest.raises(ApiError) as exc:
+        flows.approve(conn, demo, m2["id"], plan2)
+    assert exc.value.code == "destructive_plan"
+    conn.rollback()
+    assert len(list((worker_env / "demo-infra" / str(c["deployment_id"])).glob("*.json"))) == 2
+
+
+def test_t35_d5_version_epinglee_puis_retrait(conn, demo, worker, worker_env):
+    c, plan = _plan_ready(conn, demo, worker)
+    res = flows.approve(conn, demo, c["id"], plan)
+    pub = demo.principal("pub")
+    registry.publish_action(conn, pub, "ubuntu-web", "1.1.0", "publish", "Nouvelle version")
+    conn.commit()
+    worker.drain(kinds=["tf_apply"])
+    job = flows.job(conn, res["job_id"])
+    assert job["state"] == "succeeded", job
+    assert flows.latest_plan(conn, c["id"])["bundle_digest"] == plan["bundle_digest"]
+    dep = flows.deployment(conn, c["deployment_id"])
+    tpl = registry.template_by_id(conn, dep["template_version_id"])
+    assert tpl["version"] == "1.0.0"
+    vm = next((worker_env / "demo-infra" / str(c["deployment_id"])).glob("*.json"))
+    assert '"memory_mb":2048' in vm.read_text()
+    # Nouvelle demande : dernière version publiée.
+    c2, plan2 = _plan_ready(conn, demo, worker)
+    assert plan2["bundle"]["template"]["version"] == "1.1.0"
+    # Plan 1.0.0 approuvé, puis 1.0.0 retirée avant le démarrage : bloqué par la règle 55, plan intact.
+    c3, plan3 = _plan_ready(conn, demo, worker)
+    registry.publish_action(conn, pub, "ubuntu-web", "1.1.0", "withdraw", "Retrait de test")
+    conn.commit()
+    c4, plan4 = _plan_ready(conn, demo, worker)
+    assert plan4["bundle"]["template"]["version"] == "1.0.0"
+    res4 = flows.approve(conn, demo, c4["id"], plan4)
+    registry.publish_action(conn, pub, "ubuntu-web", "1.0.0", "withdraw", "Retrait de test")
+    conn.commit()
+    worker.drain(kinds=["tf_apply"])
+    job4 = flows.job(conn, res4["job_id"])
+    assert job4["state"] == "blocked" and job4["blocked_reason"] == "resolution_no_longer_admissible"
+    assert job4["dispatched_at"] is None
+    after = flows.latest_plan(conn, c4["id"])
+    assert after["bundle_digest"] == plan4["bundle_digest"] and after["status"] == "ready"
+    assert flows.change(conn, c4["id"])["current_revision_no"] == c4["revision_no"]
+    assert not list((worker_env / "demo-infra" / str(c4["deployment_id"])).glob("*.json"))
+    decision = conn.execute("SELECT rules FROM admission_decisions WHERE job_id = %s", (job4["id"],)).fetchone()
+    assert decision["rules"][-1]["id"] == "R055"
+
+
+def test_t40_octroi_retire_entre_approbation_et_demarrage(conn, demo, worker, worker_env):
+    c, plan = _plan_ready(conn, demo, worker)
+    res = flows.approve(conn, demo, c["id"], plan)
+    conn.execute("UPDATE resource_grants SET revoked_at = now() WHERE stable_id = 'network-101'")
+    conn.commit()
+    worker.drain(kinds=["tf_apply"])
+    job = flows.job(conn, res["job_id"])
+    assert job["state"] == "blocked" and job["blocked_reason"] == "resolution_no_longer_admissible"
+    assert flows.change(conn, c["id"])["current_revision_no"] == c["revision_no"]
+    assert conn.execute("SELECT count(*) AS n FROM request_revisions WHERE change_id = %s",
+                        (c["id"],)).fetchone()["n"] == 1
+    assert not list((worker_env / "demo-infra" / str(c["deployment_id"])).glob("*.json"))
 
 
 def test_refus_avec_motif(conn, demo, worker):

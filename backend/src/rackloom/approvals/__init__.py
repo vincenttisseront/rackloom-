@@ -54,8 +54,8 @@ def decide(conn: psycopg.Connection, principal: Principal, change_id: UUID, body
         raise ApiError(404, "not_found", "plan introuvable")
     if conn.execute("SELECT 1 FROM approvals WHERE plan_id = %s AND kind = 'plan'", (plan_id,)).fetchone():
         raise ApiError(409, "already_decided", "ce plan a déjà fait l'objet d'une décision")
-    if plan["version_no"] != change["current_version_no"]:
-        raise ApiError(409, "stale_plan", "le plan ne correspond plus à la version courante de la demande")
+    if plan["revision_no"] != change["current_revision_no"]:
+        raise ApiError(409, "stale_plan", "le plan ne correspond plus à la révision courante de la demande")
     if plan["status"] == "blocked_destructive":
         raise ApiError(409, "destructive_plan",
                        "le plan supprime ou remplace des ressources : approbation impossible au lot 1")
@@ -80,17 +80,18 @@ def decide(conn: psycopg.Connection, principal: Principal, change_id: UUID, body
     approval_id = uuid7()
     conn.execute(
         """
-        INSERT INTO approvals (id, change_id, plan_id, kind, decision, bundle_digest, decided_by, comment, session_id,
-                               auth_context)
-        VALUES (%s, %s, %s, 'plan', %s, %s, %s, %s, %s, %s)
+        INSERT INTO approvals (id, change_id, revision_no, plan_id, kind, decision, bundle_digest, decided_by, comment,
+                               session_id, auth_context)
+        VALUES (%s, %s, %s, %s, 'plan', %s, %s, %s, %s, %s, %s)
         """,
-        (approval_id, change_id, plan_id, decision, plan["bundle_digest"], principal.user_id, comment,
-         principal.session_id, Jsonb(_auth_context(principal))),
+        (approval_id, change_id, plan["revision_no"], plan_id, decision, plan["bundle_digest"], principal.user_id,
+         comment, principal.session_id, Jsonb(_auth_context(principal))),
     )
     audit.record(conn, actor_type="user", actor_id=str(principal.user_id), action=f"approval.{decision}",
                  outcome="ok", project_id=change["project_id"], correlation_id=change_id,
                  targets={"plan": str(plan_id), "approval": str(approval_id)},
-                 versions={"bundle_digest": plan["bundle_digest"], "version_no": plan["version_no"]},
+                 versions={"bundle_digest": plan["bundle_digest"], "version_no": plan["version_no"],
+                           "revision_no": plan["revision_no"]},
                  policy_decision={"auth_context": _auth_context(principal)}, request_id=request_id)
     if decision == "rejected":
         conn.execute("UPDATE plans SET status = 'rejected' WHERE id = %s", (plan_id,))
@@ -129,16 +130,18 @@ def request_retry(conn: psycopg.Connection, principal: Principal, change_id: UUI
     execution = conn.execute("SELECT * FROM executions WHERE change_id = %s ORDER BY created_at DESC LIMIT 1",
                              (change_id,)).fetchone()
     failed = conn.execute(
-        "SELECT id, name FROM hosts WHERE change_id = %s AND deployment_state <> 'configured' ORDER BY name",
-        (change_id,)).fetchall()
+        "SELECT id, name FROM hosts WHERE deployment_id = %s AND deployment_state IN ('config_failed', 'enrolled') "
+        "ORDER BY name", (change["deployment_id"],)).fetchall()
     requested = body.get("host_ids") or [str(h["id"]) for h in failed]
     known = {str(h["id"]) for h in failed}
     if not requested or not set(requested) <= known:
         raise ApiError(422, "invalid_hosts", "hôtes de reprise inconnus ou déjà configurés", field="/host_ids")
     plan = conn.execute("SELECT * FROM plans WHERE id = %s", (execution["plan_id"],)).fetchone()
     bundle = {"schema": "rackloom.retry-bundle/v1", "change_id": str(change_id), "execution_id": str(execution["id"]),
-              "step": "ansible_configure", "host_ids": sorted(requested), "ansible": plan["bundle"]["ansible"],
-              "runner_images": plan["bundle"]["runner_images"], "policy": plan["bundle"]["policy"]}
+              "step": "ansible_configure", "host_ids": sorted(requested), "revision_no": plan["revision_no"],
+              "plan_bundle_digest": plan["bundle_digest"], "components": plan["bundle"]["components"],
+              "ansible": plan["bundle"]["ansible"], "runner_images": plan["bundle"]["runner_images"],
+              "policy_bundle": plan["bundle"]["policy_bundle"]}
     retry_id = uuid7()
     conn.execute(
         "INSERT INTO retry_requests (id, change_id, execution_id, step, host_ids, bundle, bundle_digest, requested_by) "
@@ -168,11 +171,12 @@ def _decide_retry(conn: psycopg.Connection, principal: Principal, change: dict[s
     approval_id = uuid7()
     conn.execute(
         """
-        INSERT INTO approvals (id, change_id, execution_id, retry_request_id, kind, decision, bundle_digest,
-                               decided_by, comment, session_id, auth_context, retry_scope)
-        VALUES (%s, %s, %s, %s, 'retry', %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO approvals (id, change_id, revision_no, execution_id, retry_request_id, kind, decision,
+                               bundle_digest, decided_by, comment, session_id, auth_context, retry_scope)
+        VALUES (%s, %s, %s, %s, %s, 'retry', %s, %s, %s, %s, %s, %s, %s)
         """,
-        (approval_id, change["id"], retry["execution_id"], retry_id, decision, retry["bundle_digest"],
+        (approval_id, change["id"], retry["bundle"]["revision_no"], retry["execution_id"], retry_id, decision,
+         retry["bundle_digest"],
          principal.user_id, comment, principal.session_id, Jsonb(_auth_context(principal)),
          Jsonb({"step": retry["step"], "host_ids": retry["host_ids"]})))
     conn.execute("UPDATE retry_requests SET status = %s WHERE id = %s", (decision, retry_id))

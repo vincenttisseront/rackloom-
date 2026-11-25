@@ -1,6 +1,7 @@
 """Gestionnaires par type de job. Enchaînement d'une exécution :
 tf_apply → guest_ready → ansible_configure → verify, chaque job suivant étant créé dans la
-transaction qui enregistre le succès du précédent.
+transaction qui enregistre le succès du précédent. Les paramètres viennent exclusivement de
+la révision approuvée.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from uuid import UUID
 
 import psycopg
 
-from .. import admission, artifacts, catalog, hosts, secrets
+from .. import admission, artifacts, hosts, registry, secrets
 from ..canonical import digest, file_tree_digest
 from ..changes.transitions import transition
 from ..db import Jsonb
@@ -38,9 +39,11 @@ def _load(conn: psycopg.Connection, job: dict[str, Any], lock: bool = True) -> d
     ctx["env"] = conn.execute("SELECT * FROM environments WHERE id = %s",
                               (change["environment_id"],)).fetchone() if change else None
     ctx["project"] = conn.execute("SELECT * FROM projects WHERE id = %s", (job["project_id"],)).fetchone()
-    ctx["stack"] = conn.execute("SELECT * FROM stacks WHERE id = %s", (job["stack_id"],)).fetchone() \
-        if job["stack_id"] else (conn.execute("SELECT * FROM stacks WHERE change_id = %s", (change["id"],)).fetchone()
-                                 if change else None)
+    ctx["deployment"] = conn.execute("SELECT * FROM deployments WHERE id = %s",
+                                     (change["deployment_id"],)).fetchone() if change and change["deployment_id"] \
+        else None
+    stack_id = job["stack_id"] or (ctx["deployment"]["stack_id"] if ctx["deployment"] else None)
+    ctx["stack"] = conn.execute("SELECT * FROM stacks WHERE id = %s", (stack_id,)).fetchone() if stack_id else None
     ctx["execution"] = conn.execute("SELECT * FROM executions WHERE id = %s",
                                     (job["execution_id"],)).fetchone() if job["execution_id"] else None
     ctx["plan"] = conn.execute("SELECT * FROM plans WHERE id = %s", (ctx["execution"]["plan_id"],)).fetchone() \
@@ -49,17 +52,22 @@ def _load(conn: psycopg.Connection, job: dict[str, Any], lock: bool = True) -> d
                                                               if ctx["execution"] else None)
     ctx["approval"] = conn.execute("SELECT * FROM approvals WHERE id = %s", (approval_id,)).fetchone() \
         if approval_id else None
-    version_no = ctx["plan"]["version_no"] if ctx["plan"] else (job["payload"].get("version_no")
-                                                                or (change["current_version_no"] if change else None))
+    revision_no = ctx["plan"]["revision_no"] if ctx["plan"] else job["payload"].get("revision_no")
+    if revision_no is None and change is not None:
+        revision_no = change["current_revision_no"]
+    ctx["revision"] = conn.execute("SELECT * FROM request_revisions WHERE change_id = %s AND revision_no = %s",
+                                   (change["id"], revision_no)).fetchone() if change else None
     ctx["version"] = conn.execute("SELECT * FROM request_versions WHERE change_id = %s AND version_no = %s",
-                                  (change["id"], version_no)).fetchone() if change else None
+                                  (change["id"], ctx["revision"]["version_no"])).fetchone() \
+        if ctx["revision"] else None
+    ctx["resolution"] = ctx["revision"]["resolved"] if ctx["revision"] else None
     return ctx
 
 
 def _admit(r: JobContext, conn: psycopg.Connection, ctx: dict[str, Any], recompute=None) -> None:
     decision = admission.evaluate(admission.Context(
         conn=conn, job=r.job, change=ctx["change"], environment=ctx["env"], execution=ctx["execution"],
-        approval=ctx["approval"], plan=ctx["plan"], recompute_digest=recompute))
+        approval=ctx["approval"], plan=ctx["plan"], revision=ctx["revision"], recompute_digest=recompute))
     if decision["outcome"] == "admitted":
         r.fenced(conn, "state = 'running', blocked_reason = NULL")
         r.step(conn, "Admission (règles builtin@1)", "succeeded",
@@ -92,15 +100,11 @@ def _admit(r: JobContext, conn: psycopg.Connection, ctx: dict[str, Any], recompu
 
 # --- Terraform ---------------------------------------------------------------------------
 
-def _module_dir(r: JobContext, resolution: dict[str, Any]) -> Path:
-    tf = resolution["terraform"]
-    return r.settings.catalog_dir / "terraform" / tf["module"] / tf["version"]
-
-
 def _prepare_tf(r: JobContext, run_id: str, resolution: dict[str, Any], job_json: dict[str, Any]) -> Path:
     work = r.workspace(run_id)
-    src = _module_dir(r, resolution)
-    if file_tree_digest(src, ("*.tf", ".terraform.lock.hcl")) != resolution["terraform"]["digest"]:
+    tf = resolution["terraform"]
+    src = r.settings.catalog_dir / "terraform" / tf["module"] / tf["version"]
+    if file_tree_digest(src, ("*.tf", ".terraform.lock.hcl")) != tf["digest"]:
         raise RuntimeError("module Terraform modifié sur disque depuis son chargement")
     tfdir = work / "tf"
     tfdir.mkdir(exist_ok=True)
@@ -110,15 +114,9 @@ def _prepare_tf(r: JobContext, run_id: str, resolution: dict[str, Any], job_json
     return work
 
 
-def _tf_variables(conn: psycopg.Connection, stack: dict[str, Any], resolution: dict[str, Any]) -> dict[str, Any]:
-    delay = conn.execute("SELECT value FROM platform_settings WHERE key = 'lab_delay_seconds'").fetchone()
-    return {
-        "stack_id": stack["slug"],
-        "lab_delay_seconds": int(delay["value"]) if delay else 0,
-        "vms": [{"name": vm["name"], "size": resolution["size"]["key"], "cpu": vm["cpu"],
-                 "memory_mb": vm["memory_mb"], "template_ref": resolution["image"]["stable_id"],
-                 "network_ref": resolution["network"]["stable_id"]} for vm in resolution["vms"]],
-    }
+def _lab_delay(conn: psycopg.Connection) -> int:
+    row = conn.execute("SELECT value FROM platform_settings WHERE key = 'lab_delay_seconds'").fetchone()
+    return int(row["value"]) if row else 0
 
 
 def _store_log(r: JobContext, conn: psycopg.Connection, work: Path, name: str) -> dict[str, Any] | None:
@@ -133,8 +131,8 @@ def handle_tf_plan(r: JobContext) -> None:
     with r.tx() as conn:
         ctx = _load(conn, r.job)
         _admit(r, conn, ctx)
-        resolution = ctx["version"]["resolution"]
-        variables = _tf_variables(conn, ctx["stack"], resolution)
+        resolution = ctx["resolution"]
+        variables = bundles.tf_variables(resolution, ctx["stack"]["slug"], _lab_delay(conn))
     run_id = f"{r.job['id']}-a{r.job['attempts']}"
     work = _prepare_tf(r, run_id, resolution, {"action": "tf_plan", "variables": variables, "timeout_seconds": 600})
     status = r.run({"run_id": run_id, "kind": "terraform", "stack": ctx["stack"]["slug"], "timeout_seconds": 600})
@@ -159,8 +157,8 @@ def handle_tf_plan(r: JobContext) -> None:
                               key_class="A", plaintext=plan_bytes)
         _store_log(r, conn, work, "terraform.log")
         valid_until = datetime.now(UTC) + timedelta(seconds=ctx["env"]["plan_ttl_seconds"])
-        bundle = bundles.build(conn, change=ctx["change"], version=ctx["version"], stack=ctx["stack"],
-                               plan_sha256=hashlib.sha256(plan_bytes).hexdigest(),
+        bundle = bundles.build(conn, change=ctx["change"], version=ctx["version"], revision=ctx["revision"],
+                               stack=ctx["stack"], plan_sha256=hashlib.sha256(plan_bytes).hexdigest(),
                                state_lineage=state_before.get("lineage"), state_serial=state_before.get("serial"),
                                valid_until=valid_until.isoformat(), terraform_version=summary["terraform_version"])
         status_ = "blocked_destructive" if summary["destructive"] else ("no_changes" if summary["no_changes"]
@@ -168,13 +166,15 @@ def handle_tf_plan(r: JobContext) -> None:
         plan_id = queue.new_id()
         conn.execute(
             """
-            INSERT INTO plans (id, change_id, version_no, stack_id, job_id, status, plan_sha256, artifact_id, summary,
-                               counts, valid_until, bundle, bundle_digest, state_lineage, state_serial)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO plans (id, change_id, version_no, revision_no, stack_id, job_id, status, plan_sha256,
+                               artifact_id, summary, counts, valid_until, bundle, bundle_digest, state_lineage,
+                               state_serial)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (plan_id, r.job["change_id"], ctx["version"]["version_no"], ctx["stack"]["id"], r.job["id"], status_,
-             art["sha256"], art["id"], Jsonb(summary), Jsonb(summary["vm_counts"]), valid_until, Jsonb(bundle),
-             digest(bundle), state_before.get("lineage"), state_before.get("serial")))
+            (plan_id, r.job["change_id"], ctx["revision"]["version_no"], ctx["revision"]["revision_no"],
+             ctx["stack"]["id"], r.job["id"], status_, art["sha256"], art["id"], Jsonb(summary),
+             Jsonb(summary["vm_counts"]), valid_until, Jsonb(bundle), digest(bundle), state_before.get("lineage"),
+             state_before.get("serial")))
         r.fenced(conn, "state = 'succeeded', finished_at = now(), result = %s",
                  (Jsonb({"plan_id": str(plan_id), "status": status_}),))
         counts = summary["vm_counts"]
@@ -202,10 +202,11 @@ def handle_tf_apply(r: JobContext) -> None:
         def recompute() -> str:
             if plan_sha != plan["plan_sha256"]:
                 raise bundles.BundleError("plan_altered", "le plan binaire ne correspond plus à son empreinte")
-            return bundles.recompute_digest(conn, plan, ctx["change"], ctx["version"], ctx["stack"], plan_sha)
+            return bundles.recompute_digest(conn, plan, ctx["change"], ctx["version"], ctx["revision"], ctx["stack"],
+                                            plan_sha)
 
         _admit(r, conn, ctx, recompute)
-        resolution = ctx["version"]["resolution"]
+        resolution = ctx["resolution"]
     run_id = str(r.job["id"])
     work = _prepare_tf(r, run_id, resolution, {"action": "tf_apply", "timeout_seconds": 1800})
     (work / "in").mkdir(exist_ok=True)
@@ -238,6 +239,18 @@ def _vms_from_state(state: dict[str, Any] | None) -> list[dict[str, Any]]:
     return [vms[k] for k in sorted(vms) if "uuid" in vms[k]]
 
 
+def _record_instances(conn: psycopg.Connection, change: dict[str, Any], resolution: dict[str, Any],
+                      vms: list[dict[str, Any]]) -> None:
+    """Le déploiement reflète l'état observé (state), pas l'intention : seules les instances présentes."""
+    present = {v["name"]: v for v in vms}
+    instances = [{"name": i["name"], "size_tier": i["size_tier"], "vcpu": i["vcpu"], "memory_mb": i["memory_mb"],
+                  "disk_gb": i["disk_gb"], "vm_uuid": present[i["name"]]["uuid"]}
+                 for i in resolution["instances"] if i["name"] in present]
+    if change["deployment_id"]:
+        conn.execute("UPDATE deployments SET instances = %s, status = CASE WHEN %s THEN 'active' ELSE status END "
+                     "WHERE id = %s", (Jsonb(instances), bool(instances), change["deployment_id"]))
+
+
 def finish_apply(r: JobContext, run_id: str, status: dict[str, Any], *, job: dict[str, Any] | None = None) -> str:
     """Conclut un tf_apply à partir des sorties du runner. `job` : job incertain repris par réconciliation."""
     target = job or r.job
@@ -266,17 +279,19 @@ def finish_apply(r: JobContext, run_id: str, status: dict[str, Any], *, job: dic
                          ("succeeded" if outcome == "applied" else "failed", Jsonb(result), target["id"]))
         admission.release_stack(conn, target)
         change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (target["change_id"],)).fetchone()
-        plan_id = conn.execute("SELECT plan_id FROM executions WHERE id = %s",
-                               (target["execution_id"],)).fetchone()["plan_id"]
+        ctx = _load(conn, target, lock=False)
+        plan_id = ctx["plan"]["id"]
         if state_after and state_after.get("exists"):
             conn.execute("UPDATE stacks SET last_lineage = %s, last_serial = %s WHERE id = %s",
                          (state_after.get("lineage"), state_after.get("serial"), target["stack_id"]))
+        if outcome in ("applied", "failed", "cancelled_partial"):
+            _record_instances(conn, change, ctx["resolution"], vms)
         if change["state"] == "reconciling":
             change = transition(conn, change, "executing", reason_code="reconciled", actor_type="worker",
                                 actor_id=r.worker_id, detail={"outcome": outcome})
         if outcome == "applied":
             conn.execute("UPDATE plans SET status = 'applied' WHERE id = %s", (plan_id,))
-            r.event(conn, "execution.applied", {"message": f"Plan appliqué : {len(vms)} VM de labo créée(s)",
+            r.event(conn, "execution.applied", {"message": f"Plan appliqué : {len(vms)} ressource(s) de labo présentes",
                                                 "vms": [v["name"] for v in vms]})
             queue.enqueue(conn, kind="guest_ready", change=change, execution_id=target["execution_id"],
                           stack_id=target["stack_id"], idempotency_key=f"guest_ready:{target['execution_id']}",
@@ -293,11 +308,15 @@ def finish_apply(r: JobContext, run_id: str, status: dict[str, Any], *, job: dic
                        actor_id=r.worker_id, detail={"message": "Annulation effective : aucune ressource créée"})
         else:
             conn.execute("UPDATE plans SET status = 'failed' WHERE id = %s", (plan_id,))
-            message = (f"Annulation demandée : application interrompue, {len(vms)} VM de labo présentes, "
+            message = (f"Annulation demandée : application interrompue, {len(vms)} ressource(s) présentes, "
                        "aucune suppression") if outcome == "cancelled_partial" else \
-                f"Échec de l'application (code {rc}) : {len(vms)} VM de labo présentes, aucune suppression"
+                f"Échec de l'application (code {rc}) : {len(vms)} ressource(s) présentes, aucune suppression"
             transition(conn, change, "failed", reason_code=f"apply_{outcome}", actor_type="worker",
                        actor_id=r.worker_id, severity="error", detail={"message": message, "vms": len(vms)})
+            if change["deployment_id"]:
+                conn.execute("UPDATE deployments SET service_status = 'failed', service_reason = %s, "
+                             "service_checked_at = now() WHERE id = %s AND status <> 'active'",
+                             (message, change["deployment_id"]))
         conn.execute("UPDATE executions SET state = %s WHERE id = %s", (outcome, target["execution_id"]))
     r.cleanup(run_id)
     return outcome
@@ -326,22 +345,25 @@ def _prepare_ansible(r: JobContext, conn: psycopg.Connection, run_id: str, resol
         h["name"]: {"ansible_host": h["address"], "ansible_user": identity,
                     "ansible_python_interpreter": "/usr/bin/python3"} for h in targets}}}}}
     (private_dir / "inventory" / "hosts.json").write_text(json.dumps(inventory))
-    pb = resolution["ansible"][purpose]
-    pb_dir = r.settings.catalog_dir / "ansible" / "playbooks" / pb["playbook"] / pb["version"]
+    pb = resolution["ansible"]["playbooks"][purpose]
+    pb_dir = r.settings.catalog_dir / "ansible" / "playbooks" / purpose / pb["version"]
     if file_tree_digest(pb_dir) != pb["digest"]:
         raise RuntimeError("playbook modifié sur disque depuis son chargement")
-    shutil.copy2(pb_dir / f"{pb['playbook']}.yml", private_dir / "project" / f"{pb['playbook']}.yml")
-    for role in resolution["ansible"]["roles"]:
-        src = r.settings.catalog_dir / "ansible" / "roles" / role["name"] / role["version"]
-        if file_tree_digest(src) != role["digest"]:
-            raise RuntimeError(f"rôle {role['name']} modifié sur disque depuis son chargement")
-        shutil.copytree(src, private_dir / "project" / "roles" / role["name"], dirs_exist_ok=True)
+    shutil.copy2(pb_dir / f"{purpose}.yml", private_dir / "project" / f"{purpose}.yml")
+    if purpose == "configure":
+        for role in resolution["ansible"]["roles"]:
+            src = r.settings.catalog_dir / "ansible" / "roles" / role["name"] / role["version"]
+            if file_tree_digest(src) != role["digest"]:
+                raise RuntimeError(f"rôle {role['name']} modifié sur disque depuis son chargement")
+            shutil.copytree(src, private_dir / "project" / "roles" / role["name"], dirs_exist_ok=True)
+        (private_dir / "env" / "extravars").write_text(
+            json.dumps({"rackloom_components": bundles.ansible_components(resolution)}))
     (private_dir / "project" / "ansible.cfg").write_text(
         "[defaults]\nhost_key_checking = True\nroles_path = roles\nretry_files_enabled = False\n"
         "interpreter_python = /usr/bin/python3\n[ssh_connection]\npipelining = True\n")
     pub, private = _lab_keys(conn, purpose)
     r.redactor = type(r.redactor)([private, *r.redactor.known])
-    (work / "job.json").write_text(json.dumps({"action": "ansible_play", "playbook": f"{pb['playbook']}.yml",
+    (work / "job.json").write_text(json.dumps({"action": "ansible_play", "playbook": f"{purpose}.yml",
                                                "ssh_public_key": pub, "timeout_seconds": 900}))
     return work, json.dumps({"ssh_private_key": private})
 
@@ -372,25 +394,28 @@ def handle_guest_ready(r: JobContext) -> None:
     with r.tx() as conn:
         ctx = _load(conn, r.job)
         _admit(r, conn, ctx)
-        resolution = ctx["version"]["resolution"]
+        resolution = ctx["resolution"]
+        dep = ctx["deployment"]
         nodes = conn.execute("SELECT value FROM platform_settings WHERE key = 'lab_nodes'").fetchone()
         nodes = nodes["value"] if nodes else []
-        used = {row["address"] for row in conn.execute(
-            "SELECT address FROM hosts WHERE address IS NOT NULL AND change_id <> %s", (r.job["change_id"],))}
+        used = {row["address"] for row in conn.execute("SELECT address FROM hosts WHERE address IS NOT NULL")}
         free = [n for n in nodes if n["address"] not in used]
         targets = []
         mapping = []
         for vm in r.job["payload"]["vms"]:
-            host = conn.execute("SELECT * FROM hosts WHERE change_id = %s AND name = %s",
-                                (r.job["change_id"], vm["name"])).fetchone()
+            host = conn.execute("SELECT * FROM hosts WHERE deployment_id = %s AND name = %s",
+                                (dep["id"], vm["name"])).fetchone()
+            if host is not None and host["deployment_state"] in ("configured", "verified", "verify_failed"):
+                continue
             if host is None:
                 node = free.pop(0) if free else None
                 host = conn.execute(
-                    "INSERT INTO hosts (id, project_id, environment_id, change_id, stack_id, vm_stable_id, name, "
-                    "address, deployment_state) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
-                    (queue.new_id(), r.job["project_id"], ctx["change"]["environment_id"], r.job["change_id"],
-                     r.job["stack_id"], f"vm-lab-{vm['uuid'][:8]}", vm["name"], node["address"] if node else None,
-                     "created" if node else "no_address")).fetchone()
+                    "INSERT INTO hosts (id, project_id, environment_id, deployment_id, template_version_id, change_id, "
+                    "stack_id, vm_stable_id, name, address, deployment_state) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+                    (queue.new_id(), r.job["project_id"], dep["environment_id"], dep["id"], dep["template_version_id"],
+                     r.job["change_id"], dep["stack_id"], f"vm-lab-{vm['uuid'][:8]}", vm["name"],
+                     node["address"] if node else None, "created" if node else "no_address")).fetchone()
             mapping.append({"vm": vm["name"], "node": host["address"]})
             if host["address"]:
                 targets.append(host)
@@ -442,19 +467,18 @@ def handle_guest_ready(r: JobContext) -> None:
                           idempotency_key=f"ansible_configure:{r.job['execution_id']}",
                           payload={"host_ids": [str(h["id"]) for h in enrolled]})
         else:
-            transition(conn, change, "partially_succeeded", reason_code="guest_unreachable", actor_type="worker",
-                       actor_id=r.worker_id, severity="error",
-                       detail={"message": "VM créée, configuration incomplète : aucun hôte joignable"})
+            queue.enqueue(conn, kind="verify", change=change, execution_id=r.job["execution_id"],
+                          idempotency_key=f"verify:{r.job['id']}", payload={})
 
 
 def handle_ansible_configure(r: JobContext) -> None:
     with r.tx() as conn:
         ctx = _load(conn, r.job)
         _admit(r, conn, ctx)
-        resolution = ctx["version"]["resolution"]
+        resolution = ctx["resolution"]
         ids = [UUID(i) for i in r.job["payload"]["host_ids"]]
-        targets = conn.execute("SELECT * FROM hosts WHERE id = ANY(%s) AND change_id = %s ORDER BY name",
-                               (ids, r.job["change_id"])).fetchall()
+        targets = conn.execute("SELECT * FROM hosts WHERE id = ANY(%s) AND deployment_id = %s ORDER BY name",
+                               (ids, ctx["deployment"]["id"])).fetchall()
         targets = [h for h in targets if h["address"] and hosts.anchor_for(conn, h["address"])]
         run_id = str(r.job["id"])
         work, stdin = _prepare_ansible(r, conn, run_id, resolution, "configure", targets)
@@ -466,7 +490,8 @@ def handle_ansible_configure(r: JobContext) -> None:
             ok, reason = _host_ok(summary, h["name"])
             conn.execute("UPDATE hosts SET deployment_state = %s WHERE id = %s",
                          ("configured" if ok else "config_failed", h["id"]))
-            r.step(conn, f"Configuration Nginx ({h['name']})", "succeeded" if ok else "failed",
+            comps = ", ".join(f"{c['slug']} {c['version']}" for c in resolution["components"])
+            r.step(conn, f"Configuration {comps} ({h['name']})", "succeeded" if ok else "failed",
                    summary={"host": h["name"], **({"reason": reason} if not ok else {})})
             if ok:
                 configured.append(h)
@@ -478,24 +503,51 @@ def handle_ansible_configure(r: JobContext) -> None:
     r.cleanup(run_id)
 
 
-def _evaluate_checks(checks: list[dict[str, Any]], report: dict[str, Any] | None,
-                     probe: dict[str, Any] | None) -> list[dict[str, Any]]:
+CHECK_FAILURES = {"package_installed": "paquet {package} absent", "service_active": "service {unit} inactif",
+                  "http_probe": "sonde HTTP en échec"}
+
+
+def evaluate_checks(checks: list[dict[str, Any]], report: dict[str, Any] | None, probe: dict[str, Any] | None,
+                    at: str) -> list[dict[str, Any]]:
+    """Contrôles de santé du template sur un hôte. Les données de collecte sont non fiables."""
     results = []
     for check in checks:
         kind = check["type"]
+        entry: dict[str, Any] = {"type": kind, "at": at}
         if kind == "package_installed":
-            ok = bool(report and report.get("package_nginx"))
-            results.append({"type": kind, "ok": ok, "detail": (report or {}).get("package_nginx") or "absent"})
+            version = (report or {}).get(f"package_{check['package']}")
+            entry.update(ok=bool(version), evidence=f"dpkg : {version}" if version else "dpkg : absent")
         elif kind == "service_active":
-            ok = bool(report and str(report.get("process_nginx")).lower() == "true")
-            results.append({"type": kind, "ok": ok, "detail": "processus nginx actif" if ok else "nginx arrêté",
-                            "systemd": "non collecté (nœud de labo sans systemd)"})
+            active = str((report or {}).get(f"process_{check['unit']}")).lower() == "true"
+            entry.update(ok=active, evidence=f"processus {check['unit']} {'actif' if active else 'absent'}",
+                         systemd="non collecté (nœud de labo sans systemd, hypothèse H4 infirmée)")
         elif kind == "http_probe":
             ok = bool(probe and probe.get("ok"))
-            results.append({"type": kind, "ok": ok, "detail": f"HTTP {probe.get('status')}" if probe else "non joint"})
+            entry.update(ok=ok, evidence=f"HTTP {probe.get('status')}" if probe and probe.get("status") else
+                         f"sonde : {(probe or {}).get('error', 'non jointe')}")
         else:
-            results.append({"type": kind, "ok": False, "detail": "contrôle non pris en charge"})
+            entry.update(ok=False, evidence="contrôle non pris en charge")
+        if not entry["ok"]:
+            entry["failure"] = CHECK_FAILURES.get(kind, "contrôle en échec").format(**check)
+        results.append(entry)
     return results
+
+
+def service_status(host_results: list[dict[str, Any]]) -> tuple[str, str]:
+    """État du service calculé par le serveur, distinct du succès des jobs (docs/architecture.md §8)."""
+    if not host_results:
+        return "failed", "aucune ressource attendue n'a été créée"
+    incomplete = [h for h in host_results if h["state"] == "incomplete"]
+    failing = [h for h in host_results if h["state"] == "checked" and not all(c["ok"] for c in h["checks"])]
+    unavailable = [h for h in host_results if h["state"] == "unavailable"]
+    if incomplete:
+        return "created_not_ready", "VM créée, configuration incomplète"
+    if failing:
+        first = next(c for c in failing[0]["checks"] if not c["ok"])
+        return "created_not_ready", f"VM créée, {first['failure']}"
+    if unavailable:
+        return "verification_unavailable", "vérification indisponible"
+    return "ready", "tous les contrôles de santé ont réussi"
 
 
 def handle_verify(r: JobContext) -> None:
@@ -505,9 +557,9 @@ def handle_verify(r: JobContext) -> None:
         if ctx["change"]["state"] == "executing":
             transition(conn, ctx["change"], "verifying", reason_code="verify_started", actor_type="worker",
                        actor_id=r.worker_id)
-        resolution = ctx["version"]["resolution"]
-        all_hosts = conn.execute("SELECT * FROM hosts WHERE change_id = %s ORDER BY name",
-                                 (r.job["change_id"],)).fetchall()
+        resolution = ctx["resolution"]
+        dep = ctx["deployment"]
+        all_hosts = conn.execute("SELECT * FROM hosts WHERE deployment_id = %s ORDER BY name", (dep["id"],)).fetchall()
         targets = [h for h in all_hosts if h["deployment_state"] in ("configured", "verified", "verify_failed")]
         run_id = f"{r.job['id']}-a{r.job['attempts']}"
         stdin = None
@@ -515,66 +567,82 @@ def handle_verify(r: JobContext) -> None:
             work, stdin = _prepare_ansible(r, conn, run_id, resolution, "collect", targets)
     reports: dict[str, Any] = {}
     probes: dict[str, Any] = {}
+    reachable: set[str] = set()
     if targets:
         rc, summary = _ansible_run(r, run_id, "ansible", stdin)
         reports = summary.get("reports", {})
+        reachable = {h["name"] for h in targets if _host_ok(summary, h["name"])[0]}
         r.cleanup(run_id)
         probe_id = f"{r.job['id']}-p{r.job['attempts']}"
         pwork = r.workspace(probe_id)
+        http = next((c for c in resolution["health_checks"] if c["type"] == "http_probe"), None)
         (pwork / "job.json").write_text(json.dumps({"action": "http_probe", "targets": [
-            {"host": h["name"], "address": h["address"], "port": 80, "path": "/"} for h in targets]}))
+            {"host": h["name"], "address": h["address"], "port": int(http["port"]) if http else 80,
+             "path": http["path"] if http else "/"} for h in targets]}))
         r.run({"run_id": probe_id, "kind": "probe", "timeout_seconds": 60})
         probes = {p["host"]: p for p in (read_json(pwork / "out" / "probe.json", []) or [])}
         r.cleanup(probe_id)
-    verified = []
+    at = datetime.now(UTC).isoformat(timespec="seconds")
+    host_results: list[dict[str, Any]] = []
     with r.tx() as conn:
-        for h in targets:
+        for h in all_hosts:
+            if h not in targets:
+                host_results.append({"host": h["name"], "state": "incomplete", "checks": [],
+                                     "reason": f"état du déploiement : {h['deployment_state']}"})
+                continue
             report = reports.get(h["name"])
-            results = _evaluate_checks(resolution["verification"], report, probes.get(h["name"]))
+            if h["name"] not in reachable or report is None:
+                hosts.observe(conn, h, "facts", {"error": "collecte impossible : hôte injoignable"}, "unreachable",
+                              "rackloom-collect", r.job["id"])
+                host_results.append({"host": h["name"], "state": "unavailable", "checks": [],
+                                     "reason": "hôte injoignable"})
+                r.step(conn, f"Vérification ({h['name']})", "failed", summary={"reason": "hôte injoignable"})
+                continue
+            results = evaluate_checks(resolution["health_checks"], report, probes.get(h["name"]), at)
             ok = all(x["ok"] for x in results)
-            if report:
-                hosts.observe(conn, h, "facts", {"os": report.get("os"), "kernel": report.get("kernel"),
-                                                 "init": report.get("init")}, "ok", "rackloom-collect", r.job["id"])
-                hosts.observe(conn, h, "packages", {"nginx": report.get("package_nginx")},
-                              "ok" if report.get("package_nginx") else "error", "rackloom-collect", r.job["id"])
-                service_ok = next(x for x in results if x["type"] == "service_active")["ok"]
-                hosts.observe(conn, h, "services", {"nginx": {"active": service_ok, "manager": "sysv",
-                                                              "systemd": "non collecté"}},
-                              "ok" if service_ok else "error", "rackloom-collect", r.job["id"])
-                journal = str(report.get("journal") or "")[:16384]
-                hosts.observe(conn, h, "journal", {"source": report.get("journal_source"),
-                                                   "lines": journal.splitlines()[-50:]}, "ok", "rackloom-collect",
-                              r.job["id"], r.redactor)
-            else:
-                hosts.observe(conn, h, "facts", {"error": "collecte impossible"}, "unreachable", "rackloom-collect",
-                              r.job["id"])
+            hosts.observe(conn, h, "facts", {"os": report.get("os"), "kernel": report.get("kernel"),
+                                             "init": report.get("init")}, "ok", "rackloom-collect", r.job["id"])
+            hosts.observe(conn, h, "packages", {"nginx": report.get("package_nginx")},
+                          "ok" if report.get("package_nginx") else "error", "rackloom-collect", r.job["id"])
+            service_ok = next((x["ok"] for x in results if x["type"] == "service_active"), False)
+            hosts.observe(conn, h, "services", {"nginx": {"active": service_ok, "manager": "sysv",
+                                                          "systemd": "non collecté"}},
+                          "ok" if service_ok else "error", "rackloom-collect", r.job["id"])
+            journal = str(report.get("journal") or "")[:16384]
+            hosts.observe(conn, h, "journal", {"source": report.get("journal_source"),
+                                               "lines": journal.splitlines()[-50:]}, "ok", "rackloom-collect",
+                          r.job["id"], r.redactor)
             probe = probes.get(h["name"])
             if probe is not None:
                 hosts.observe(conn, h, "probe", probe, "ok" if probe.get("ok") else "error", "probe", r.job["id"])
             conn.execute("UPDATE hosts SET deployment_state = %s WHERE id = %s",
                          ("verified" if ok else "verify_failed", h["id"]))
             r.step(conn, f"Vérification ({h['name']})", "succeeded" if ok else "failed",
-                   summary={"checks": [{"type": x["type"], "ok": x["ok"], "detail": x["detail"]} for x in results]})
-            if ok:
-                verified.append(h)
+                   summary={"checks": [{"type": x["type"], "ok": x["ok"], "evidence": x["evidence"]}
+                                       for x in results]})
+            host_results.append({"host": h["name"], "state": "checked", "checks": results})
+        status, reason = service_status(host_results)
+        conn.execute("UPDATE deployments SET service_status = %s, service_reason = %s, service_checked_at = now(), "
+                     "service_checks = %s WHERE id = %s", (status, reason, Jsonb(host_results), dep["id"]))
+        r.event(conn, "deployment.service_status", {"status": status, "message": reason,
+                                                    "deployment_id": str(dep["id"])},
+                severity="info" if status == "ready" else "warning")
         r.fenced(conn, "state = 'succeeded', finished_at = now(), result = %s",
-                 (Jsonb({"verified": [h["name"] for h in verified], "hosts": len(all_hosts)}),))
+                 (Jsonb({"service_status": status, "hosts": len(all_hosts)}),))
         change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (r.job["change_id"],)).fetchone()
         if change["state"] == "executing":
             change = transition(conn, change, "verifying", reason_code="verify_started", actor_type="worker",
                                 actor_id=r.worker_id)
-        complete = len(verified) == len(all_hosts) and all_hosts
         conn.execute("UPDATE executions SET finished_at = now(), state = %s WHERE id = %s",
-                     ("succeeded" if complete else "partially_succeeded", r.job["execution_id"]))
-        if complete:
-            transition(conn, change, "succeeded", reason_code="verified", actor_type="worker", actor_id=r.worker_id,
-                       detail={"message": f"Succès : {len(verified)} hôte(s) sain(s)"})
+                     ("succeeded" if status == "ready" else "partially_succeeded", r.job["execution_id"]))
+        if status == "ready":
+            transition(conn, change, "succeeded", reason_code="service_ready", actor_type="worker",
+                       actor_id=r.worker_id, detail={"message": f"Succès : service prêt ({len(all_hosts)} hôte(s))",
+                                                     "service_status": status})
         else:
-            transition(conn, change, "partially_succeeded", reason_code="verify_incomplete", actor_type="worker",
+            transition(conn, change, "partially_succeeded", reason_code=f"service_{status}", actor_type="worker",
                        actor_id=r.worker_id, severity="error",
-                       detail={"message": "VM créée, configuration incomplète",
-                               "verified": [h["name"] for h in verified],
-                               "failed": [h["name"] for h in all_hosts if h not in verified]})
+                       detail={"message": reason, "service_status": status})
 
 
 # --- Réconciliation ----------------------------------------------------------------------
@@ -604,17 +672,16 @@ def handle_reconcile(r: JobContext) -> None:
             r.fenced(conn, "state = 'succeeded', finished_at = now(), result = %s",
                      (Jsonb({"source": "launcher", "outcome": outcome}),))
         return
-    # Runner introuvable : lecture du state par un runner en lecture seule.
     with r.tx() as conn:
         ctx = _load(conn, target, lock=False)
-        resolution = ctx["version"]["resolution"]
+    resolution = ctx["resolution"]
     inspect_id = f"{r.job['id']}-i{r.job['attempts']}"
     work = _prepare_tf(r, inspect_id, resolution, {"action": "tf_inspect", "timeout_seconds": 120})
     r.run({"run_id": inspect_id, "kind": "terraform", "stack": ctx["stack"]["slug"], "timeout_seconds": 120})
     inspect = read_json(work / "out" / "inspect.json", {}) or {}
     r.cleanup(inspect_id)
     state = inspect.get("state") or {}
-    planned = {vm["name"] for vm in resolution["vms"]}
+    planned = {i["name"] for i in resolution["instances"]}
     vms = _vms_from_state(state)
     present = {vm["name"] for vm in vms}
     plan = ctx["plan"]
@@ -633,6 +700,7 @@ def handle_reconcile(r: JobContext) -> None:
                          (Jsonb({"vms": vms, "outcome": "applied", "source": "state"}), target_id))
             admission.release_stack(conn, target)
             conn.execute("UPDATE plans SET status = 'applied' WHERE id = %s", (plan["id"],))
+            _record_instances(conn, change, resolution, vms)
             change = transition(conn, change, "executing", reason_code="reconciled_applied", actor_type="worker",
                                 actor_id=r.worker_id, detail={"message": "Réconciliation : plan appliqué (state)"})
             queue.enqueue(conn, kind="guest_ready", change=change, execution_id=target["execution_id"],
@@ -659,9 +727,9 @@ def _reconcile_other(r: JobContext, target: dict[str, Any], status: dict[str, An
         conn.execute("UPDATE jobs SET state = 'failed', finished_at = now(), result = %s WHERE id = %s "
                      "AND state = 'uncertain'", (Jsonb({"outcome": "interrupted", "launcher": status["state"]}),
                                                   target["id"]))
-        conn.execute("UPDATE hosts SET deployment_state = 'config_failed' WHERE change_id = %s "
-                     "AND deployment_state = 'enrolled'", (r.job["change_id"],))
         change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (r.job["change_id"],)).fetchone()
+        conn.execute("UPDATE hosts SET deployment_state = 'config_failed' WHERE deployment_id = %s "
+                     "AND deployment_state = 'enrolled'", (change["deployment_id"],))
         transition(conn, change, "executing", reason_code="reconciled_configure", actor_type="worker",
                    actor_id=r.worker_id)
         queue.enqueue(conn, kind="verify", change=change, execution_id=target["execution_id"],
@@ -680,4 +748,4 @@ HANDLERS = {
 
 
 def catalog_ok(conn: psycopg.Connection) -> bool:
-    return catalog.latest_template(conn, "ubuntu-web") is not None
+    return registry.latest_published(conn, "ubuntu-web") is not None

@@ -1,55 +1,69 @@
 schema: rackloom.demo-profile/v1
-# Profil de démonstration. Refusé en profil production. Identités fictives en .demo.invalid ;
-# mots de passe générés à chaque chargement, jamais stockés dans le dépôt.
+# Profil de démonstration (docs/lot-1-plan.md §5). Refusé en profil production. Identités
+# fictives en .demo.invalid ; mots de passe générés à chaque chargement, jamais dans le dépôt.
+users:
+  - {key: admin, email: admin@demo.invalid, name: "Admin (démo)", roles: [{role: platform_admin}]}
+  - {key: pub, email: pub@demo.invalid, name: "Paul (publicateur)", roles: [{role: template_publisher}]}
+  - {key: alice, email: alice@demo.invalid, name: "Alice (opératrice)", roles: [{role: operator, project: vitrine}]}
+  - {key: bruno, email: bruno@demo.invalid, name: "Bruno (approbateur)", roles: [{role: approver, project: vitrine}]}
+  - {key: chloe, email: chloe@demo.invalid, name: "Chloé (opératrice)", roles: [{role: operator, project: compta}]}
+  - {key: david, email: david@demo.invalid, name: "David (auditeur)", roles: [{role: auditor}]}
+
 projects:
   - slug: vitrine
+    code: vit
     name: Vitrine
-    templates: [ubuntu-web]
+    referent: bruno
     environments:
-      - {slug: lab, name: Lab, kind: lab, requires_distinct_approver: true, plan_ttl_seconds: 14400}
-      - {slug: prod, name: Production, kind: prod, requires_distinct_approver: true,
-         plan_ttl_seconds: 3600}
+      - {slug: dev, name: dev, kind: dev, plan_ttl_seconds: 14400, policy: dev}
+      - {slug: prod, name: prod, kind: prod, plan_ttl_seconds: 3600, policy: prod}
   - slug: compta
-    name: Comptabilité
-    templates: [ubuntu-web]
+    code: cpt
+    name: Compta
+    referent: chloe
     environments:
-      - {slug: lab, name: Lab, kind: lab, requires_distinct_approver: true, plan_ttl_seconds: 14400}
-  # Projet sans réseau octroyé : la résolution est bloquée avec une explication (démonstration 3).
-  - slug: recherche
-    name: Recherche
-    templates: [ubuntu-web]
-    environments:
-      - {slug: lab, name: Lab, kind: lab, requires_distinct_approver: true, plan_ttl_seconds: 14400}
+      - {slug: dev, name: dev, kind: dev, plan_ttl_seconds: 14400, policy: dev}
 
-users:
-  - {email: admin@demo.invalid, name: "Admin (démo)",
-     roles: [{role: platform_admin}, {role: template_publisher}]}
-  - {email: alice@demo.invalid, name: "Alice (opératrice)", roles: [{role: operator, project: vitrine}]}
-  - {email: bruno@demo.invalid, name: "Bruno (approbateur)", roles: [{role: approver, project: vitrine}]}
-  - {email: chloe@demo.invalid, name: "Chloé (opératrice compta)",
-     roles: [{role: operator, project: compta}, {role: operator, project: recherche}]}
-  - {email: david@demo.invalid, name: "David (auditeur)", roles: [{role: auditor}]}
+# Politiques d'environnement (version 1, immuables ; une modification crée une version).
+policies:
+  dev:
+    explicit_request: false
+    lifetime: {required: true, max_days: 30}
+    approval: {required: true, distinct_approver: true}
+  prod:
+    explicit_request: true
+    lifetime: {required: false}
+    approval: {required: true, distinct_approver: true}
 
-# Octrois de ressources de l'inventaire simulé. vitrine/prod ne reçoit rien : une demande
-# explicite de production y est bloquée avec une explication, jamais redirigée.
+# Octrois d'inventaire et de services. compta/dev ne reçoit aucun réseau (démonstration D3).
 grants:
-  - {project: vitrine, environment: lab, kind: network, stable_id: network-101}
-  - {project: vitrine, environment: lab, kind: image, stable_id: vm-500}
-  - {project: vitrine, environment: lab, kind: cluster, stable_id: domain-c10}
-  - {project: vitrine, environment: lab, kind: datastore, stable_id: datastore-201}
-  - {project: vitrine, environment: lab, kind: datastore, stable_id: datastore-202}
-  - {project: vitrine, environment: lab, kind: folder, stable_id: group-v21}
-  - {project: compta, environment: lab, kind: network, stable_id: network-102}
-  - {project: compta, environment: lab, kind: image, stable_id: vm-500}
-  - {project: compta, environment: lab, kind: cluster, stable_id: domain-c10}
-  - {project: compta, environment: lab, kind: datastore, stable_id: datastore-201}
-  - {project: compta, environment: lab, kind: folder, stable_id: group-v22}
-  - {project: recherche, environment: lab, kind: image, stable_id: vm-500}
-  - {project: recherche, environment: lab, kind: cluster, stable_id: domain-c10}
-  - {project: recherche, environment: lab, kind: datastore, stable_id: datastore-201}
+  vitrine/dev:
+    service_template: [ubuntu-web]
+    image: [vm-500]
+    cluster: [domain-c10]
+    datastore: [datastore-201]
+    folder: [group-v21]
+    network: [network-101, network-102]
+  vitrine/prod:
+    service_template: [ubuntu-web]
+    image: [vm-500]
+    cluster: [domain-c20]
+    datastore: [datastore-301]
+    folder: [group-v22]
+    network: [network-301]
+  compta/dev:
+    service_template: [ubuntu-web]
+    image: [vm-500]
+    cluster: [domain-c10]
+    datastore: [datastore-201]
+    folder: [group-v23]
+
+# Version de template publiée au chargement ; 1.1.0 reste candidate (validée, non publiée).
+publish:
+  - {template: ubuntu-web, version: 1.0.0, reason: "Template de démonstration du lot 1"}
 
 connectors:
   - {slug: vsphere-fake, kind: vsphere, mode: simulated}
   - {slug: terraform-cli, kind: terraform, mode: real}
   - {slug: ansible-runner, kind: ansible, mode: real}
-  - {slug: assistant, kind: model, mode: simulated}
+  - {slug: model-fake, kind: model, mode: simulated}

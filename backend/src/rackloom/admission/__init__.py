@@ -1,8 +1,8 @@
 """Admission au démarrage effectif d'un job : registre ordonné de règles, décision enregistrée.
 
 Chaque job est réévalué au moment où un worker le réclame, quelle que soit sa date de mise en
-file. Les emplacements 80 (F28), 90 (F27), 100 (F11), 110 (F05), 120 (F03), 130 (F16) et
-140 (F10) sont réservés et non enregistrés au lot 1.
+file. Emplacements réservés, non enregistrés au lot 1 : 80 (F28), 90 (F27), 95 (F37),
+100 (F11), 110 (F05), 115 (F39), 120 (F03), 125 (F34), 130 (F16), 135 (F38), 140 (F10).
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ class Context:
     execution: dict[str, Any] | None
     approval: dict[str, Any] | None
     plan: dict[str, Any] | None
+    revision: dict[str, Any] | None = None
     # Calcul de l'empreinte courante, fourni par le worker (déchiffre et hache plan.bin).
     recompute_digest: Callable[[], str] | None = None
 
@@ -135,6 +136,35 @@ def bundle_digest(ctx: Context) -> Verdict:
         return Verdict(False, f"empreinte non recalculable : {exc}", getattr(exc, "code", "bundle_mismatch"))
     if current != ctx.approval["bundle_digest"] or current != ctx.plan["bundle_digest"]:
         return Verdict(False, "le dossier d'exécution ne correspond plus à l'empreinte approuvée", "bundle_mismatch")
+    return Verdict(True)
+
+
+RESOLVED_GRANTS = (("image", "/placement/image"), ("cluster", "/placement/cluster"),
+                   ("datastore", "/placement/datastore"), ("folder", "/placement/folder"),
+                   ("network", "/placement/network"))
+
+
+@rule(55, "R055", "write")
+def resolution_admissible(ctx: Context) -> Verdict:
+    """La résolution approuvée reste admissible ; on ne la recalcule jamais."""
+    rev = ctx.revision
+    if rev is None:
+        return Verdict(False, "révision introuvable", "resolution_no_longer_admissible")
+    tpl = ctx.conn.execute("SELECT slug, version, status FROM template_versions WHERE id = %s",
+                           (rev["template_version_id"],)).fetchone()
+    if tpl is None or tpl["status"] == "withdrawn":
+        return Verdict(False, f"la version {tpl['version'] if tpl else '?'} du template a été retirée : "
+                       "une nouvelle révision explicite est nécessaire", "resolution_no_longer_admissible")
+    values = rev["resolved"]["values"]
+    for kind, pointer in RESOLVED_GRANTS:
+        stable_id = values[pointer]["value"]
+        granted = ctx.conn.execute(
+            "SELECT 1 FROM resource_grants WHERE project_id = %s AND environment_id = %s AND kind = %s "
+            "AND stable_id = %s AND revoked_at IS NULL",
+            (ctx.change["project_id"], rev["environment_id"], kind, stable_id)).fetchone()
+        if granted is None:
+            return Verdict(False, f"{values[pointer].get('label', stable_id)} n'est plus octroyé à cet environnement : "
+                           "une nouvelle révision explicite est nécessaire", "resolution_no_longer_admissible")
     return Verdict(True)
 
 

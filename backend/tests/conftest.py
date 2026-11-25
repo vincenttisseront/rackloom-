@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ADMIN_URL = os.environ.get("RACKLOOM_TEST_ADMIN_URL", "postgresql:///postgres")
 DEMO_PASSWORD = "mot-de-passe-de-test-" + "x" * 4
 
-DEMO_PASSWORDS = {f"{u}@demo.invalid": DEMO_PASSWORD for u in ("admin", "alice", "bruno", "chloe", "david")}
+DEMO_PASSWORDS = {f"{u}@demo.invalid": DEMO_PASSWORD for u in ("admin", "pub", "alice", "bruno", "chloe", "david")}
 
 
 def _db_url(name: str) -> str:

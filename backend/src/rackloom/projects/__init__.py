@@ -7,8 +7,12 @@ from uuid import UUID
 
 import psycopg
 
+from .. import audit
+from ..canonical import digest
+from ..db import Jsonb
 from ..errors import not_found
 from ..identity.authz import Principal, require_project
+from ..ids import uuid7
 
 
 def list_projects(conn: psycopg.Connection, principal: Principal) -> list[dict[str, Any]]:
@@ -51,3 +55,38 @@ def members(conn: psycopg.Connection, project_id: UUID) -> list[dict[str, Any]]:
         """,
         (project_id,),
     ).fetchall()
+
+
+def current_policy(conn: psycopg.Connection, environment_id: UUID) -> dict[str, Any] | None:
+    return conn.execute(
+        "SELECT * FROM environment_policies WHERE environment_id = %s ORDER BY version DESC LIMIT 1",
+        (environment_id,),
+    ).fetchone()
+
+
+def policy_version(conn: psycopg.Connection, environment_id: UUID, version: int) -> dict[str, Any] | None:
+    return conn.execute("SELECT * FROM environment_policies WHERE environment_id = %s AND version = %s",
+                        (environment_id, version)).fetchone()
+
+
+def add_policy_version(conn: psycopg.Connection, environment_id: UUID, rules: dict[str, Any], actor_id: UUID | None,
+                       reason: str) -> dict[str, Any]:
+    """Une politique modifiée crée une nouvelle version ; les anciennes restent lisibles."""
+    current = current_policy(conn, environment_id)
+    version = (current["version"] + 1) if current else 1
+    row = conn.execute(
+        "INSERT INTO environment_policies (id, environment_id, version, digest, rules, created_by, reason) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *",
+        (uuid7(), environment_id, version, digest(rules), Jsonb(rules), actor_id, reason),
+    ).fetchone()
+    audit.record(conn, actor_type="user" if actor_id else "system", actor_id=str(actor_id) if actor_id else "seed",
+                 action="policy.environment.version", outcome="ok", targets={"environment_id": str(environment_id)},
+                 versions={"policy": version, "digest": row["digest"]}, policy_decision={"reason": reason})
+    return row
+
+
+def referent_name(conn: psycopg.Connection, project: dict[str, Any]) -> str:
+    if project.get("referent_user_id") is None:
+        return "désigné du projet"
+    row = conn.execute("SELECT display_name FROM users WHERE id = %s", (project["referent_user_id"],)).fetchone()
+    return row["display_name"].split(" (")[0] if row else "désigné du projet"

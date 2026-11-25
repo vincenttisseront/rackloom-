@@ -39,8 +39,9 @@ class Principal:
         return any(b.role == "auditor" and b.project_id is None for b in self.bindings)
 
     def visible_project_ids(self, all_project_ids: list[UUID] | None = None) -> set[UUID] | None:
-        """None signifie « tous les projets » (administrateur ou auditeur global)."""
-        if self.is_platform_admin or self.is_global_auditor:
+        """None signifie « tous les projets » (auditeur global). L'administrateur de plateforme ne lit
+        les données d'un projet qu'avec un rôle sur ce projet (décision D7)."""
+        if self.is_global_auditor:
             return None
         return {b.project_id for b in self.bindings if b.project_id is not None}
 
@@ -81,8 +82,15 @@ def require_admin(principal: Principal) -> None:
         raise forbidden("rôle administrateur de plateforme requis")
 
 
+def require_publisher(principal: Principal) -> None:
+    if not principal.has_role("template_publisher"):
+        raise forbidden("rôle template_publisher requis pour publier, déprécier ou retirer un template")
+
+
 def require_auditor(principal: Principal, project_id: UUID | None = None) -> None:
-    if principal.is_platform_admin or principal.is_global_auditor:
+    if principal.is_global_auditor:
+        return
+    if project_id is None and principal.is_platform_admin:
         return
     if project_id is not None and principal.has_role("auditor", project_id):
         return

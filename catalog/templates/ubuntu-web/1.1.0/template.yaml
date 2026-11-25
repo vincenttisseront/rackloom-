@@ -1,0 +1,61 @@
+schema: rackloom.template/v1
+slug: ubuntu-web
+version: 1.1.0
+title: "Serveur web Ubuntu"
+description: "Ubuntu 24.04 avec Nginx, vérifié par une sonde HTTP"
+creation_method:
+  kind: clone_image                       # autoinstall : AT02
+  image_filter: {os: ubuntu-24.04, layout_id: std-v1}
+system_profile:
+  os: ubuntu-24.04
+  layout: {source: image, layout_id: std-v1}   # le partitionnement vient de l'image
+  network: {role: app, addressing: lab_assigned}
+  security: {open_ports: [22, 80]}
+components:
+  - {component: nginx, version: 1.1.0, config: {listen_port: 80, server_tokens: false, security_headers: true}}
+inputs:
+  quantity: {type: integer, min: 1, max: 2, default: 1, modifiable: true, label: "Nombre de serveurs"}
+  size_tier:
+    type: enum
+    values: [test_leger, standard, charge_elevee]
+    value_labels: {test_leger: "Test léger", standard: "Standard", charge_elevee: "Charge élevée"}
+    per_environment: true
+    modifiable: true
+    label: "Niveau"
+  usage: {type: string, max_length: 80, required: false, label: "Usage"}
+  lifetime_until: {type: date, required_by: environment_policy, label: "Date de fin"}
+environments:
+  dev:
+    size_tiers:
+      test_leger: {vcpu: 2, memory_mb: 3072, disk_gb: 20}
+      standard: {vcpu: 2, memory_mb: 4096, disk_gb: 40}
+    default_size_tier: test_leger
+    placement: {cluster_tags: {env: dev}, datastore_tags: {tier: standard}, network_role: app, folder: "{project}/{environment}"}
+    tie_break: [rank, stable_id]
+    naming: "{project_code}-dev-web-{nn}"
+    backup: none
+  prod:
+    size_tiers:
+      standard: {vcpu: 2, memory_mb: 4096, disk_gb: 40}
+      charge_elevee: {vcpu: 4, memory_mb: 8192, disk_gb: 80}
+    default_size_tier: standard
+    placement: {cluster_tags: {env: prod}, datastore_tags: {tier: standard}, network_role: app, folder: "{project}/{environment}"}
+    tie_break: [rank, stable_id]
+    naming: "{project_code}-prd-web-{nn}"
+    backup: {policy: daily-14d}           # vérification : F39
+secret_refs: []
+health_checks:
+  - {type: package_installed, package: nginx}
+  - {type: service_active, unit: nginx}
+  - {type: http_probe, port: 80, path: /, expect_status: 200}
+deployment_policy:
+  admissible_environment_kinds: [dev, prod]
+  approval: {required: true, distinct_approver: true}
+  waves: {mode: single}                   # pilote et vagues : AT01, F19
+  stop_conditions: [any_host_configuration_failed]
+  retry: {strategy: failed_steps_only}
+terraform: {module: lab-vm, version: 1.0.0}
+outputs_allowlist: [name, vm_uuid]        # sorties publiables : F33
+preview_limits:
+  - "Les VM n'existent pas encore : le check mode Ansible ne couvre aucune tâche."
+simulated_steps: [vm_inventory, guest_customization, ip_assignment]
