@@ -10,12 +10,10 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-import psycopg
-
 from .. import audit, events
 from ..changes.service import get_change
 from ..changes.transitions import transition
-from ..db import Jsonb
+from ..db import Conn, Jsonb
 from ..errors import ApiError
 from ..executions import queue
 from ..identity.authz import Principal, require_role
@@ -27,7 +25,7 @@ def _auth_context(principal: Principal) -> dict[str, Any]:
             "session_id": str(principal.session_id), "email": principal.email}
 
 
-def decide(conn: psycopg.Connection, principal: Principal, change_id: UUID, body: dict[str, Any],
+def decide(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, Any],
            request_id: str | None = None) -> dict[str, Any]:
     allowed = {"plan_id", "retry_id", "bundle_digest", "decision", "comment"}
     extra = set(body) - allowed
@@ -115,7 +113,7 @@ def decide(conn: psycopg.Connection, principal: Principal, change_id: UUID, body
             "change": change}
 
 
-def request_retry(conn: psycopg.Connection, principal: Principal, change_id: UUID, body: dict[str, Any],
+def request_retry(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, Any],
                   request_id: str | None = None) -> dict[str, Any]:
     """Reprise ciblée de la configuration après un succès partiel ; à approuver ensuite."""
     from ..canonical import digest
@@ -156,7 +154,7 @@ def request_retry(conn: psycopg.Connection, principal: Principal, change_id: UUI
     return {"retry_id": retry_id, "bundle_digest": digest(bundle), "host_ids": sorted(requested)}
 
 
-def _decide_retry(conn: psycopg.Connection, principal: Principal, change: dict[str, Any], retry_id: UUID,
+def _decide_retry(conn: Conn, principal: Principal, change: dict[str, Any], retry_id: UUID,
                   body: dict[str, Any], decision: str, comment: str, request_id: str | None) -> dict[str, Any]:
     retry = conn.execute("SELECT * FROM retry_requests WHERE id = %s AND change_id = %s FOR UPDATE",
                          (retry_id, change["id"])).fetchone()

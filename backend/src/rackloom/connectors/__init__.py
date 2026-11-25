@@ -18,8 +18,9 @@ def cap(mode: str | None, note: str = "") -> dict[str, Any]:
 
 MATRIX: dict[str, dict[str, dict[str, Any]]] = {
     "vsphere": {
-        "configure": cap("real"), "test_connection": cap("simulated"), "inventory": cap("simulated"),
-        "plan": cap(None), "execute": cap(None), "track": cap("simulated"), "cancel": cap(None),
+        "configure": cap("real"), "test_connection": cap("real", "TLS : CA importée, nom d'hôte vérifié"),
+        "inventory": cap("simulated"), "plan": cap(None), "execute": cap(None), "track": cap("simulated"),
+        "cancel": cap(None),
     },
     "terraform": {
         "configure": cap("real"), "test_connection": cap("real", "version et miroir de providers"),
@@ -38,9 +39,27 @@ MATRIX: dict[str, dict[str, dict[str, Any]]] = {
 }
 
 
+class SimulatedInProduction(RuntimeError):
+    pass
+
+
+def refuse_simulated_in_production(conn: Any, profile: str) -> None:
+    """Le profil `production` ne démarre pas tant qu'un connecteur simulé existe (API et worker)."""
+    if profile != "production":
+        return
+    rows = conn.execute("SELECT slug FROM connectors WHERE mode = 'simulated' ORDER BY slug").fetchall()
+    if rows:
+        raise SimulatedInProduction("profil production : connecteur(s) simulé(s) refusé(s) : "
+                                    + ", ".join(r["slug"] for r in rows))
+
+
+# Capacités que seul le connecteur fictif simule au lot 1 ; le connecteur réel les reçoit au lot 2.
+SIMULATED_ONLY = {"vsphere": ("inventory", "track")}
+
+
 def capabilities_for(kind: str, mode: str) -> dict[str, dict[str, Any]]:
     matrix = MATRIX[kind]
     if mode == "simulated":
         return {k: (dict(v, mode="simulated") if v["available"] and v["mode"] == "real" and k != "configure"
                     else v) for k, v in matrix.items()}
-    return matrix
+    return {k: (cap(None, "lot 2") if k in SIMULATED_ONLY.get(kind, ()) else v) for k, v in matrix.items()}

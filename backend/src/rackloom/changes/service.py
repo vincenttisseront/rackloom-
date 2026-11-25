@@ -15,7 +15,7 @@ import psycopg
 
 from .. import audit, events, projects, resolver
 from ..canonical import digest
-from ..db import Jsonb
+from ..db import Conn, Jsonb
 from ..errors import ApiError, not_found
 from ..executions import queue
 from ..identity.authz import Principal, require_project, require_role
@@ -31,7 +31,7 @@ def change_ref(change: dict[str, Any]) -> str:
     return f"CHG-{change['seq']:04d}"
 
 
-def get_change(conn: psycopg.Connection, principal: Principal, change_id: UUID,
+def get_change(conn: Conn, principal: Principal, change_id: UUID,
                for_update: bool = False) -> dict[str, Any]:
     row = conn.execute(f"SELECT * FROM changes WHERE id = %s{' FOR UPDATE' if for_update else ''}",
                        (change_id,)).fetchone()
@@ -41,7 +41,7 @@ def get_change(conn: psycopg.Connection, principal: Principal, change_id: UUID,
     return row
 
 
-def get_deployment(conn: psycopg.Connection, principal: Principal, deployment_id: UUID,
+def get_deployment(conn: Conn, principal: Principal, deployment_id: UUID,
                    for_update: bool = False) -> dict[str, Any]:
     row = conn.execute(f"SELECT * FROM deployments WHERE id = %s{' FOR UPDATE' if for_update else ''}",
                        (deployment_id,)).fetchone()
@@ -51,11 +51,11 @@ def get_deployment(conn: psycopg.Connection, principal: Principal, deployment_id
     return row
 
 
-def _project(conn: psycopg.Connection, project_id: UUID) -> dict[str, Any]:
+def _project(conn: Conn, project_id: UUID) -> dict[str, Any]:
     return conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
 
 
-def _created(conn: psycopg.Connection, principal: Principal, row: dict[str, Any], request_id: str | None) -> None:
+def _created(conn: Conn, principal: Principal, row: dict[str, Any], request_id: str | None) -> None:
     conn.execute(
         "INSERT INTO state_transitions (change_id, from_state, to_state, reason_code, actor_type, actor_id) "
         "VALUES (%s, NULL, 'draft', 'created', 'user', %s)", (row["id"], str(principal.user_id)))
@@ -68,7 +68,7 @@ def _created(conn: psycopg.Connection, principal: Principal, row: dict[str, Any]
                  request_id=request_id)
 
 
-def create_change(conn: psycopg.Connection, principal: Principal, project: dict[str, Any], title: str = "",
+def create_change(conn: Conn, principal: Principal, project: dict[str, Any], title: str = "",
                   request_id: str | None = None) -> dict[str, Any]:
     require_role(principal, "operator", project["id"])
     row = conn.execute(
@@ -79,7 +79,7 @@ def create_change(conn: psycopg.Connection, principal: Principal, project: dict[
     return row
 
 
-def create_modify_change(conn: psycopg.Connection, principal: Principal, deployment_id: UUID,
+def create_modify_change(conn: Conn, principal: Principal, deployment_id: UUID,
                          request_id: str | None = None) -> dict[str, Any]:
     """« Modifier ce déploiement » : même version de template, entrées modifiables seulement (V10)."""
     dep = get_deployment(conn, principal, deployment_id, for_update=True)
@@ -101,7 +101,7 @@ def create_modify_change(conn: psycopg.Connection, principal: Principal, deploym
     return row
 
 
-def add_version(conn: psycopg.Connection, principal: Principal, change_id: UUID, body: dict[str, Any],
+def add_version(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, Any],
                 request_id: str | None = None) -> dict[str, Any]:
     """Enregistre une version du besoin et sa révision. Révoque toute approbation non consommée."""
     if not isinstance(body, dict):
@@ -184,7 +184,7 @@ def add_version(conn: psycopg.Connection, principal: Principal, change_id: UUID,
             "unconfirmed_suggestions": resolver.unconfirmed(provenance)}
 
 
-def _supersede(conn: psycopg.Connection, change: dict[str, Any], version_no: int) -> None:
+def _supersede(conn: Conn, change: dict[str, Any], version_no: int) -> None:
     """Une nouvelle version rend caducs les plans prêts et révoque les approbations non consommées."""
     plans = conn.execute(
         "UPDATE plans SET status = 'superseded' WHERE change_id = %s AND status IN ('ready', 'blocked_destructive') "
@@ -204,17 +204,17 @@ def _supersede(conn: psycopg.Connection, change: dict[str, Any], version_no: int
                           "message": "Nouvelle version : plan remplacé, approbation révoquée"})
 
 
-def current_version(conn: psycopg.Connection, change: dict[str, Any]) -> dict[str, Any] | None:
+def current_version(conn: Conn, change: dict[str, Any]) -> dict[str, Any] | None:
     return conn.execute("SELECT * FROM request_versions WHERE change_id = %s AND version_no = %s",
                         (change["id"], change["current_version_no"])).fetchone()
 
 
-def current_revision(conn: psycopg.Connection, change: dict[str, Any]) -> dict[str, Any] | None:
+def current_revision(conn: Conn, change: dict[str, Any]) -> dict[str, Any] | None:
     return conn.execute("SELECT * FROM request_revisions WHERE change_id = %s AND revision_no = %s",
                         (change["id"], change["current_revision_no"])).fetchone()
 
 
-def get_revision(conn: psycopg.Connection, change: dict[str, Any], revision_no: int) -> dict[str, Any]:
+def get_revision(conn: Conn, change: dict[str, Any], revision_no: int) -> dict[str, Any]:
     row = conn.execute("SELECT * FROM request_revisions WHERE change_id = %s AND revision_no = %s",
                        (change["id"], revision_no)).fetchone()
     if row is None:
@@ -222,7 +222,7 @@ def get_revision(conn: psycopg.Connection, change: dict[str, Any], revision_no: 
     return row
 
 
-def _reserve(conn: psycopg.Connection, change: dict[str, Any], revision: dict[str, Any]) -> None:
+def _reserve(conn: Conn, change: dict[str, Any], revision: dict[str, Any]) -> None:
     env_id = revision["environment_id"]
     for inst in revision["resolved"]["instances"]:
         if inst["existing"]:
@@ -238,7 +238,7 @@ def _reserve(conn: psycopg.Connection, change: dict[str, Any], revision: dict[st
                            "demande : enregistrez une nouvelle version") from exc
 
 
-def _ensure_deployment(conn: psycopg.Connection, change: dict[str, Any], revision: dict[str, Any],
+def _ensure_deployment(conn: Conn, change: dict[str, Any], revision: dict[str, Any],
                        principal: Principal) -> dict[str, Any]:
     if change["deployment_id"]:
         return conn.execute("SELECT * FROM deployments WHERE id = %s", (change["deployment_id"],)).fetchone()
@@ -259,7 +259,7 @@ def _ensure_deployment(conn: psycopg.Connection, change: dict[str, Any], revisio
     return dep
 
 
-def submit(conn: psycopg.Connection, principal: Principal, change_id: UUID, revision_no: int,
+def submit(conn: Conn, principal: Principal, change_id: UUID, revision_no: int,
            request_id: str | None = None) -> dict[str, Any]:
     change = get_change(conn, principal, change_id, for_update=True)
     require_role(principal, "operator", change["project_id"], change["environment_id"])
@@ -293,7 +293,7 @@ def submit(conn: psycopg.Connection, principal: Principal, change_id: UUID, revi
     return {"change": change, "job_id": job["id"], "deployment_id": dep["id"]}
 
 
-def duplicate(conn: psycopg.Connection, principal: Principal, change_id: UUID,
+def duplicate(conn: Conn, principal: Principal, change_id: UUID,
               request_id: str | None = None) -> dict[str, Any]:
     """Nouveau changement avec le même besoin : nouvelle résolution avec les versions courantes."""
     original = get_change(conn, principal, change_id)
@@ -310,7 +310,7 @@ def duplicate(conn: psycopg.Connection, principal: Principal, change_id: UUID,
     return result
 
 
-def replan(conn: psycopg.Connection, principal: Principal, change_id: UUID,
+def replan(conn: Conn, principal: Principal, change_id: UUID,
            request_id: str | None = None) -> dict[str, Any]:
     """Nouveau plan de la même révision après succès (lecture seule ; « aucun changement » attendu)."""
     change = get_change(conn, principal, change_id, for_update=True)
@@ -327,7 +327,7 @@ def replan(conn: psycopg.Connection, principal: Principal, change_id: UUID,
     return {"change": change, "job_id": job["id"]}
 
 
-def cancel_job(conn: psycopg.Connection, principal: Principal, job_id: UUID,
+def cancel_job(conn: Conn, principal: Principal, job_id: UUID,
                request_id: str | None = None) -> dict[str, Any]:
     """Demande d'annulation : jamais garantie une fois le runner démarré."""
     job = conn.execute("SELECT * FROM jobs WHERE id = %s FOR UPDATE", (job_id,)).fetchone()
@@ -351,7 +351,7 @@ def cancel_job(conn: psycopg.Connection, principal: Principal, job_id: UUID,
     return {"job_id": str(job_id), "state": job["state"], "cancel_requested_at": job["cancel_requested_at"]}
 
 
-def cancel(conn: psycopg.Connection, principal: Principal, change_id: UUID,
+def cancel(conn: Conn, principal: Principal, change_id: UUID,
            request_id: str | None = None) -> dict[str, Any]:
     change = get_change(conn, principal, change_id, for_update=True)
     if not (principal.has_role("operator", change["project_id"])
@@ -365,5 +365,5 @@ def cancel(conn: psycopg.Connection, principal: Principal, change_id: UUID,
                       actor_id=str(principal.user_id), request_id=request_id)
 
 
-def referent(conn: psycopg.Connection, project_id: UUID) -> str:
+def referent(conn: Conn, project_id: UUID) -> str:
     return projects.referent_name(conn, _project(conn, project_id))

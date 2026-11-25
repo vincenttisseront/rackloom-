@@ -9,10 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-import psycopg
-
 from ..canonical import digest
-from ..db import Jsonb
+from ..db import Conn, Jsonb
 
 BUILTIN_VERSION = "builtin@1"
 
@@ -45,7 +43,7 @@ def builtin_digest() -> str:
     return digest(BUILTIN_RULES)
 
 
-def ensure_builtin(conn: psycopg.Connection) -> dict[str, str]:
+def ensure_builtin(conn: Conn) -> dict[str, str]:
     d = builtin_digest()
     conn.execute(
         "INSERT INTO policy_bundles (version, digest, source, rules) VALUES (%s, %s, 'builtin', %s) "

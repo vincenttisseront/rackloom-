@@ -2,41 +2,133 @@
 
 ## État au 2026-11-25
 
-- **Lot 0 (cadrage)** : rédigé. Documents seulement.
-- **Lot 1 (parcours Compose avec résolveur central et modèle template/composant)** : non commencé. Prochaine étape : E0 de `docs/lot-1-plan.md`.
-- **Rien n'est implémenté.** Aucun code, aucune image, aucun test. Aucune commande de construction ou de test n'a été exécutée : le dépôt est vide et `make` n'existe pas encore.
-- Pas de laboratoire réel pour l'instant (D2 et D21, décidé) : VM locales jetables et observations fictives explicites ; aucun déploiement externe n'est autorisé.
+- **Lot 0 (cadrage)** : fusionné dans `main` (PR #1).
+- **Lot 1 (parcours Compose avec résolveur central et modèle template/composant)** : **terminé, testé localement**. Livré en trois PR : #2 et #3 fusionnées en avance, puis la PR de clôture (branche `cursor/lot-1-cloture-e231`), qui corrige ce que ces fusions anticipées laissaient cassé et ajoute D2 à D6, T19, T24, T25, le `Makefile`, la CI et ce document.
+- **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
+- **Prochain jalon** : voir la dernière section.
+
+## Niveaux de preuve
+
+| Niveau | Sens dans ce document |
+|---|---|
+| simulé | l'étape n'existe pas réellement ; elle est jouée par un composant fictif et porte le badge « Simulé » dans l'UI |
+| testé localement | exercé par `make test` ou `make test-e2e` sur ressources locales jetables (conteneurs, provider Terraform `local`), avec un test nominal et un test de refus ou d'échec |
+| validé en laboratoire | session sur un laboratoire réel autorisé, consignée ici ; **aucune à ce jour** |
+| non vérifié | code présent sans test qui l'exerce dans les conditions réelles |
 
 ## Capacités
 
-| Capacité | Statut | Niveau de preuve |
+| Capacité | Statut | Niveau de preuve | Preuves |
+|---|---|---|---|
+| Authentification locale, sessions, CSRF, `Origin`, rôles par projet (dont publicateur de templates) | livré | testé localement | T08, T29, T39 ; `tests/security/test_api_security.py` |
+| Besoin versionné, rejet des champs techniques, résolveur central, révisions avec provenance | livré | testé localement | T21, T31 à T34, T37, T38 ; D2 à D4 dans le navigateur |
+| Registre de composants et templates versionnés, publication, dépréciation, retrait (sans atelier) | livré | testé localement | T35, T39 ; D5 dans le navigateur |
+| Parcours en trois étapes, formulaire généré, « Détails du plan » en lecture seule | livré | testé localement | T30 à T32 ; Playwright §1.1 au clavier, axe sans violation sérieuse ou critique |
+| Machine à états, événements, audit chaîné | livré | testé localement | T03 à T08 ; chaîne d'audit vérifiée dans le parcours §1.1 |
+| File PostgreSQL, bail, heartbeat, réconciliation | livré | testé localement | T13 à T15, T23, T25 |
+| Point d'admission unique (dont règle 55, connecteur simulé refusé pour la production) | livré | testé localement | T07, T35, T40 |
+| Launcher et runners isolés (sans réseau, socket du moteur seulement dans le launcher) | livré | testé localement | T28 ; runners réels dans `make test-e2e` |
+| Plan et application Terraform (provider `local`, une stack par déploiement) | livré | testé localement | T01 à T05, T26, T27 |
+| Approbation liée à la révision et à l'empreinte du plan | livré | testé localement | T03 à T08 |
+| Ansible sur nœuds de labo, vérification, `service_status` distinct du succès des jobs, fiches machine | livré | testé localement (les « VM » sont des conteneurs `lab-node`) | T20, T22, T41 ; D1 |
+| SSE et chronologie | livré | testé localement | T12 ; suivi en direct du parcours §1.1 |
+| Secrets scellés (lecture du chiffré interdite au rôle API), rapports Ansible chiffrés en classe B | livré | testé localement | `test_db_roles.py`, T11, T24 |
+| Assistant, adaptateur fictif déterministe | livré | simulé (badge « Assistant fictif ») ; refus testés localement | T06, T16 à T18, T36 |
+| Assistant, adaptateur Ollama | code livré | non vérifié contre un vrai modèle (réponse HTTP simulée dans le test) | `test_chat.py` |
+| Connecteur vSphere : configuration stricte et test de connexion TLS | livré | testé localement (serveur TLS jetable sur 127.0.0.1, CA générée) | T19 |
+| Connecteur vSphere : inventaire, personnalisation invitée, attribution d'adresse, suivi | simulé (`vsphere-fake`) | simulé | badge « Simulé » sur chaque étape |
+| Profil `production` : refus des connecteurs simulés, des identités de démo et de l'adaptateur fictif | livré | testé localement | `test_production_profile.py` |
+| Exposition (seul `127.0.0.1:8443` publié) | livré | testé localement | T28 |
+| Connecteur vCenter réel (session REST, inventaire) | lot 2 | non vérifié | — |
+| ISO, premier boot, sauvegarde, restauration | lot 3 | non vérifié | — |
+| OIDC | lot 4 | non vérifié | — |
+| Fonctions F01 à F60 et atelier AT01 à AT04 | à faire | non vérifié | `docs/backlog.md` |
+
+## Démonstrations D1 à D6
+
+Toutes passent dans Chromium (Playwright 1.65.1, TLS vérifié par une base NSS dédiée), au clavier, avec contrôle axe. Niveau : **testé localement**.
+
+| Démo | Fichier | Ce qui est vérifié |
 |---|---|---|
-| Authentification locale, sessions, CSRF, rôles par projet (dont publicateur de templates) | non implémenté | non vérifié |
-| Besoin versionné, rejet des champs techniques, résolveur central, révisions avec provenance | non implémenté | non vérifié |
-| Registre de composants et templates versionnés, publication, dépréciation, retrait | non implémenté | non vérifié |
-| Parcours en trois étapes, formulaire généré, « Détails du plan » en lecture seule | non implémenté | non vérifié |
-| Machine à états, événements, audit chaîné | non implémenté | non vérifié |
-| File PostgreSQL, bail, heartbeat, réconciliation | non implémenté | non vérifié |
-| Point d'admission unique (dont règle 55) | non implémenté | non vérifié |
-| Launcher et runners isolés | non implémenté | non vérifié |
-| Plan et application Terraform (ressource locale jetable, une stack par déploiement) | non implémenté | non vérifié |
-| Approbation liée à la révision et à l'empreinte | non implémenté | non vérifié |
-| Ansible sur nœuds de labo, vérification, état du service distinct du job, fiches machine | non implémenté | non vérifié |
-| SSE et chronologie | non implémenté | non vérifié |
-| Assistant (adaptateur fictif, adaptateur Ollama) | non implémenté | non vérifié |
-| Connecteur vCenter (inventaire réel) | lot 2 | non vérifié |
-| ISO, premier boot, sauvegarde, restauration | lot 3 | non vérifié |
-| OIDC | lot 4 | non vérifié |
-| Fonctions F01 à F60 et atelier AT01 à AT04 | voir `docs/backlog.md` (toutes « à faire ») | non vérifié |
+| D1 (§1.1) | `web/e2e/10-parcours-principal.spec.ts` | phrase D1 au chat, une seule question (date de fin), plan prêt, approbation par Bruno sur la même empreinte, succès « service prêt », badges « Simulé », modification (quantité 2), audit |
+| D2 | `web/e2e/20-d2-verrouillage.spec.ts` | « Détails du plan » sans contrôle éditable ; réseau, vCPU et image refusés (422 `locked_field`) via l'API (besoin, entrées, à côté du besoin), le client CI et le chat ; version et empreinte inchangées |
+| D3 | `web/e2e/30-d3-compta.spec.ts` | Chloé dans Compta : blocage `no_authorized_network` expliqué avec le référent, aucune question technique, aucun autre environnement essayé |
+| D4 | `web/e2e/40-d4-environnement.spec.ts` | `dev` par défaut ; octroi réseau retiré → blocage, jamais `prod` ; `prod` sans confirmation → 422 ; scénario `defaults_prod` rejeté ; production confirmée → bandeau et circuit d'approbation de production |
+| D5 | `web/e2e/90-d5-versions.spec.ts` | plan A approuvé en 1.0.0, 1.1.0 publiée avant le démarrage → A s'exécute en 1.0.0 (empreinte inchangée, déploiement épinglé) ; nouvelle demande → 1.1.0 ; 1.0.0 retirée avant le démarrage de B → job bloqué `resolution_no_longer_admissible`, plan intact |
+| D6 | `web/e2e/50-d6-assistant.spec.ts` | assistant désactivé par l'administrateur, puis en panne : bandeau clair, parcours formulaire jusqu'à « Succès — service prêt » avec la même approbation, mêmes refus (API, CI, production non confirmée) |
 
-Démonstrations D1 à D6 et tests obligatoires T01 à T41 (`docs/lot-1-plan.md` §1.2 et §9) : non écrits.
+Capture du parcours principal : `media/` du magasin de l'agent (voir le rapport de fin de lot) ; elle n'est pas versionnée.
 
-## Limites connues
+## Tests obligatoires T01 à T41
 
-- Les choix techniques suivent les briefs faute de dépôt existant ; les ADR sont au statut « proposé » tant que Vincent ne les a pas acceptés.
-- Les versions exactes (Terraform, providers, ansible-core, Nuxt, images de base) seront fixées et épinglées à l'étape qui les introduit.
-- Hypothèses du lot 1 : `docs/lot-1-plan.md` §3.
-- Le lot 1 ne livre ni l'atelier de templates, ni F51 à F60 ; il en pose seulement les bases (`docs/architecture.md` §12 et §12.1).
+Tous existent et passent ; aucun n'est marqué `skip` ou `xfail`. Niveau : **testé localement**.
+
+| Tests | Où |
+|---|---|
+| T01, T03, T04, T05, T07, T08, T26, T35 (registre), T40 | `backend/tests/integration/test_terraform_flow.py` (vraie CLI Terraform) |
+| T02, T13, T14, T15, T23, T27 | `backend/tests/integration/test_worker_resilience.py` |
+| T05, T08, T32, T39 | `backend/tests/integration/test_api_flow.py` |
+| T06, T16, T17, T18, T32, T34, T36 | `backend/tests/integration/test_chat.py` |
+| T06, T09, T11, T12, T29, T32 | `backend/tests/security/test_api_security.py` |
+| T10, T20, T22, T41 | `backend/tests/integration/test_lab_flow.py` (Ansible réel contre des conteneurs `lab-node`) |
+| T19 | `backend/tests/security/test_connector_tls.py` |
+| T21, T31, T32, T33, T34, T37, T38, T39 | `backend/tests/integration/test_resolver.py` |
+| T24, T25, T28 | `scripts/test-e2e.sh` (`canary-scan.sh`, `smoke-d1.py --restart-during`, `check-exposure.sh`) |
+| T30 à T36 | `web/e2e/*.spec.ts` |
+
+## Commandes exécutées et résultats
+
+Poste de développement : Linux x86_64, 4 vCPU, 15 Go, Docker 29.10.1, Compose 5.8.0, cgroup v2. Le 2026-11-25, sur la branche de clôture.
+
+| Commande | Résultat |
+|---|---|
+| `make doctor` | OK, 1 avertissement (port 8443 occupé par la démo en cours) |
+| `make test` : `ruff check`, `lint-imports`, `pytest`, `nuxi typecheck`, `check-openapi-drift.sh` | vert : `ruff` sans erreur ; 3 contrats import-linter tenus ; **179 tests passés** en 2 min 56 s (aucun `skip` ni `xfail`) ; `nuxi typecheck` sans erreur ; contrat OpenAPI et client typé à jour |
+| `make typecheck` (mypy, non bloquant) | 136 erreurs (dette, voir les limites) |
+| `make test-e2e` depuis une pile vide (6 nœuds de labo) | vert, terminé à 12:39 (heure de Paris) : T25 OK (appliance arrêtée pendant `ansible_configure`, changement réussi, service prêt, un seul `tf_apply`, aucun hôte en double) ; Playwright **6 tests passés** (§1.1 et D2 à D6) en 2,5 min ; T24 OK : canari absent des journaux Compose (339 Ko), de la base (856 Ko), des volumes, de 5 artefacts de classe B déchiffrés, de 376 réponses API et SSE et de 6 traces Playwright (172 Mo), témoin présent dans le journal du nœud ; T28 OK |
+| CI GitHub Actions (`.github/workflows/ci.yml`) | vert sur un exécuteur GitHub vierge (Docker 28.0.4, Compose 2.38.2) : job `make test` (177 tests au premier passage) et job `make doctor` puis `make test-e2e` (6 min 20 s, mêmes étapes et mêmes résultats qu'en local) ; résultat sur le dernier commit dans la PR de clôture |
+
+Détail de `make test-e2e` : la pile est détruite (`down -v`) puis reconstruite par `make demo` ; un canari aléatoire est posé comme mot de passe du connecteur `vsphere-fake` et injecté dans le journal nginx d'un nœud ; T25 coupe l'appliance pendant la configuration Ansible ; Playwright joue §1.1 et D2 à D6 avec traces complètes ; T24 cherche le canari dans les journaux Compose, toutes les tables, les volumes bruts, les artefacts de classe B déchiffrés, toutes les réponses API et SSE des identités de démo et les traces Playwright ; T28 contrôle l'exposition.
+
+## Fichiers du lot 1
+
+- `backend/` : API FastAPI, worker, résolveur, admission, registre, connecteurs, chat, CLI, migrations SQL ; tests unitaires, d'intégration, de sécurité.
+- `launcher/` : launcher (moteur Docker en démo, processus local en test).
+- `runners/` : images Terraform et Ansible (sans réseau), script commun.
+- `catalog/` : template `ubuntu-web` 1.0.0 et 1.1.0, composant `nginx`, module Terraform `lab-vm`, rôles et playbooks Ansible.
+- `compose/` : `compose.yaml`, `compose.demo.yaml`, `compose.test.yaml`, Caddy (`tls internal`), PostgreSQL.
+- `lab/` : profil de démonstration, inventaire simulé, image `lab-node`.
+- `web/` : WebUI Nuxt (3 étapes, Détails du plan, suivi SSE, fiches machine, administration), parcours Playwright.
+- `openapi/openapi.json`, `web/generated/schema.d.ts` : contrat et client typé, sans dérive.
+- `scripts/` : `doctor.sh`, `demo.sh`, `build-images.sh`, `test-e2e.sh`, `canary-*.{sh,py}`, `smoke-d1.py`, `check-exposure.sh`, `check-openapi-drift.sh`.
+- `Makefile`, `.github/workflows/ci.yml`, `docs/progress.md`, `docs/backlog.md`.
+
+## Ce que les fusions anticipées avaient laissé cassé dans `main`
+
+Constaté sur `main` après la fusion des PR #2 et #3, corrigé dans la PR de clôture :
+
+1. **Page de connexion corrompue** : le prérendu Nitro écrivait `index.html` en concurrence (exploration des liens), l'image servait un HTML tronqué. Exploration désactivée, et `web/scripts/csp.mjs` refuse un HTML généré corrompu.
+2. **`PUT /connectors/{id}/secrets/{name}` en erreur 500** : l'upsert lisait `EXCLUDED.ciphertext`, colonne illisible pour le rôle API. Corrigé, avec un test sous le rôle API.
+3. **« Modifier ce déploiement » vide** : la vue d'un changement `modify` sans version n'avait pas de besoin de départ. Corrigé (T26 vérifie le pré-remplissage).
+4. **Parcours Playwright fusionné en échec** (récapitulatif et empreinte attendus différents de §1.1). Corrigé.
+5. **Pas de `Makefile`, `make doctor` en échec, pas de CI** : ajoutés.
+6. **Contrat d'architecture violé** : le chat importait le résolveur directement ; il passe par `changes.need`, et trois contrats import-linter le vérifient.
+7. **T19 absent** et **démarrage en profil `production` non contrôlé** (définition de terminé, point 5) : ajoutés.
+8. Le titre du commit de fusion de la PR #3 porte encore « [EN COURS — NE PAS FUSIONNER] » ; `main` n'a pas été réécrit.
+
+## Écarts au plan et limites connues
+
+- **H4 infirmée** : systemd ne démarre pas dans un conteneur sans `--privileged`. Les nœuds de labo gèrent nginx et sshd par leurs scripts ; les contrôles systemd sont affichés « non collecté » (repli prévu par H4).
+- **Clés privées SSH de labo** scellées en base (et non sur un volume du worker) ; seules les clés publiques sont sur le volume `lab_keys`.
+- **Une seule pile à la fois** sur un poste : les noms `rackloom_*` des volumes et réseaux sont fixes. `make test-e2e` détruit la pile de démonstration.
+- **Réseaux internes isolés** : `core`, `ai` et `rn-lab` sont `internal` ; l'API n'a aucune sortie réseau en démo, donc le test de connexion vSphere réel n'est exercé que par `pytest`.
+- **Inventaire, personnalisation invitée, attribution d'adresse** : simulés (`vsphere-fake`) jusqu'au lot 2. Le connecteur vSphere réel n'a que la configuration et le test TLS ; sa session REST arrive au lot 2.
+- **Ollama** : adaptateur codé, jamais exécuté contre un vrai modèle.
+- **Fail2ban** (D15) : non livré au lot 1 ; il sera livré avec AT01.
+- **Canari T24** : aucun composant du catalogue ne référence encore de secret, donc le chemin « secret transmis à un runner » n'est pas exercé ; le canari passe par le connecteur, les journaux de nœud et toutes les sorties.
+- **mypy** : 136 erreurs restantes (447 au départ), surtout des annotations de lignes psycopg ; `make typecheck` est non bloquant au lot 1. `ruff format` n'est pas appliqué (seul `ruff check`).
+- **Poste de développement** : sur la VM de travail, des tables `iptables-legacy` résiduelles bloquaient le trafic entre ponts Docker ; une règle ACCEPT entre ponts a été ajoutée sur l'hôte (hors dépôt). Les exécuteurs GitHub n'en ont pas besoin.
+- **CI** : `make test-e2e` construit toutes les images à chaque exécution (pas de cache d'images) ; les sorties Playwright ne sont pas publiées comme artefacts, car elles contiennent les mots de passe de démo saisis.
 
 ## Décisions prises
 
@@ -55,23 +147,23 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 | # | Décision | Proposition ou décision | Bloque | Statut |
 |---|---|---|---|---|
-| D1 | CI et registre d'images pour le dépôt GitHub `vincenttisseront/rackloom-` (public ; tiret final volontaire ?) | dépôt public conservé, nom `rackloom-` conservé, GitHub Actions et GHCR | E0 (pipeline) | décidé (Vincent, 2026-11-25) |
+| D1 | CI et registre d'images pour le dépôt GitHub `vincenttisseront/rackloom-` (public ; tiret final volontaire ?) | dépôt public conservé, nom `rackloom-` conservé, GitHub Actions et GHCR | E0 (pipeline) | décidé (Vincent, 2026-11-25) ; CI livrée, aucune image poussée vers GHCR au lot 1 |
 | D2 | Périmètre et date d'un laboratoire réel autorisé (vCenter, version, comptes, réseau, image Ubuntu) | pas de laboratoire réel pour l'instant ; VM locales jetables et observations fictives explicites | lot 2, AT01 sur VM jetables, F60, toute mention « validé en laboratoire » | décidé (Vincent, 2026-11-25) |
 | D3 | Redistribution de Terraform (BSL 1.1) et des providers dans l'ISO ; qualification éventuelle d'OpenTofu | avis juridique avant le lot 3 | lot 3 | ouverte |
 | D4 | Backend de state distant réel | stockage objet compatible S3 interne avec verrouillage natif | lot 2 | ouverte |
 | D5 | Moteur des runners sur l'appliance | Podman sans root (ADR-0003) | lot 3 | ouverte |
-| D6 | Une reprise ciblée exige-t-elle une nouvelle approbation ? | oui (approbation de type `retry`) | E9 | ouverte |
+| D6 | Une reprise ciblée exige-t-elle une nouvelle approbation ? | oui (approbation de type `retry`) | E9 | ouverte (appliquée : T22) |
 | D7 | L'administrateur de plateforme lit-il les données des projets sans rôle projet ? | l'administrateur de plateforme n'a pas accès aux données d'un projet sans rôle attribué et audité | E1 | décidé (Vincent, 2026-11-25) |
 | D8 | Qui peut geler un environnement (F28) | administrateurs de plateforme et approbateurs de l'environnement | F28 | ouverte |
 | D9 | Calage du lot 2 (laboratoire réel) et du lot 3 (ISO) dans l'ordre décidé | lot 2 dès qu'un laboratoire existe, pour valider F21, F05, F03, F09 et AT01 ; lot 3 avant F17 et F26 ; OIDC avant F12, F14, F41 et F59 | planification | ouverte |
 | D10 | IdP cible et second facteur local avant le lot 4 | à préciser | F12, F14, F41, F59, usage hors labo | ouverte |
 | D11 | Outils tiers du backlog : IPAM (F03), ITSM (F25), CA SSH (F15), fabrication d'images (F07), sauvegarde (F39), licences (F34) | à préciser selon l'existant | ces fonctions | ouverte |
-| D12 | Départage du résolveur entre candidats équivalents (H13) | rang dans la liste du template, puis identifiant stable ; aucune question tant qu'il n'y a qu'un site | E4, F32 | ouverte |
-| D13 | Environnement par défaut quand plusieurs environnements hors production sont admissibles (H14) | l'utilisateur choisit parmi eux ; jamais la production | E4 | ouverte |
+| D12 | Départage du résolveur entre candidats équivalents (H13) | rang dans la liste du template, puis identifiant stable ; aucune question tant qu'il n'y a qu'un site | E4, F32 | ouverte (appliquée : T37) |
+| D13 | Environnement par défaut quand plusieurs environnements hors production sont admissibles (H14) | l'utilisateur choisit parmi eux ; jamais la production | E4 | ouverte (appliquée : T34, D4) |
 | D14 | Date de fin exigée en `dev` (H16) | date de fin obligatoire en `dev`, 30 jours au plus ; seule question du scénario D1 | E2, E4 | décidé (Vincent, 2026-11-25) |
-| D15 | Composant Fail2ban | optionnel en E10 si le reste est vert, sinon livré avec AT01 | E10 | ouverte |
+| D15 | Composant Fail2ban | optionnel en E10 si le reste est vert, sinon livré avec AT01 | E10 | ouverte (non livré au lot 1 : livré avec AT01) |
 | D16 | Qui tient le rôle `template_publisher` ; double validation pour publier | une seule personne publie au lot 1 ; la double validation est étudiée avec AT01 | E3, AT01 | décidé (Vincent, 2026-11-25) |
-| D17 | Référent affiché dans les messages de blocage | référent désigné par projet (`projects.referent_user_id`) | E2, E4 | ouverte |
+| D17 | Référent affiché dans les messages de blocage | référent désigné par projet (`projects.referent_user_id`) | E2, E4 | ouverte (appliquée : T33, D3, D4) |
 | D18 | Signature des versions publiées de templates et composants | à étudier avec AT01 ou F17 | AT01, F17 | ouverte |
 | D19 | Succès d'un changement conditionné à un service prêt | « Succès » seulement si tous les contrôles de santé réussissent, sinon « Succès partiel » avec le motif (T41) | E10 | décidé (Vincent, 2026-11-25) |
 | D20 | Priorités proposées dans le backlog : P1 pour F31, F37, F46, F60, F57, F55 et AT01 ; P2 ou P3 pour les autres nouvelles entrées | à confirmer | planification | ouverte |
@@ -90,4 +182,18 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
   4. fonctions utilisateur F51 à F60 : état du service distinct du succès des jobs (T41), actions calculées côté serveur, règles des collecteurs d'observation et des demandes d'accès, menaces correspondantes, F51 à F60 au backlog, ordre de livraison décidé par Vincent.
 - Commandes exécutées : aucune commande de construction ni de test (dépôt vide).
 - Résultat : architecture, modèle de menaces, ADR, profil de démonstration, plan du lot 1 et backlog rédigés.
-- Prochain jalon : lot 1, étape E0 (socle du dépôt, `make doctor`, `make test`, pile Compose minimale, contrôle d'exposition).
+
+### Lot 1 : parcours Compose (2026-11-25)
+
+- PR #2 (parcours complet dans Compose) et PR #3 (T26, pile à six nœuds, parcours Playwright §1.1) fusionnées en avance ; PR de clôture depuis `cursor/lot-1-cloture-e231`.
+- Commandes et résultats : section « Commandes exécutées et résultats ».
+- Résultat : D1 à D6 et T01 à T41 passent, testés localement ; aucune capacité validée en laboratoire.
+
+## Prochain jalon
+
+En parallèle, sur deux branches séparées :
+
+1. branche « atelier » : **AT01** (première tranche de l'atelier de templates, avec Fail2ban), puis **F60 → F57 → F55** ; critère d'acceptation : le scénario de référence du brief F51 à F60 ;
+2. branche « lot A » : **F28 → F27 → F21**, entièrement testables localement.
+
+Ensuite **F31 → F37 → F46** (voir `docs/backlog.md`). Le lot 2 attend un laboratoire réel autorisé (D2).

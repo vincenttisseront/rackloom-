@@ -199,6 +199,22 @@ def cmd_grants(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_artifacts_scan(args: argparse.Namespace) -> int:
+    """T24 : déchiffre les artefacts de classe B et y cherche la valeur lue sur l'entrée standard."""
+    from . import artifacts
+
+    needle = sys.stdin.readline().strip().encode()
+    if len(needle) < 16:
+        print("valeur à rechercher absente ou trop courte (entrée standard)", file=sys.stderr)
+        return 2
+    with _conn() as conn:
+        rows = conn.execute("SELECT * FROM artifacts WHERE key_class = 'B' ORDER BY created_at").fetchall()
+    found = [str(r["id"]) for r in rows if needle in artifacts.read(r)]
+    print(f"{len(rows)} artefact(s) de classe B déchiffré(s), {len(found)} contenant la valeur"
+          + (f" : {', '.join(found)}" if found else ""))
+    return 1 if found else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="rackloom")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -250,6 +266,9 @@ def build_parser() -> argparse.ArgumentParser:
         g.add_argument("--kind", required=True, choices=["network", "image", "cluster", "datastore", "folder"])
         g.add_argument("--reason", required=True)
         g.set_defaults(func=cmd_grants)
+    arts = sub.add_parser("artifacts").add_subparsers(dest="artifacts_command", required=True)
+    arts.add_parser("scan", help="T24 : cherche une valeur (entrée standard) dans les artefacts de classe B"
+                    ).set_defaults(func=cmd_artifacts_scan)
     ci = sub.add_parser("ci").add_subparsers(dest="ci_command", required=True)
     s = ci.add_parser("submit", help="dépose un besoin (JSON, catégorie A) par l'API")
     s.add_argument("--url", required=True)

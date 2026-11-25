@@ -21,7 +21,8 @@ export default defineConfig({
     timezoneId: 'Europe/Paris',
     viewport: size,
     video: process.env.RACKLOOM_E2E_VIDEO === '1' ? { mode: 'on', size } : 'off',
-    trace: 'retain-on-failure',
+    // Traces complètes (réseau, DOM) pour le scan du canari T24 de scripts/test-e2e.sh.
+    trace: process.env.RACKLOOM_E2E_TRACE === '1' ? 'on' : 'retain-on-failure',
     screenshot: 'only-on-failure',
     launchOptions: home ? { env: { ...process.env, HOME: home } } : {},
   },

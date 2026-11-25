@@ -214,6 +214,15 @@ def _modify(conn, demo, worker, deployment_id, **need_kw):
 
 def test_t26_changement_de_niveau_ou_reduction_bloques(conn, demo, worker, worker_env):
     c = _deployed(conn, demo, worker, quantity=2)
+    # « Modifier ce déploiement » part du besoin en vigueur, même avant la première version.
+    from rackloom.api.views import change_view
+
+    alice = demo.principal("alice")
+    draft = service.create_modify_change(conn, alice, c["deployment_id"])
+    start = change_view(conn, alice, draft)["need"]
+    assert start["service"]["template"] == "ubuntu-web" and start["inputs"]["quantity"] == 2
+    service.cancel(conn, alice, draft["id"])
+    conn.commit()
     m, res, plan = _modify(conn, demo, worker, c["deployment_id"], size_tier="standard")
     assert [i["existing"] for i in res["revision"]["resolved"]["instances"]] == [True, True]
     names = [i["name"] for i in res["revision"]["resolved"]["instances"]]

@@ -23,11 +23,10 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-import psycopg
-
 from .. import inventory, policy, projects, registry
 from ..canonical import digest
 from ..config import get_settings
+from ..db import Conn
 from ..errors import ApiError
 from ..identity.authz import Principal
 
@@ -192,7 +191,7 @@ def _tags_match(item: dict[str, Any], wanted: dict[str, Any]) -> bool:
     return isinstance(tags, dict) and all(tags.get(k) == v for k, v in wanted.items())
 
 
-def _used_names(conn: psycopg.Connection, project_id: UUID, environment_id: UUID,
+def _used_names(conn: Conn, project_id: UUID, environment_id: UUID,
                 change_id: UUID | None) -> set[str]:
     names = {r["name"] for r in conn.execute("SELECT name FROM hosts WHERE project_id = %s", (project_id,))}
     names |= {r["name"] for r in conn.execute(
@@ -245,7 +244,7 @@ def _validate_inputs(contract: dict[str, Any], inputs: dict[str, Any], env_param
             raise _input("lifetime_until", f"{lifetime['max_days']} jours au plus dans cet environnement")
 
 
-def resolve(conn: psycopg.Connection, *, principal: Principal, project: dict[str, Any], need: dict[str, Any],
+def resolve(conn: Conn, *, principal: Principal, project: dict[str, Any], need: dict[str, Any],
             provenance: dict[str, dict[str, str]], change_id: UUID | None = None,
             deployment: dict[str, Any] | None = None, now: datetime | None = None) -> dict[str, Any]:
     now = now or datetime.now(UTC)

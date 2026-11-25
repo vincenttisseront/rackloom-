@@ -9,7 +9,7 @@ import threading
 import time
 from typing import Any
 
-from .. import events
+from .. import connectors, events
 from ..changes.transitions import transition
 from ..config import Settings, get_settings
 from ..db import Jsonb, transaction
@@ -30,6 +30,8 @@ class Worker:
         self.stop = threading.Event()
 
     def register(self) -> None:
+        with transaction() as conn:
+            connectors.refuse_simulated_in_production(conn, self.settings.profile)
         images = self.launcher.images()
         with transaction() as conn:
             conn.execute(

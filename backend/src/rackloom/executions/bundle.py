@@ -11,10 +11,9 @@ from __future__ import annotations
 
 from typing import Any
 
-import psycopg
-
 from .. import policy, registry
 from ..canonical import digest
+from ..db import Conn
 
 
 class BundleError(Exception):
@@ -23,7 +22,7 @@ class BundleError(Exception):
         self.code = code
 
 
-def runner_images(conn: psycopg.Connection) -> dict[str, str]:
+def runner_images(conn: Conn) -> dict[str, str]:
     return {r["job_kind"]: r["image_digest"] for r in conn.execute(
         "SELECT job_kind, image_digest FROM runner_images ORDER BY job_kind").fetchall()}
 
@@ -47,7 +46,7 @@ def tf_variables(resolution: dict[str, Any], deployment_ref: str, lab_delay_seco
     }
 
 
-def _pinned(conn: psycopg.Connection, resolution: dict[str, Any]) -> dict[str, Any]:
+def _pinned(conn: Conn, resolution: dict[str, Any]) -> dict[str, Any]:
     """Relit les éléments épinglés et vérifie que leur contenu n'a pas changé."""
     tpl = resolution["template"]
     row = registry.template(conn, tpl["slug"], tpl["version"])
@@ -81,7 +80,7 @@ def _pinned(conn: psycopg.Connection, resolution: dict[str, Any]) -> dict[str, A
                         "variables_sha256": digest({"rackloom_components": ansible_components(resolution)})}}
 
 
-def build(conn: psycopg.Connection, *, change: dict[str, Any], version: dict[str, Any], revision: dict[str, Any],
+def build(conn: Conn, *, change: dict[str, Any], version: dict[str, Any], revision: dict[str, Any],
           stack: dict[str, Any], plan_sha256: str, state_lineage: str | None, state_serial: int | None,
           valid_until: str, terraform_version: str | None) -> dict[str, Any]:
     resolution = revision["resolved"]
@@ -109,7 +108,7 @@ def build(conn: psycopg.Connection, *, change: dict[str, Any], version: dict[str
     }
 
 
-def recompute_digest(conn: psycopg.Connection, plan: dict[str, Any], change: dict[str, Any],
+def recompute_digest(conn: Conn, plan: dict[str, Any], change: dict[str, Any],
                      version: dict[str, Any], revision: dict[str, Any], stack: dict[str, Any],
                      plan_sha256: str) -> str:
     current = build(conn, change=change, version=version, revision=revision, stack=stack, plan_sha256=plan_sha256,

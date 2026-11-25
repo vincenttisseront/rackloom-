@@ -8,16 +8,14 @@ from __future__ import annotations
 
 from typing import Any
 
-import psycopg
-
-from ..db import Jsonb
+from ..db import Conn, Jsonb
 from ..ids import uuid7
 from ..redact import Redactor, redact
 
 CHANNEL = "rackloom_events"
 
 
-def emit(conn: psycopg.Connection, *, type: str, source: str, project_id=None, correlation_id=None,
+def emit(conn: Conn, *, type: str, source: str, project_id=None, correlation_id=None,
          environment_id=None, job_id=None, data: dict[str, Any] | None = None, severity: str = "info",
          dedupe_key: str | None = None, redactor: Redactor | None = None) -> int | None:
     payload = (redactor.data(data or {}) if redactor else redact(data or {}))

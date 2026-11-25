@@ -1,6 +1,8 @@
 # Backlog : fonctions F01 à F60 et atelier de templates AT01 à AT04
 
-Statut au 2026-11-25 : dépôt vide, lot 0 rédigé, **lot 1 à livrer avant toute fonction de ce backlog**. Aucune fonction n'est commencée.
+Statut au 2026-11-25 : **lot 1 terminé, testé localement** (D1 à D6 et T01 à T41, voir `docs/progress.md`). Aucune fonction de ce backlog n'est commencée ; le prérequis **L1** est disponible pour toutes, **sauf Fail2ban** (D15), reporté à AT01. Rien n'est validé en laboratoire réel (D2).
+
+Bases posées par le lot 1 et réutilisables telles quelles : `allowed_actions` calculées côté serveur et revérifiées (F55), source `ci` sur le même schéma et le même résolveur, avec `Idempotency-Key` (F35), `service_status` distinct du succès des jobs (F57), règle d'admission 55 et revalidation au démarrage (F27, F28), `correlation_id` et SSE (F21), registre et publication avec motif (AT01), contrat du chat et scénarios fictifs rejouables (F46).
 
 ## Règles
 

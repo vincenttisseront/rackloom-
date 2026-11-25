@@ -14,12 +14,10 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-import psycopg
-
 from .. import admission, artifacts, hosts, registry, secrets
 from ..canonical import digest, file_tree_digest
 from ..changes.transitions import transition
-from ..db import Jsonb
+from ..db import Conn, Jsonb
 from ..executions import bundle as bundles
 from ..executions import plans as plan_summary
 from ..executions import queue
@@ -31,7 +29,7 @@ IDENTITIES = {"configure": "rackloom-config", "collect": "rackloom-collect"}
 
 # --- Chargement du contexte ---------------------------------------------------------------
 
-def _load(conn: psycopg.Connection, job: dict[str, Any], lock: bool = True) -> dict[str, Any]:
+def _load(conn: Conn, job: dict[str, Any], lock: bool = True) -> dict[str, Any]:
     ctx: dict[str, Any] = {"job": job}
     change = conn.execute(f"SELECT * FROM changes WHERE id = %s{' FOR UPDATE' if lock else ''}",
                           (job["change_id"],)).fetchone() if job["change_id"] else None
@@ -64,7 +62,7 @@ def _load(conn: psycopg.Connection, job: dict[str, Any], lock: bool = True) -> d
     return ctx
 
 
-def _admit(r: JobContext, conn: psycopg.Connection, ctx: dict[str, Any], recompute=None) -> None:
+def _admit(r: JobContext, conn: Conn, ctx: dict[str, Any], recompute=None) -> None:
     decision = admission.evaluate(admission.Context(
         conn=conn, job=r.job, change=ctx["change"], environment=ctx["env"], execution=ctx["execution"],
         approval=ctx["approval"], plan=ctx["plan"], revision=ctx["revision"], recompute_digest=recompute))
@@ -114,12 +112,12 @@ def _prepare_tf(r: JobContext, run_id: str, resolution: dict[str, Any], job_json
     return work
 
 
-def _lab_delay(conn: psycopg.Connection) -> int:
+def _lab_delay(conn: Conn) -> int:
     row = conn.execute("SELECT value FROM platform_settings WHERE key = 'lab_delay_seconds'").fetchone()
     return int(row["value"]) if row else 0
 
 
-def _store_log(r: JobContext, conn: psycopg.Connection, work: Path, name: str) -> dict[str, Any] | None:
+def _store_log(r: JobContext, conn: Conn, work: Path, name: str) -> dict[str, Any] | None:
     path = work / "out" / name
     if not path.exists():
         return None
@@ -239,7 +237,7 @@ def _vms_from_state(state: dict[str, Any] | None) -> list[dict[str, Any]]:
     return [vms[k] for k in sorted(vms) if "uuid" in vms[k]]
 
 
-def _record_instances(conn: psycopg.Connection, change: dict[str, Any], resolution: dict[str, Any],
+def _record_instances(conn: Conn, change: dict[str, Any], resolution: dict[str, Any],
                       vms: list[dict[str, Any]]) -> None:
     """Le déploiement reflète l'état observé (state), pas l'intention : seules les instances présentes."""
     present = {v["name"]: v for v in vms}
@@ -324,7 +322,7 @@ def finish_apply(r: JobContext, run_id: str, status: dict[str, Any], *, job: dic
 
 # --- Invités et Ansible ------------------------------------------------------------------
 
-def _lab_keys(conn: psycopg.Connection, purpose: str) -> tuple[str, str]:
+def _lab_keys(conn: Conn, purpose: str) -> tuple[str, str]:
     identity = IDENTITIES[purpose]
     pubs = conn.execute("SELECT value FROM platform_settings WHERE key = 'lab_ssh_public_keys'").fetchone()
     if pubs is None or identity not in pubs["value"]:
@@ -333,7 +331,7 @@ def _lab_keys(conn: psycopg.Connection, purpose: str) -> tuple[str, str]:
     return pubs["value"][identity], private
 
 
-def _prepare_ansible(r: JobContext, conn: psycopg.Connection, run_id: str, resolution: dict[str, Any],
+def _prepare_ansible(r: JobContext, conn: Conn, run_id: str, resolution: dict[str, Any],
                      purpose: str, targets: list[dict[str, Any]]) -> tuple[Path, str]:
     work = r.workspace(run_id)
     private_dir = work / "ansible"
@@ -372,6 +370,19 @@ def _ansible_run(r: JobContext, run_id: str, kind: str, stdin: str) -> tuple[int
     status = r.run({"run_id": run_id, "kind": kind, "timeout_seconds": 900, "stdin_secret": stdin})
     summary = read_json(r.settings.workspaces_dir / run_id / "out" / "ansible_summary.json", {}) or {}
     return status.get("exit_code"), summary
+
+
+def _store_ansible_report(r: JobContext, conn: Conn, run: str, rc: int | None,
+                          summary: dict[str, Any]) -> dict[str, Any]:
+    """Rapport filtré de classe B (téléchargeable par un membre) : compteurs et tâches, messages masqués."""
+    hosts_report = {
+        name: {**{k: h.get(k) for k in ("ok", "changed", "failures", "dark", "skipped")},
+               "tasks": [{k: t.get(k) for k in ("name", "status", "msg")} for t in h.get("tasks", [])]}
+        for name, h in summary.get("hosts", {}).items()}
+    report = {"run": run, "exit_code": rc, "hosts": hosts_report}
+    return artifacts.store(conn, project_id=r.job["project_id"], change_id=r.job["change_id"],
+                           kind=f"ansible_{run}_report", key_class="B",
+                           plaintext=r.redactor.bytes(json.dumps(report, ensure_ascii=False).encode()))
 
 
 def _host_ok(summary: dict[str, Any], name: str) -> tuple[bool, str]:
@@ -486,6 +497,7 @@ def handle_ansible_configure(r: JobContext) -> None:
     rc, summary = _ansible_run(r, run_id, "ansible", stdin)
     configured = []
     with r.tx() as conn:
+        _store_ansible_report(r, conn, "configure", rc, summary)
         for h in targets:
             ok, reason = _host_ok(summary, h["name"])
             conn.execute("UPDATE hosts SET deployment_state = %s WHERE id = %s",
@@ -750,5 +762,5 @@ HANDLERS = {
 }
 
 
-def catalog_ok(conn: psycopg.Connection) -> bool:
+def catalog_ok(conn: Conn) -> bool:
     return registry.latest_published(conn, "ubuntu-web") is not None

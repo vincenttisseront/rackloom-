@@ -145,7 +145,7 @@ class DockerBackend:
                 "ReadonlyRootfs": True,
                 "Privileged": False,
                 "Init": True,
-                "Tmpfs": {"/tmp": "rw,noexec,nosuid,size=64m", "/run/secrets": "rw,noexec,nosuid,size=1m"},
+                "Tmpfs": {"/tmp": "rw,noexec,nosuid,size=64m", "/run/secrets": "rw,noexec,nosuid,size=1m"},  # noqa: S108
                 "Memory": profile.memory_mb * 1024 * 1024,
                 "MemorySwap": profile.memory_mb * 1024 * 1024,
                 "NanoCpus": int(profile.cpus * 1e9),
@@ -249,7 +249,7 @@ class ProcessBackend:
             if os.environ.get(f"RACKLOOM_PROCESS_{key}"):
                 env[key] = os.environ[f"RACKLOOM_PROCESS_{key}"]
         if spec.stdin_secret is not None:
-            env["RACKLOOM_STDIN_SECRET"] = "1"
+            env["RACKLOOM_STDIN_SECRET"] = "1"  # noqa: S105
         cpu = _timeout(spec)
 
         def limits() -> None:
@@ -299,7 +299,8 @@ class ProcessBackend:
             return RunStatus(run_id=run_id, job_id=job_id, state="running")
         exit_file = work / "out" / "exit_code"
         if exit_file.exists():
-            return RunStatus(run_id=run_id, job_id=job_id, state="exited", exit_code=int(exit_file.read_text() or 1))
+            code = int(exit_file.read_text() or 1)
+            return RunStatus(run_id=run_id, job_id=job_id, state="exited", exit_code=code)
         if (work / ".runner.pid").exists():
             return RunStatus(run_id=run_id, job_id=job_id, state="exited", exit_code=None)
         return RunStatus(run_id=run_id, state="missing")

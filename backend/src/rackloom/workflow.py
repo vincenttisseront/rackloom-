@@ -10,10 +10,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-import psycopg
-
 from . import resolver
 from .changes.transitions import ALLOWED, EDITABLE, STATES
+from .db import Conn
 from .errors import ApiError
 from .identity.authz import Principal
 
@@ -53,7 +52,7 @@ def _has_role(principal: Principal, action: str, project_id, environment_id) -> 
     return any(principal.has_role(role, project_id, environment_id) for role in ROLES[action])
 
 
-def _change_actions(conn: psycopg.Connection, principal: Principal, change: dict[str, Any],
+def _change_actions(conn: Conn, principal: Principal, change: dict[str, Any],
                     now: datetime) -> dict[str, str | None]:
     """Renvoie {action: None si possible, sinon motif d'indisponibilité}."""
     state = change["state"]
@@ -134,7 +133,7 @@ def _change_actions(conn: psycopg.Connection, principal: Principal, change: dict
     return out
 
 
-def _deployment_actions(conn: psycopg.Connection, deployment: dict[str, Any]) -> dict[str, str | None]:
+def _deployment_actions(conn: Conn, deployment: dict[str, Any]) -> dict[str, str | None]:
     if deployment["status"] != "active":
         return {"modify": "seul un déploiement actif peut être modifié"}
     busy = conn.execute("SELECT 1 FROM changes WHERE deployment_id = %s AND state = ANY(%s) LIMIT 1",
@@ -142,7 +141,7 @@ def _deployment_actions(conn: psycopg.Connection, deployment: dict[str, Any]) ->
     return {"modify": "un changement est déjà en cours sur ce déploiement" if busy else None}
 
 
-def evaluate(conn: psycopg.Connection, principal: Principal, kind: str, resource: dict[str, Any],
+def evaluate(conn: Conn, principal: Principal, kind: str, resource: dict[str, Any],
              now: datetime | None = None) -> dict[str, dict[str, Any]]:
     now = now or datetime.now(UTC)
     if kind == "change":
@@ -158,13 +157,13 @@ def evaluate(conn: psycopg.Connection, principal: Principal, kind: str, resource
     return result
 
 
-def available_actions(conn: psycopg.Connection, principal: Principal, kind: str, resource: dict[str, Any],
+def available_actions(conn: Conn, principal: Principal, kind: str, resource: dict[str, Any],
                       now: datetime | None = None) -> list[dict[str, str]]:
     return [{"action": a, "label": LABELS[a]} for a, v in evaluate(conn, principal, kind, resource, now).items()
             if v["role"] and v["reason"] is None]
 
 
-def require_action(conn: psycopg.Connection, principal: Principal, kind: str, resource: dict[str, Any],
+def require_action(conn: Conn, principal: Principal, kind: str, resource: dict[str, Any],
                    action: str) -> None:
     verdict = evaluate(conn, principal, kind, resource)[action]
     if not verdict["role"]:

@@ -11,13 +11,12 @@ import secrets
 from pathlib import Path
 from typing import Any
 
-import psycopg
 import yaml
 
 from . import audit, inventory, policy, projects, registry
 from .config import get_settings
 from .connectors import capabilities_for
-from .db import Jsonb
+from .db import Conn, Jsonb
 from .identity.service import create_user
 from .ids import uuid7
 
@@ -31,7 +30,7 @@ def _read(path: Path) -> dict[str, Any]:
         return yaml.safe_load(fh)
 
 
-def seed(conn: psycopg.Connection, root: Path, *, passwords: dict[str, str] | None = None,
+def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
          credentials_file: Path | None = None) -> dict[str, Any]:
     if get_settings().profile == "production":
         raise DemoRefused("profil de démonstration refusé en profil production")

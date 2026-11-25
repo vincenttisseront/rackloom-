@@ -14,6 +14,9 @@ function walk(dir) {
     if (statSync(path).isDirectory()) walk(path)
     else if (name.endsWith('.html')) {
       const html = readFileSync(path, 'utf8')
+      if (html.split('</html>').length !== 2 || !html.trimEnd().endsWith('</html>')) {
+        throw new Error(`HTML généré corrompu : ${path}`)
+      }
       for (const m of html.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g)) {
         if (/type="application\/json"/.test(m[1]) || !m[2].trim()) continue
         hashes.add(`'sha256-${createHash('sha256').update(m[2], 'utf8').digest('base64')}'`)

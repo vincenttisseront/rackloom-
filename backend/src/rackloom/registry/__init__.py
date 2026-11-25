@@ -22,12 +22,11 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-import psycopg
 import yaml
 
 from .. import audit
 from ..canonical import digest, file_tree_digest
-from ..db import Jsonb
+from ..db import Conn, Jsonb
 from ..errors import ApiError
 from ..identity.authz import Principal, require_publisher
 from ..ids import uuid7
@@ -287,7 +286,7 @@ def check_template_references(m: dict[str, Any], component_lookup, artifact_look
                 raise CatalogError(f"template {m['slug']} : {comp['slug']} dépend de {dep}")
 
 
-def load(conn: psycopg.Connection, catalog_dir: Path) -> dict[str, int]:
+def load(conn: Conn, catalog_dir: Path) -> dict[str, int]:
     """Valide et enregistre `catalog/` au statut `validated`. Ne publie rien."""
     found = scan(catalog_dir)
     counts = {"artifacts": 0, "components": 0, "templates": 0}
@@ -337,32 +336,32 @@ def load(conn: psycopg.Connection, catalog_dir: Path) -> dict[str, int]:
 
 # --- Requêtes ---------------------------------------------------------------------------
 
-def artifact(conn: psycopg.Connection, kind: str, slug: str, version: str) -> dict[str, Any] | None:
+def artifact(conn: Conn, kind: str, slug: str, version: str) -> dict[str, Any] | None:
     return conn.execute("SELECT * FROM catalog_artifacts WHERE kind = %s AND slug = %s AND version = %s",
                         (kind, slug, version)).fetchone()
 
 
-def component(conn: psycopg.Connection, slug: str, version: str) -> dict[str, Any] | None:
+def component(conn: Conn, slug: str, version: str) -> dict[str, Any] | None:
     return conn.execute("SELECT * FROM component_versions WHERE slug = %s AND version = %s",
                         (slug, version)).fetchone()
 
 
-def template(conn: psycopg.Connection, slug: str, version: str) -> dict[str, Any] | None:
+def template(conn: Conn, slug: str, version: str) -> dict[str, Any] | None:
     return conn.execute("SELECT * FROM template_versions WHERE slug = %s AND version = %s",
                         (slug, version)).fetchone()
 
 
-def template_by_id(conn: psycopg.Connection, template_version_id: UUID) -> dict[str, Any] | None:
+def template_by_id(conn: Conn, template_version_id: UUID) -> dict[str, Any] | None:
     return conn.execute("SELECT * FROM template_versions WHERE id = %s", (template_version_id,)).fetchone()
 
 
-def latest_published(conn: psycopg.Connection, slug: str) -> dict[str, Any] | None:
+def latest_published(conn: Conn, slug: str) -> dict[str, Any] | None:
     rows = conn.execute("SELECT * FROM template_versions WHERE slug = %s AND status = 'published'",
                         (slug,)).fetchall()
     return max(rows, key=lambda r: semver_key(r["version"])) if rows else None
 
 
-def granted_services(conn: psycopg.Connection, project_id: UUID,
+def granted_services(conn: Conn, project_id: UUID,
                      environment_id: UUID | None = None) -> list[str]:
     query = ("SELECT DISTINCT stable_id FROM resource_grants WHERE kind = 'service_template' AND project_id = %s "
              "AND revoked_at IS NULL")
@@ -373,7 +372,7 @@ def granted_services(conn: psycopg.Connection, project_id: UUID,
     return [r["stable_id"] for r in conn.execute(query + " ORDER BY stable_id", params).fetchall()]
 
 
-def template_components(conn: psycopg.Connection, contract: dict[str, Any]) -> list[dict[str, Any]]:
+def template_components(conn: Conn, contract: dict[str, Any]) -> list[dict[str, Any]]:
     """Composants épinglés par une version de template, configuration complète (défauts inclus)."""
     result = []
     for ref in contract["components"]:
@@ -395,7 +394,7 @@ def template_components(conn: psycopg.Connection, contract: dict[str, Any]) -> l
 
 # --- Publication ------------------------------------------------------------------------
 
-def impact(conn: psycopg.Connection, slug: str, version: str) -> dict[str, Any]:
+def impact(conn: Conn, slug: str, version: str) -> dict[str, Any]:
     projects = [r["slug"] for r in conn.execute(
         "SELECT DISTINCT p.slug FROM resource_grants g JOIN projects p ON p.id = g.project_id "
         "WHERE g.kind = 'service_template' AND g.stable_id = %s AND g.revoked_at IS NULL ORDER BY p.slug",
@@ -422,7 +421,7 @@ TRANSITIONS = {"publish": ({"validated"}, "published"),
                "withdraw": ({"published", "deprecated"}, "withdrawn")}
 
 
-def change_status(conn: psycopg.Connection, actor_id: UUID, slug: str, version: str, action: str,
+def change_status(conn: Conn, actor_id: UUID, slug: str, version: str, action: str,
                   reason: str) -> dict[str, Any]:
     """Publier, déprécier ou retirer une version. Le droit est vérifié par l'appelant."""
     if action not in TRANSITIONS:
@@ -461,14 +460,14 @@ def change_status(conn: psycopg.Connection, actor_id: UUID, slug: str, version: 
     return {"template": slug, "version": version, "status": target, "impact": effect}
 
 
-def publish_action(conn: psycopg.Connection, principal: Principal, slug: str, version: str, action: str,
+def publish_action(conn: Conn, principal: Principal, slug: str, version: str, action: str,
                    reason: str) -> dict[str, Any]:
     """Point d'entrée des routes d'administration : publier n'est ni déployer ni approuver."""
     require_publisher(principal)
     return change_status(conn, principal.user_id, slug, version, action, reason)
 
 
-def template_history(conn: psycopg.Connection, slug: str) -> list[dict[str, Any]]:
+def template_history(conn: Conn, slug: str) -> list[dict[str, Any]]:
     return conn.execute(
         "SELECT e.id, t.version, e.action, e.reason, e.impact, e.at, u.display_name AS actor "
         "FROM template_events e JOIN template_versions t ON t.id = e.template_version_id "

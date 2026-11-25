@@ -38,6 +38,7 @@ const isModify = computed(() => change.value?.kind === 'modify')
 const revision = computed(() => change.value?.revision || null)
 const canSubmit = computed(() => change.value?.allowed_actions?.some((a: any) => a.action === 'submit'))
 const maxDate = computed(() => env.value?.lifetime?.max_days ? isoDay(env.value.lifetime.max_days) : undefined)
+const unconfirmed = computed(() => [form.template, form.environment, form.quantity, form.size_tier, form.usage, form.lifetime_until].filter(f => f.source === 'suggestion').length)
 const choices = computed(() => [form.template, form.environment, form.quantity, form.size_tier, form.usage, form.lifetime_until].filter(f => f.source === 'user').length)
 
 function set<T>(f: Field<T>, value: T) {
@@ -232,6 +233,7 @@ const inputs = computed(() => service.value?.inputs || {})
             </div>
             <input id="f-quantity" type="number" :min="inputs.quantity.min" :max="inputs.quantity.max" :value="form.quantity.value ?? inputs.quantity.default" @input="set(form.quantity, Number(($event.target as HTMLInputElement).value))" />
             <p class="hint">Entre {{ inputs.quantity.min }} et {{ inputs.quantity.max }}.</p>
+            <button v-if="form.quantity.source === 'suggestion'" type="button" class="small" @click="confirmSuggestion(form.quantity)">Confirmer le nombre de serveurs</button>
             <p v-if="fieldErrors['/inputs/quantity']" class="field-error">{{ fieldErrors['/inputs/quantity'] }}</p>
           </div>
 
@@ -243,6 +245,7 @@ const inputs = computed(() => service.value?.inputs || {})
             <select id="f-size" :value="form.size_tier.value || env.default_size_tier" @change="set(form.size_tier, ($event.target as HTMLSelectElement).value)">
               <option v-for="t in env.size_tiers" :key="t.value" :value="t.value">{{ t.label }}{{ t.value === env.default_size_tier ? ' (défaut)' : '' }}</option>
             </select>
+            <button v-if="form.size_tier.source === 'suggestion'" type="button" class="small" @click="confirmSuggestion(form.size_tier)">Confirmer le niveau</button>
             <p v-if="fieldErrors['/inputs/size_tier']" class="field-error">{{ fieldErrors['/inputs/size_tier'] }}</p>
           </div>
 
@@ -252,6 +255,7 @@ const inputs = computed(() => service.value?.inputs || {})
               <ProvenanceBadge v-if="form.usage.source" :source="form.usage.source" />
             </div>
             <input id="f-usage" type="text" :maxlength="inputs.usage.max_length" :value="form.usage.value" @input="set(form.usage, ($event.target as HTMLInputElement).value)" />
+            <button v-if="form.usage.source === 'suggestion'" type="button" class="small" @click="confirmSuggestion(form.usage)">Confirmer l'usage</button>
           </div>
 
           <div v-if="inputs.lifetime_until" class="field">
@@ -264,6 +268,7 @@ const inputs = computed(() => service.value?.inputs || {})
               <template v-if="env?.lifetime?.max_days">{{ env.lifetime.max_days }} jours au plus. </template>
               Résolue et affichée, non appliquée au lot 1 <span class="badge neutral">Non appliqué</span>
             </p>
+            <button v-if="form.lifetime_until.source === 'suggestion'" type="button" class="small" @click="confirmSuggestion(form.lifetime_until)">Confirmer la date de fin</button>
             <p v-if="fieldErrors['/inputs/lifetime_until']" class="field-error">{{ fieldErrors['/inputs/lifetime_until'] }}</p>
           </div>
 
@@ -276,6 +281,9 @@ const inputs = computed(() => service.value?.inputs || {})
           <button type="submit" class="primary" :disabled="saving || !form.template.value" data-testid="continue">Continuer</button>
           <span class="small muted">{{ choices }} choix de votre part</span>
         </div>
+        <p v-if="unconfirmed" class="banner warn small" role="status" data-testid="unconfirmed">
+          {{ unconfirmed }} valeur(s) proposée(s) par l'assistant à confirmer avant de soumettre.
+        </p>
       </form>
     </div>
 
@@ -329,6 +337,7 @@ const inputs = computed(() => service.value?.inputs || {})
       <div class="actions">
         <button type="button" @click="step = 1">Modifier le besoin</button>
         <button v-if="canSubmit" type="button" class="primary" :disabled="saving" data-testid="submit" @click="submit">Soumettre</button>
+        <span v-else-if="revision.outcome === 'resolved' && unconfirmed" class="small" role="status">Des valeurs proposées par l'assistant ne sont pas confirmées : revenez au besoin pour les confirmer.</span>
         <span v-else-if="revision.outcome === 'resolved'" class="small muted">Soumission indisponible dans l'état actuel.</span>
       </div>
     </div>

@@ -10,17 +10,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import psycopg
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from . import audit, hosts, secrets
-from .db import Jsonb
+from .db import Conn, Jsonb
 
 IDENTITIES = ("rackloom-collect", "rackloom-config")
 
 
-def generate_identities(conn: psycopg.Connection, pub_dir: Path) -> dict[str, str]:
+def generate_identities(conn: Conn, pub_dir: Path) -> dict[str, str]:
     """Nouvelle paire par identité ; remplace les précédentes (rotation)."""
     pub_dir.mkdir(parents=True, exist_ok=True)
     publics: dict[str, str] = {}
@@ -40,7 +39,7 @@ def generate_identities(conn: psycopg.Connection, pub_dir: Path) -> dict[str, st
     return publics
 
 
-def identities_present(conn: psycopg.Connection, pub_dir: Path) -> bool:
+def identities_present(conn: Conn, pub_dir: Path) -> bool:
     row = conn.execute("SELECT value FROM platform_settings WHERE key = 'lab_ssh_public_keys'").fetchone()
     if not row:
         return False
@@ -53,13 +52,13 @@ def identities_present(conn: psycopg.Connection, pub_dir: Path) -> bool:
     return True
 
 
-def import_anchor(conn: psycopg.Connection, address: str, public_key_line: str) -> dict[str, Any]:
+def import_anchor(conn: Conn, address: str, public_key_line: str) -> dict[str, Any]:
     row = hosts.import_anchor(conn, address, public_key_line, "lab-node")
     audit.record(conn, actor_type="system", actor_id="lab", action="lab.host_anchor.import", outcome="ok",
                  targets={"address": address, "fingerprint": row["fingerprint"]})
     return row
 
 
-def set_nodes(conn: psycopg.Connection, nodes: list[dict[str, str]]) -> None:
+def set_nodes(conn: Conn, nodes: list[dict[str, str]]) -> None:
     conn.execute("INSERT INTO platform_settings (key, value) VALUES ('lab_nodes', %s) ON CONFLICT (key) "
                  "DO UPDATE SET value = EXCLUDED.value, updated_at = now()", (Jsonb(nodes),))

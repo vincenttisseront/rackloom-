@@ -16,5 +16,8 @@ export default defineNuxtConfig({
     },
   },
   experimental: { payloadExtraction: false },
+  // SPA : seules les coquilles « / », 200 et 404 sont générées. Le parcours des liens prérendait chaque
+  // route et deux écritures concurrentes de index.html ont produit un fichier corrompu.
+  nitro: { prerender: { crawlLinks: false } },
   typescript: { strict: true },
 })

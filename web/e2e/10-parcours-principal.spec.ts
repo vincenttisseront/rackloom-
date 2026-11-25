@@ -9,7 +9,7 @@ test('§1.1 parcours principal au clavier — D1, T30, T31', async ({ page }) =>
   // 2. Alice n'a qu'un projet : Rackloom ne lui demande pas de le choisir.
   await login(page, 'alice')
   await expectAccessible(page, 'accueil (Alice)')
-  const newRequest = page.getByRole('link', { name: 'Nouvelle demande' })
+  const newRequest = page.getByRole('link', { name: 'Nouvelle demande', exact: true })
   await expect(newRequest).toHaveCount(1)
   await press(newRequest)
   await expect(page.getByRole('heading', { name: 'Votre besoin' })).toBeVisible()
@@ -38,7 +38,10 @@ test('§1.1 parcours principal au clavier — D1, T30, T31', async ({ page }) =>
   // 5. Les propositions entrent dans le formulaire marquées « proposé » ; Alice confirme et répond.
   const form = page.getByTestId('need-form')
   await expect(form.getByText("Proposé par l'assistant").first()).toBeVisible()
-  await press(form.getByRole('button', { name: 'Confirmer ce service' }))
+  await expect(page.getByTestId('unconfirmed')).toBeVisible()
+  const confirm = form.getByRole('button', { name: /^Confirmer/ })
+  while (await confirm.count()) await press(confirm.first())
+  await expect(page.getByTestId('unconfirmed')).toHaveCount(0)
   const until = page.getByLabel(/Date de fin/)
   await until.hover()
   await until.fill(inDays(14))
@@ -72,13 +75,15 @@ test('§1.1 parcours principal au clavier — D1, T30, T31', async ({ page }) =>
   await expect(page.getByTestId('approve')).toHaveCount(0)
   await expectAccessible(page, 'étape 3 (Alice)')
   const ref = (await page.locator('.crumbs').innerText()).split('›').pop()!.trim()
+  const digest = (await page.getByTestId('bundle-digest').innerText()).trim()
+  expect(digest).toMatch(/^[0-9a-f]{64}$/)
 
   // Bruno ouvre « Plan et approbation » et approuve l'empreinte affichée.
   await logout(page)
   await login(page, 'bruno')
   await press(page.getByRole('link', { name: new RegExp(ref) }).first())
   await expect(page.getByTestId('plan-panel')).toBeVisible()
-  await expect(page.getByTestId('bundle-digest')).toContainText('sha256:')
+  await expect(page.getByTestId('bundle-digest')).toHaveText(digest)
   await expectAccessible(page, 'plan et approbation (Bruno)')
   await press(page.getByTestId('approve'))
   await expect(page.getByText('Plan approuvé : exécution du plan approuvé.')).toBeVisible()

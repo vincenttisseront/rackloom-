@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import secrets
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -11,6 +13,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .. import connectors
+from ..config import get_settings
+from ..db import get_pool
 from ..errors import ApiError
 from . import (
     routes_admin,
@@ -40,9 +45,18 @@ def _pointer(loc: tuple[Any, ...]) -> str:
     return "/" + "/".join(parts)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    profile = get_settings().profile
+    if profile == "production":
+        with get_pool().connection() as conn:
+            connectors.refuse_simulated_in_production(conn, profile)
+    yield
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="Rackloom", version="0.1.0", openapi_url=f"{PREFIX}/openapi.json",
-                  docs_url=None, redoc_url=None)
+                  docs_url=None, redoc_url=None, lifespan=lifespan)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):

@@ -11,11 +11,12 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Request
+from pydantic import ValidationError
 
 from .. import audit, inventory, projects, registry, secrets
 from ..config import get_settings
-from ..connectors import MATRIX
-from ..db import Jsonb, get_pool
+from ..connectors import MATRIX, vsphere
+from ..db import Conn, Jsonb, get_pool
 from ..errors import ApiError, forbidden, not_found
 from ..events import emit
 from ..identity import service as identity
@@ -154,6 +155,38 @@ def _connector_view(row: dict[str, Any]) -> dict[str, Any]:
             "error_count": row["error_count"]}
 
 
+def _vsphere_config(conn: Conn, row: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """Valide la configuration vSphere ; l'URL devient un endpoint approuvé portant la CA importée."""
+    try:
+        cfg = vsphere.VsphereConfig.model_validate(config)
+    except ValidationError as exc:
+        err = exc.errors()[0]
+        field = "/config/" + "/".join(str(p) for p in err["loc"])
+        if err["type"] == "extra_forbidden":
+            raise ApiError(422, "invalid_config", "champ inconnu : la vérification TLS ne se désactive pas, "
+                           "importez la CA du vCenter (ca_pem)", field=field) from None
+        raise ApiError(422, "invalid_config", str(err["msg"]).removeprefix("Value error, "), field=field) from None
+    if cfg.url is None:
+        return {}
+    host, port = vsphere.endpoint(cfg.url)
+    conn.execute("INSERT INTO approved_endpoints (id, connector_id, scheme, host, port, ca_bundle_pem) "
+                 "VALUES (%s, %s, 'https', %s, %s, %s) ON CONFLICT (connector_id, scheme, host, port) "
+                 "DO UPDATE SET ca_bundle_pem = %s", (uuid7(), row["id"], host, port, cfg.ca_pem, cfg.ca_pem))
+    return {"url": cfg.url, "ca_imported": cfg.ca_pem is not None}
+
+
+def _vsphere_test(conn: Conn, row: dict[str, Any]) -> dict[str, Any]:
+    url = row["config"].get("url")
+    if not url:
+        return vsphere.failure("not_configured")
+    host, port = vsphere.endpoint(url)
+    ep = conn.execute("SELECT ca_bundle_pem FROM approved_endpoints WHERE connector_id = %s AND scheme = 'https' "
+                      "AND host = %s AND port = %s", (row["id"], host, port)).fetchone()
+    if ep is None:
+        return vsphere.failure("endpoint_not_approved")
+    return vsphere.test_connection(host, port, ep["ca_bundle_pem"])
+
+
 @router.get("/connectors")
 def list_connectors(request: Request) -> list[dict[str, Any]]:
     with unit_of_work(request) as u:
@@ -175,6 +208,8 @@ def update_connector(connector_id: UUID, request: Request, body: dict[str, Any] 
     with unit_of_work(request, write=True) as u:
         require_admin(u.p)
         row = _connector(u.conn, connector_id)
+        if row["kind"] == "vsphere":
+            config = _vsphere_config(u.conn, row, config)
         row = u.conn.execute("UPDATE connectors SET config = %s, config_version = config_version + 1 WHERE id = %s "
                              "RETURNING *", (Jsonb(config), row["id"])).fetchone()
         audit.record(u.conn, actor_type="user", actor_id=str(u.p.user_id), action="connector.update", outcome="ok",
@@ -216,12 +251,15 @@ def test_connector(connector_id: UUID, request: Request) -> dict[str, Any]:
         elif cap["mode"] == "simulated":
             result = {"status": "ok", "simulated": True,
                       "message": "Test simulé : aucun appel externe (connecteur fictif)"}
+        elif row["kind"] == "vsphere":
+            result = _vsphere_test(u.conn, row)
         else:
             result = {"status": "not_verified", "simulated": False,
                       "message": "Vérifié à l'exécution par le runner ; voir `make doctor`"}
         result["at"] = datetime.now(UTC).isoformat()
-        u.conn.execute("UPDATE connectors SET last_test_at = now(), last_test_result = %s WHERE id = %s",
-                       (Jsonb(result), row["id"]))
+        u.conn.execute("UPDATE connectors SET last_test_at = now(), last_test_result = %s, "
+                       "error_count = error_count + %s WHERE id = %s",
+                       (Jsonb(result), int(result["status"] == "failed"), row["id"]))
         audit.record(u.conn, actor_type="user", actor_id=str(u.p.user_id), action="connector.test",
                      outcome=result["status"], targets={"connector": row["slug"]}, request_id=u.request_id)
         return result

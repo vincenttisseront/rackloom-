@@ -15,12 +15,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import psycopg
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
 
 from ..config import get_settings
-from ..db import Jsonb, get_pool
+from ..db import Conn, Jsonb, get_pool
 from ..errors import ApiError
 from ..identity import service as identity
 from ..identity.authz import Principal
@@ -32,7 +31,7 @@ IDEMPOTENCY_TTL = timedelta(hours=24)
 
 @dataclass
 class Unit:
-    conn: psycopg.Connection
+    conn: Conn
     principal: Principal | None
     request_id: str
 
@@ -65,7 +64,7 @@ def csrf_guard(request: Request) -> None:
         raise ApiError(403, "csrf_refused", "jeton CSRF absent ou invalide")
 
 
-def authenticate(conn: psycopg.Connection, request: Request, *, write: bool) -> Principal:
+def authenticate(conn: Conn, request: Request, *, write: bool) -> Principal:
     token = session_token(request)
     principal = identity.resolve_session(conn, token) if token else None
     if principal is None:
