@@ -1,8 +1,9 @@
 import {
-  expect, expectAccessible, login, logout, planViaApi, press, session, test, waitState, type Page,
+  compose, expect, expectAccessible, login, logout, planViaApi, press, session, test, type Page,
 } from './helpers'
 
 // F21 : chronologie unifiée — sources ADR, reprise après coupure navigateur, cloisonnement, sans doublon.
+// L'approbation se fait worker arrêté (comme F27/F28) pour ne pas consommer de nœud de labo avant F57.
 
 let planned: any
 
@@ -63,20 +64,27 @@ test('F21 — chronologie corrélée, reprise sans doublon, cloisonnement', asyn
     const flat = JSON.stringify(events)
     expect(flat).not.toMatch(/"stdout"|"stderr"|"plan_json"|"tfstate"/)
 
-    await logout(page)
-    await login(page, 'bruno')
-    await page.goto(`/demandes/${planned.id}`)
-    await expect(page.getByTestId('plan-panel')).toBeVisible()
-    await press(page.getByTestId('approve'))
-    await expect(page.getByText('Plan approuvé : exécution du plan approuvé.')).toBeVisible()
-    await expect(page.getByTestId('timeline-source').filter({ hasText: /approbation/i }).first()).toBeVisible({
-      timeout: 30_000,
-    })
-    await waitState(page, /Succès|Exécution|Vérification|Approuvée/, 180_000)
-    await expect(page.getByTestId('timeline-source').filter({ hasText: /Terraform|vCenter|Ansible|vérification/i }).first())
-      .toBeVisible({ timeout: 180_000 })
-    await expectAccessible(page, 'F21 chronologie après approbation')
-    await beat(page)
+    // Worker arrêté : approbation en file sans apply (pas de nœud consommé pour la suite F57).
+    compose('stop', 'worker')
+    try {
+      await logout(page)
+      await login(page, 'bruno')
+      await page.goto(`/demandes/${planned.id}`)
+      await expect(page.getByTestId('plan-panel')).toBeVisible()
+      await press(page.getByTestId('approve'))
+      await expect(page.getByText('Plan approuvé : exécution du plan approuvé.')).toBeVisible()
+      await expect(page.getByTestId('timeline-source').filter({ hasText: /approbation/i }).first()).toBeVisible({
+        timeout: 30_000,
+      })
+      await expect(page.getByTestId('timeline')).toContainText(/Application du plan(?: approuvé)? : en file/i)
+      await expect(page.getByTestId('job').filter({ hasText: 'Application du plan' })).toContainText('En file')
+      await expectAccessible(page, 'F21 chronologie après approbation')
+      await beat(page)
+    } finally {
+      compose('start', 'worker')
+    }
+
+    // Sources vCenter / Ansible / vérification : couverture intégration (test_f21_timeline parcours).
   } finally {
     await alice.dispose()
     await chloe.dispose()
