@@ -136,12 +136,12 @@ def unfreeze(conn: Conn, principal: Principal, environment_id: UUID, reason: Any
 def _announce(conn: Conn, env: dict[str, Any], type_: str, freeze_id: UUID, data: dict[str, Any],
               severity: str) -> None:
     """Un événement au niveau du projet, et un par demande en cours dans l'environnement pour sa chronologie."""
-    events.emit(conn, type=type_, source="rackloom", project_id=env["project_id"], environment_id=env["id"],
+    events.emit(conn, type=type_, source="system", project_id=env["project_id"], environment_id=env["id"],
                 data=data, severity=severity, dedupe_key=f"{type_}:{freeze_id}")
     changes = conn.execute("SELECT id FROM changes WHERE environment_id = %s AND state = ANY(%s)",
                            (env["id"], list(ACTIVE_CHANGE_STATES))).fetchall()
     for change in changes:
-        events.emit(conn, type=type_, source="rackloom", project_id=env["project_id"], environment_id=env["id"],
+        events.emit(conn, type=type_, source="system", project_id=env["project_id"], environment_id=env["id"],
                     correlation_id=change["id"], data=data, severity=severity,
                     dedupe_key=f"{type_}:{freeze_id}:{change['id']}")
 

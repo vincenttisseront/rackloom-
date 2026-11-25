@@ -100,7 +100,8 @@ def transition(conn: Conn, change: dict[str, Any], to_state: str, *, reason_code
         """,
         (change["id"], from_state, to_state, reason_code, actor_type, actor_id, Jsonb(detail or {})),
     )
-    events.emit(conn, type="change.state", source="rackloom", project_id=change["project_id"],
+    source = "request" if actor_type == "user" else "system"
+    events.emit(conn, type="change.state", source=source, project_id=change["project_id"],
                 correlation_id=change["id"], environment_id=change.get("environment_id"), severity=severity,
                 data={"from": from_state, "to": to_state, "label": STATES[to_state], "reason": reason_code,
                       **(detail or {})},

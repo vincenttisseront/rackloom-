@@ -94,6 +94,21 @@ def decide(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, An
                  versions={"bundle_digest": plan["bundle_digest"], "version_no": plan["version_no"],
                            "revision_no": plan["revision_no"]},
                  policy_decision={"auth_context": _auth_context(principal)}, request_id=request_id)
+    events.emit(
+        conn,
+        type="approval.decided",
+        source="approval",
+        project_id=change["project_id"],
+        correlation_id=change_id,
+        data={
+            "decision": decision,
+            "by": principal.display_name,
+            "plan_id": str(plan_id),
+            "comment": (comment or "")[:200] or None,
+        },
+        severity="warning" if decision == "rejected" else "info",
+        dedupe_key=f"approval.decided:{approval_id}",
+    )
     if decision == "rejected":
         conn.execute("UPDATE plans SET status = 'rejected' WHERE id = %s", (plan_id,))
         change = transition(conn, change, "rejected", reason_code="rejected_by_approver", actor_type="user",
@@ -173,7 +188,7 @@ def request_retry(
     events.emit(
         conn,
         type="retry.requested",
-        source="rackloom",
+        source="system",
         project_id=change["project_id"],
         correlation_id=change_id,
         data={"retry_id": str(retry_id), "hosts": len(requested)},
@@ -247,6 +262,22 @@ def _decide_retry(
         targets={"retry": str(retry_id), "approval": str(approval_id)},
         versions={"bundle_digest": retry["bundle_digest"]},
         request_id=request_id,
+    )
+    events.emit(
+        conn,
+        type="approval.decided",
+        source="approval",
+        project_id=change["project_id"],
+        correlation_id=change["id"],
+        data={
+            "decision": decision,
+            "by": principal.display_name,
+            "kind": "retry",
+            "retry_id": str(retry_id),
+            "comment": (comment or "")[:200] or None,
+        },
+        severity="warning" if decision == "rejected" else "info",
+        dedupe_key=f"approval.decided:{approval_id}",
     )
     if decision == "rejected":
         return {"approval_id": approval_id, "decision": decision, "change": change}
