@@ -675,6 +675,7 @@ BEGIN
         GRANT DELETE ON idempotency_keys, login_attempts TO rackloom_api;
         -- Secrets en écriture seule côté API : aucune lecture du texte chiffré.
         GRANT INSERT ON secrets TO rackloom_api;
+        GRANT UPDATE (ciphertext, key_id, created_by, created_at) ON secrets TO rackloom_api;
         GRANT SELECT (id, ref, key_id, created_by, created_at) ON secrets TO rackloom_api;
         GRANT SELECT, INSERT ON audit_log TO rackloom_api;
         GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO rackloom_api;

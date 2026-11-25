@@ -1,0 +1,232 @@
+"""Représentations renvoyées par l'API. Aucune donnée hors périmètre, aucun secret, aucun plan brut."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+import psycopg
+
+from .. import hosts as hosts_mod
+from .. import registry, resolver, workflow
+from ..changes.service import change_ref
+from ..changes.transitions import STATES
+from ..identity.authz import Principal
+
+SERVICE_STATUS = {
+    "unknown": "Non vérifié",
+    "ready": "Prêt",
+    "created_not_ready": "Créé, pas prêt",
+    "failed": "Échec",
+    "verification_unavailable": "Vérification indisponible",
+}
+DEPLOYMENT_STATUS = {"pending": "En préparation", "active": "Actif", "failed": "Échec", "abandoned": "Abandonné"}
+SOURCE_LABELS = {
+    "user": "Vous", "suggestion": "Proposé par l'assistant", "template": "Profil de service",
+    "template_default": "Défaut du profil", "environment_default": "Seul environnement disponible",
+    "environment_policy": "Politique de l'environnement", "environment_policy_default": "Politique de l'environnement",
+    "inventory": "Inventaire", "tie_break": "Départage", "platform": "Plateforme",
+    "deployment_pinned": "Version du déploiement", "template_latest_published": "Dernière version publiée",
+}
+GROUP_LABELS = {"service": "Service et versions", "placement": "Placement", "reseau": "Réseau",
+                "dimensionnement": "Dimensionnement", "execution": "Exécution", "gouvernance": "Gouvernance"}
+SIMULATED_STEPS = {"vm_inventory": "Inventaire vCenter (connecteur fictif)",
+                   "guest_customization": "Personnalisation invitée (vCenter fictif)",
+                   "ip_assignment": "Attribution d'adresse (nœud de labo associé)"}
+
+
+def iso(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
+
+
+def plan_details(resolution: dict[str, Any]) -> dict[str, Any]:
+    """Panneau « Détails du plan » : valeurs résolues par thème, en lecture seule, avec provenance."""
+    groups: dict[str, list[dict[str, Any]]] = {g: [] for g in GROUP_LABELS}
+    for pointer, v in sorted(resolution.get("values", {}).items()):
+        groups[v["group"]].append({
+            "pointer": pointer, "value": v["value"], "label": v.get("label"), "source": v["source"],
+            "source_label": SOURCE_LABELS.get(v["source"], v["source"]), "ref": v.get("ref"),
+            "applied": v.get("applied", True), "candidates": v.get("candidates")})
+    inv = resolution.get("inventory", {})
+    return {"groups": [{"group": g, "label": GROUP_LABELS[g], "values": vals} for g, vals in groups.items() if vals],
+            "inventory": {"observed_at": inv.get("observed_at"), "simulated": inv.get("simulated", True)},
+            "simulated_steps": [{"key": s, "label": SIMULATED_STEPS.get(s, s)}
+                                for s in resolution.get("simulated_steps", [])],
+            "preview_limits": resolution.get("preview_limits", [])}
+
+
+def ansible_contract(resolution: dict[str, Any]) -> dict[str, Any]:
+    comps = []
+    for c in resolution.get("components", []):
+        effects = c.get("effects", {})
+        ports = [{"port": str(p["port"]).format(**c["config"]), "proto": p.get("proto", "tcp")}
+                 for p in effects.get("ports", [])]
+        comps.append({"slug": c["slug"], "version": c["version"], "title": c["title"],
+                      "role": f"{c['role']['name']}@{c['role']['version']}", "config": c["config"],
+                      "packages": effects.get("packages", []), "services": effects.get("services", []),
+                      "ports": ports, "files": effects.get("files", []), "reboot": effects.get("reboot"),
+                      "elevation": "rackloom-config (sudo)", "verification_level": c.get("verification_level")})
+    return {"components": comps,
+            "check_mode": {"covered": [], "not_covered": ["toutes les tâches : les VM n'existent pas avant "
+                                                          "l'application"],
+                           "limits": resolution.get("preview_limits", [])},
+            "identities": {"configure": "rackloom-config (élévation)", "collect": "rackloom-collect (sans élévation)"}}
+
+
+def revision_view(conn: psycopg.Connection, revision: dict[str, Any], project: dict[str, Any]) -> dict[str, Any]:
+    resolution = revision["resolved"]
+    return {
+        "revision_no": revision["revision_no"], "version_no": revision["version_no"],
+        "outcome": revision["outcome"], "resolution_digest": revision["resolution_digest"],
+        "created_at": iso(revision["created_at"]),
+        "summary": resolver.summary(resolution, project),
+        "blocks": revision["block_reasons"],
+        "missing": resolution.get("missing", []),
+        "template": resolution.get("template"),
+        "environment": resolution.get("environment"),
+        "inputs": resolution.get("inputs"),
+        "input_sources": resolution.get("input_sources"),
+        "instances": resolution.get("instances", []),
+        "details": plan_details(resolution) if resolution["outcome"] != "blocked" else None,
+        "provenance": revision["provenance"],
+    }
+
+
+def plan_view(conn: psycopg.Connection, plan: dict[str, Any], revision: dict[str, Any]) -> dict[str, Any]:
+    resolution = revision["resolved"]
+    summary = plan["summary"]
+    counts = summary["vm_counts"]
+    risks = []
+    if summary.get("destructive"):
+        risks.append({"code": "destructive", "level": "blocking",
+                      "text": f"Le plan supprime ({counts['delete']}) ou remplace ({counts['replace']}) des "
+                              "ressources : approbation impossible au lot 1."})
+    if resolution["environment"]["is_production"]:
+        risks.append({"code": "production", "level": "warning", "text": "Déploiement en production."})
+    risks.append({"code": "approval", "level": "info",
+                  "text": "Approbation requise par un approbateur distinct du demandeur."
+                  if resolution["approval"]["distinct_approver"] else "Approbation requise."})
+    return {
+        "id": str(plan["id"]), "status": plan["status"], "revision_no": plan["revision_no"],
+        "version_no": plan["version_no"], "valid_until": iso(plan["valid_until"]),
+        "created_at": iso(plan["created_at"]), "bundle_digest": plan["bundle_digest"],
+        "headline": f"{counts['create']} création(s), {counts['update']} modification(s), "
+                    f"{counts['replace']} remplacement(s), {counts['delete']} suppression(s)",
+        "counts": counts, "terraform_version": summary.get("terraform_version"),
+        "vms": [{"name": v["name"], "action": v["action"], "attributes": v.get("attributes", {})}
+                for v in summary.get("vms", [])],
+        "resources": [{"address": r["address"], "type": r["type"], "action": r["action"]}
+                      for r in summary.get("resources", [])],
+        "destructive": summary.get("destructive", False),
+        "risks": risks,
+        "details": plan_details(resolution),
+        "ansible": ansible_contract(resolution),
+        "verifications": [resolver.CHECK_LABELS[c["type"]].format(**c) for c in resolution["health_checks"]],
+        "bundle": {"template": plan["bundle"]["template"], "components": [
+            {"slug": c["slug"], "version": c["version"], "digest": c["digest"]} for c in plan["bundle"]["components"]],
+            "terraform": plan["bundle"]["terraform"], "policy_bundle": plan["bundle"]["policy_bundle"],
+            "environment": plan["bundle"]["environment"], "request": plan["bundle"]["request"],
+            "runner_images": plan["bundle"]["runner_images"]},
+    }
+
+
+def _last_transition(conn: psycopg.Connection, change_id) -> dict[str, Any] | None:
+    return conn.execute("SELECT * FROM state_transitions WHERE change_id = %s ORDER BY id DESC LIMIT 1",
+                        (change_id,)).fetchone()
+
+
+def change_summary(conn: psycopg.Connection, change: dict[str, Any]) -> dict[str, Any]:
+    env = conn.execute("SELECT slug, name, is_production FROM environments WHERE id = %s",
+                       (change["environment_id"],)).fetchone() if change["environment_id"] else None
+    last = _last_transition(conn, change["id"])
+    return {"id": str(change["id"]), "ref": change_ref(change), "kind": change["kind"], "title": change["title"],
+            "state": change["state"], "state_label": STATES[change["state"]],
+            "reason": (last["detail"] or {}).get("message") if last else None,
+            "environment": dict(env) if env else None,
+            "deployment_id": str(change["deployment_id"]) if change["deployment_id"] else None,
+            "current_version_no": change["current_version_no"], "current_revision_no": change["current_revision_no"],
+            "created_at": iso(change["created_at"]), "updated_at": iso(change["updated_at"])}
+
+
+def change_view(conn: psycopg.Connection, principal: Principal, change: dict[str, Any]) -> dict[str, Any]:
+    project = conn.execute("SELECT * FROM projects WHERE id = %s", (change["project_id"],)).fetchone()
+    version = conn.execute("SELECT * FROM request_versions WHERE change_id = %s AND version_no = %s",
+                           (change["id"], change["current_version_no"])).fetchone()
+    revision = conn.execute("SELECT * FROM request_revisions WHERE change_id = %s AND revision_no = %s",
+                            (change["id"], change["current_revision_no"])).fetchone()
+    plan = conn.execute("SELECT * FROM plans WHERE change_id = %s ORDER BY created_at DESC LIMIT 1",
+                        (change["id"],)).fetchone()
+    deployment = conn.execute("SELECT * FROM deployments WHERE id = %s",
+                              (change["deployment_id"],)).fetchone() if change["deployment_id"] else None
+    pending_retry = conn.execute("SELECT id, host_ids, bundle_digest, requested_at FROM retry_requests "
+                                 "WHERE change_id = %s AND status = 'pending' ORDER BY requested_at DESC LIMIT 1",
+                                 (change["id"],)).fetchone()
+    creator = conn.execute("SELECT display_name FROM users WHERE id = %s", (change["created_by"],)).fetchone()
+    return {
+        **change_summary(conn, change),
+        "project": {"id": str(project["id"]), "slug": project["slug"], "name": project["name"]},
+        "created_by": creator["display_name"] if creator else None,
+        "need": version["need"] if version else None,
+        "need_provenance": version["provenance"] if version else None,
+        "revision": revision_view(conn, revision, project) if revision else None,
+        "plan": plan_view(conn, plan, conn.execute(
+            "SELECT * FROM request_revisions WHERE change_id = %s AND revision_no = %s",
+            (change["id"], plan["revision_no"])).fetchone()) if plan else None,
+        "deployment": deployment_summary(conn, deployment) if deployment else None,
+        "pending_retry": {"id": str(pending_retry["id"]), "host_ids": pending_retry["host_ids"],
+                          "bundle_digest": pending_retry["bundle_digest"],
+                          "requested_at": iso(pending_retry["requested_at"])} if pending_retry else None,
+        "allowed_actions": workflow.available_actions(conn, principal, "change", change),
+    }
+
+
+def deployment_summary(conn: psycopg.Connection, dep: dict[str, Any]) -> dict[str, Any]:
+    tpl = registry.template_by_id(conn, dep["template_version_id"])
+    env = conn.execute("SELECT slug, name, is_production FROM environments WHERE id = %s",
+                       (dep["environment_id"],)).fetchone()
+    return {"id": str(dep["id"]), "template": {"slug": dep["template_slug"], "version": tpl["version"],
+                                               "title": tpl["contract"]["title"], "status": tpl["status"]},
+            "environment": dict(env), "status": dep["status"], "status_label": DEPLOYMENT_STATUS[dep["status"]],
+            "instances": dep["instances"],
+            "service_status": dep["service_status"], "service_status_label": SERVICE_STATUS[dep["service_status"]],
+            "service_reason": dep["service_reason"], "service_checked_at": iso(dep["service_checked_at"]),
+            "created_at": iso(dep["created_at"])}
+
+
+def deployment_view(conn: psycopg.Connection, principal: Principal, dep: dict[str, Any]) -> dict[str, Any]:
+    changes = conn.execute("SELECT * FROM changes WHERE deployment_id = %s ORDER BY created_at", (dep["id"],))
+    host_rows = conn.execute("SELECT * FROM hosts WHERE deployment_id = %s ORDER BY name", (dep["id"],)).fetchall()
+    return {**deployment_summary(conn, dep), "project_id": str(dep["project_id"]),
+            "service_checks": dep["service_checks"],
+            "hosts": [{"id": str(h["id"]), "name": h["name"], "deployment_state": h["deployment_state"],
+                       "health": hosts_mod.health(conn, h)} for h in host_rows],
+            "changes": [change_summary(conn, c) for c in changes.fetchall()],
+            "allowed_actions": workflow.available_actions(conn, principal, "deployment", dep)}
+
+
+def job_view(conn: psycopg.Connection, job: dict[str, Any]) -> dict[str, Any]:
+    steps = conn.execute("SELECT * FROM job_steps WHERE job_id = %s ORDER BY seq", (job["id"],)).fetchall()
+    return {"id": str(job["id"]), "kind": job["kind"], "class": job["class"], "state": job["state"],
+            "attempts": job["attempts"], "blocked_reason": job["blocked_reason"],
+            "dispatched_at": iso(job["dispatched_at"]), "cancel_requested_at": iso(job["cancel_requested_at"]),
+            "created_at": iso(job["created_at"]), "finished_at": iso(job["finished_at"]),
+            "steps": [{"seq": s["seq"], "name": s["name"], "state": s["state"], "simulated": s["simulated"],
+                       "started_at": iso(s["started_at"]), "finished_at": iso(s["finished_at"]),
+                       "summary": s["summary"]} for s in steps]}
+
+
+def event_view(row: dict[str, Any]) -> dict[str, Any]:
+    return {"id": row["id"], "type": row["type"], "source": row["source"], "severity": row["severity"],
+            "occurred_at": iso(row["occurred_at"]), "job_id": str(row["job_id"]) if row["job_id"] else None,
+            "correlation_id": str(row["correlation_id"]) if row["correlation_id"] else None,
+            "data": row["data"]}
+
+
+def host_view(conn: psycopg.Connection, host: dict[str, Any]) -> dict[str, Any]:
+    base = hosts_mod.view(conn, host)
+    dep = conn.execute("SELECT * FROM deployments WHERE id = %s", (host["deployment_id"],)).fetchone()
+    tpl = registry.template_by_id(conn, host["template_version_id"])
+    base["deployment"] = {"id": str(dep["id"]), "service_status": dep["service_status"],
+                          "service_status_label": SERVICE_STATUS[dep["service_status"]]}
+    base["template"] = {"slug": tpl["slug"], "version": tpl["version"], "title": tpl["contract"]["title"]}
+    return base

@@ -202,7 +202,8 @@ def consume_bootstrap(conn: psycopg.Connection, token: str, email: str, display_
     ).fetchone()
     if row is None:
         audit.record(conn, actor_type="anonymous", actor_id=None, action="auth.bootstrap", outcome="denied")
-        raise ApiError(401, "invalid_bootstrap_token", "jeton d'amorçage invalide, expiré ou déjà utilisé")
+        raise ApiError(401, "invalid_bootstrap_token", "jeton d'amorçage invalide, expiré ou déjà utilisé",
+                       commit=True)
     if len(password) < 12:
         raise ApiError(422, "weak_password", "mot de passe trop court (12 caractères minimum)",
                        field="/password")

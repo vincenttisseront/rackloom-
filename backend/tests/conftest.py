@@ -126,6 +126,31 @@ def demo(conn: psycopg.Connection) -> Demo:
 
 
 @pytest.fixture
+def api(db_url: str, monkeypatch: pytest.MonkeyPatch):
+    """Fabrique de clients HTTPS de test, un par personne (jar de cookies séparé), CSRF positionné."""
+    from fastapi.testclient import TestClient
+
+    from rackloom.api.app import create_app
+    from rackloom.config import get_settings
+
+    monkeypatch.setenv("RACKLOOM_PUBLIC_ORIGIN", "https://testserver")
+    monkeypatch.setenv("RACKLOOM_SSE_KEEPALIVE_SECONDS", "1")
+    monkeypatch.setenv("RACKLOOM_SSE_MAX_STREAM_SECONDS", "2")
+    get_settings.cache_clear()
+    app = create_app()
+
+    def client(name: str | None = None) -> TestClient:
+        c = TestClient(app, base_url="https://testserver", raise_server_exceptions=False)
+        if name is not None:
+            r = c.post("/api/v1/auth/login", json={"email": f"{name}@demo.invalid", "password": DEMO_PASSWORD})
+            assert r.status_code == 200, r.text
+            c.headers["X-CSRF-Token"] = r.json()["csrf_token"]
+        return c
+
+    return client
+
+
+@pytest.fixture
 def worker_env(db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Worker en processus : clés de test éphémères, launcher « process », Terraform local."""
     from rackloom import db as dbmod

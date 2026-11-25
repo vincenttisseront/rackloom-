@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-ALLOWED_ATTRIBUTES = {"name", "size", "cpu", "memory_mb", "template_ref", "network_ref", "stack_id"}
+ALLOWED_ATTRIBUTES = {"name", "size_tier", "vcpu", "memory_mb", "disk_gb", "image_ref", "network_ref", "deployment_id"}
 
 
 def _kind(actions: list[str]) -> str:

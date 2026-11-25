@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     guest_ready_timeout_seconds: int = 120
     sse_keepalive_seconds: int = 15
     sse_session_recheck_seconds: int = 30
+    # Le client se reconnecte avec Last-Event-ID ; borne la durée de vie des connexions.
+    sse_max_stream_seconds: int = 900
     inventory_max_age_hours: int = 24
 
     chat_adapter: str = Field(default="fake", pattern="^(fake|ollama|disabled)$")
