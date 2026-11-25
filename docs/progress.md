@@ -49,7 +49,8 @@
 | Bannissement Fail2ban (nftables) | non couvert | non vérifié | les nœuds de labo n'ont pas NET_ADMIN ; le contrat le dit |
 | Assistant de conception, adaptateur Ollama | code livré | non vérifié contre un vrai modèle | l'atelier est exercé avec l'adaptateur fictif |
 | Template depuis un serveur de référence (F60) | livré (observations fictives explicites) | testé localement | `tests/integration/test_f60_reference.py` ; `web/e2e/96-atelier-f60.spec.ts` ; collecteur réel indisponible (D21) |
-| Fonctions F01 à F59 (hors F28) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : F57 |
+| Fiche « Votre service est prêt » (F57) | livré | testé localement | `tests/integration/test_f57_service_card.py` ; `web/e2e/97-atelier-f57.spec.ts` ; T41 pour le calcul réel |
+| Fonctions F01 à F56 / F58 à F59 (hors F28) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : F55 |
 
 ## Démonstrations D1 à D6
 
@@ -225,9 +226,15 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Trois catégories UI : À standardiser / Propre à cet hôte / À confirmer ; layout `/var/www` signalé ; canaris absents du brouillon ; aucun job d'écriture.
 - Preuves : `uv run pytest tests/integration/test_f60_reference.py` — 7 verts. Collecteur réel et labo VM : non couverts (consignés).
 
+### F57 : fiche service (2026-11-25)
+
+- Branche `cursor/atelier-f57-88f4` depuis `main` (F60 fusionné).
+- Fiche courte : quatre états, sorties `outputs_allowlist`, preuves et heure des contrôles ; détails techniques au second niveau.
+- Preuves : `test_f57_service_card.py` (7) ; e2e `97-atelier-f57.spec.ts` (prêt réel + UI des autres états).
+
 ## Prochain jalon
 
-1. Fusionner F60 après CI verte.
-2. Suite atelier : **F57 → F55**.
+1. Fusionner F57 après CI verte.
+2. Suite atelier : **F55**.
 3. Finir le lot A : **F27 → F21** (si pas déjà fusionné).
 4. Ensuite **F31 → F37 → F46**. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

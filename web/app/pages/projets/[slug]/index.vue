@@ -55,7 +55,7 @@ function envChanged(updated: any) {
         <thead><tr><th scope="col">Service</th><th scope="col">Environnement</th><th scope="col">Machines</th><th scope="col">État du service</th></tr></thead>
         <tbody>
           <tr v-for="d in deployments" :key="d.id">
-            <td>{{ d.template.title }} {{ d.template.version }}</td>
+            <td><NuxtLink :to="`/deployments/${d.id}`" data-testid="open-service-card">{{ d.template.title }} {{ d.template.version }}</NuxtLink></td>
             <td>{{ d.environment.name }} <span v-if="d.environment.is_production" class="badge warn">Production</span></td>
             <td>{{ d.instances.map((i: any) => i.name).join(', ') }}</td>
             <td><span class="badge" :class="SERVICE_TONE[d.service_status]">{{ d.service_status_label }}</span> <span class="small muted">{{ d.service_reason }}</span></td>

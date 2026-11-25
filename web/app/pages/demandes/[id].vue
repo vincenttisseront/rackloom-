@@ -112,7 +112,7 @@ async function explainJob() {
   }
 }
 
-const resultTone = computed(() => SERVICE_TONE[service.value?.service_status] || 'neutral')
+const serviceCard = computed(() => deployment.value?.service_card || service.value?.service_card || null)
 </script>
 
 <template>
@@ -148,16 +148,19 @@ const resultTone = computed(() => SERVICE_TONE[service.value?.service_status] ||
       La lecture et le diagnostic restent disponibles.
     </div>
 
-    <!-- Résultat : l'état du service vient des contrôles de santé, pas du succès des jobs. -->
-    <div v-if="service" class="result" :class="resultTone" data-testid="service-result">
-      <div>
-        <div class="big">
-          <template v-if="change.state === 'succeeded' && service.service_status === 'ready'">Succès — service prêt</template>
-          <template v-else>Service : {{ service.service_status_label }}</template>
-        </div>
-        <div class="small">{{ service.service_reason || 'Pas encore vérifié.' }}
-          <span v-if="service.service_checked_at"> · vérifié le {{ dateTime(service.service_checked_at) }}</span></div>
-      </div>
+    <!-- F57 : fiche service — état observé + contrôles de santé, jamais le seul succès d'un job. -->
+    <div v-if="serviceCard" data-testid="service-result">
+      <ServiceCard :card="serviceCard" />
+      <p v-if="change.state === 'succeeded' && serviceCard.status === 'ready'" class="small muted" style="margin-top: 0.35rem" data-testid="change-success-note">
+        Succès — service prêt
+      </p>
+      <p v-else-if="change.state === 'partially_succeeded'" class="small muted" style="margin-top: 0.35rem">
+        Demande en succès partiel : le service n'est pas prêt.
+      </p>
+    </div>
+    <div v-else-if="service" class="result" :class="SERVICE_TONE[service.service_status] || 'neutral'" data-testid="service-result">
+      <div class="big">Service : {{ service.service_status_label }}</div>
+      <div class="small">{{ service.service_reason || 'Pas encore vérifié.' }}</div>
     </div>
     <div v-if="change.reason && !service" class="banner info">{{ change.reason }}</div>
 

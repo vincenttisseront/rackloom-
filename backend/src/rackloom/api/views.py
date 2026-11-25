@@ -260,7 +260,11 @@ def change_view(conn: Conn, principal: Principal, change: dict[str, Any]) -> dic
         "plan": plan_view(conn, plan, conn.execute(
             "SELECT * FROM request_revisions WHERE change_id = %s AND revision_no = %s",
             (change["id"], plan["revision_no"])).fetchone()) if plan else None,
-        "deployment": deployment_summary(conn, deployment) if deployment else None,
+        "deployment": (
+            {**deployment_summary(conn, deployment), "service_card": _service_card(conn, deployment)}
+            if deployment
+            else None
+        ),
         "pending_retry": {"id": str(pending_retry["id"]), "host_ids": pending_retry["host_ids"],
                           "bundle_digest": pending_retry["bundle_digest"],
                           "requested_at": iso(pending_retry["requested_at"])} if pending_retry else None,
@@ -283,13 +287,22 @@ def deployment_summary(conn: Conn, dep: dict[str, Any]) -> dict[str, Any]:
             "created_at": iso(dep["created_at"])}
 
 
+def _service_card(conn: Conn, dep: dict[str, Any]) -> dict[str, Any]:
+    from ..deployments import service_card
+
+    return service_card.build(conn, dep)
+
+
 def deployment_view(conn: Conn, principal: Principal, dep: dict[str, Any]) -> dict[str, Any]:
+    from ..deployments import service_card
+
     changes = conn.execute("SELECT * FROM changes WHERE deployment_id = %s ORDER BY created_at", (dep["id"],))
     host_rows = conn.execute("SELECT * FROM hosts WHERE deployment_id = %s ORDER BY name", (dep["id"],)).fetchall()
     return {
         **deployment_summary(conn, dep),
         "project_id": str(dep["project_id"]),
         "service_checks": dep["service_checks"],
+        "service_card": service_card.build(conn, dep),
         "hosts": [
             {
                 "id": str(h["id"]),
