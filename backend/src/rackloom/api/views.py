@@ -39,6 +39,14 @@ def iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
 
 
+def plan_headline(counts: dict[str, int]) -> str:
+    """« 1 VM de labo à créer, 0 modification, 0 suppression, 0 remplacement » (§1.1, étape 8)."""
+    def n(count: int, word: str) -> str:
+        return f"{count} {word}{'s' if count > 1 else ''}"
+    return (f"{counts['create']} VM de labo à créer, {n(counts['update'], 'modification')}, "
+            f"{n(counts['delete'], 'suppression')}, {n(counts['replace'], 'remplacement')}")
+
+
 def plan_details(resolution: dict[str, Any]) -> dict[str, Any]:
     """Panneau « Détails du plan » : valeurs résolues par thème, en lecture seule, avec provenance."""
     groups: dict[str, list[dict[str, Any]]] = {g: [] for g in GROUP_LABELS}
@@ -110,8 +118,7 @@ def plan_view(conn: psycopg.Connection, plan: dict[str, Any], revision: dict[str
         "id": str(plan["id"]), "status": plan["status"], "revision_no": plan["revision_no"],
         "version_no": plan["version_no"], "valid_until": iso(plan["valid_until"]),
         "created_at": iso(plan["created_at"]), "bundle_digest": plan["bundle_digest"],
-        "headline": f"{counts['create']} création(s), {counts['update']} modification(s), "
-                    f"{counts['replace']} remplacement(s), {counts['delete']} suppression(s)",
+        "headline": plan_headline(counts),
         "counts": counts, "terraform_version": summary.get("terraform_version"),
         "vms": [{"name": v["name"], "action": v["action"], "attributes": v.get("attributes", {})}
                 for v in summary.get("vms", [])],

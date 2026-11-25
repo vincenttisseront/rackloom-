@@ -112,6 +112,7 @@ def test_t05_t08_approbation_par_api(api, worker, conn):
     assert view["state"] == "plan_ready"
     plan = view["plan"]
     assert plan["counts"]["create"] == 1 and plan["vms"][0]["name"] == "vit-dev-web-01"
+    assert plan["headline"] == "1 VM de labo à créer, 0 modification, 0 suppression, 0 remplacement"
     assert plan["ansible"]["components"][0]["slug"] == "nginx"
     assert plan["ansible"]["components"][0]["ports"] == [{"port": "80", "proto": "tcp"}]
     assert any("HTTP" in v for v in plan["verifications"])

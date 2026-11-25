@@ -66,6 +66,14 @@ def test_d1_jusqu_au_succes_hote_sain(conn, demo, worker, lab, api):
     assert chloe.get(f"{API}/hosts/{host['id']}/observations?kind=journal").status_code == 404
     assert chloe.get(f"{API}/hosts/{host['id']}").status_code == 404
     assert alice.get(f"{API}/hosts/{host['id']}/observations?kind=journal").status_code == 200
+    # Rapport Ansible filtré (classe B) : téléchargeable par un membre seulement ; classe A jamais.
+    arts = {a["kind"]: a for a in conn.execute("SELECT * FROM artifacts WHERE change_id = %s", (c["id"],))}
+    report = arts["ansible_configure_report"]
+    assert report["key_class"] == "B"
+    body = alice.get(f"{API}/artifacts/{report['id']}")
+    assert body.status_code == 200 and "vit-dev-web-01" in __import__("json").loads(body.text)["hosts"]
+    assert chloe.get(f"{API}/artifacts/{report['id']}").status_code == 404
+    assert alice.get(f"{API}/artifacts/{arts['tf_plan_bin']['id']}").status_code == 404
 
 
 def test_t41_nginx_arrete_avant_verification(conn, demo, worker, lab):

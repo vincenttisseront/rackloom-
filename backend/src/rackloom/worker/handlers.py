@@ -374,6 +374,19 @@ def _ansible_run(r: JobContext, run_id: str, kind: str, stdin: str) -> tuple[int
     return status.get("exit_code"), summary
 
 
+def _store_ansible_report(r: JobContext, conn: psycopg.Connection, run: str, rc: int | None,
+                          summary: dict[str, Any]) -> dict[str, Any]:
+    """Rapport filtré de classe B (téléchargeable par un membre) : compteurs et tâches, messages masqués."""
+    hosts_report = {
+        name: {**{k: h.get(k) for k in ("ok", "changed", "failures", "dark", "skipped")},
+               "tasks": [{k: t.get(k) for k in ("name", "status", "msg")} for t in h.get("tasks", [])]}
+        for name, h in summary.get("hosts", {}).items()}
+    report = {"run": run, "exit_code": rc, "hosts": hosts_report}
+    return artifacts.store(conn, project_id=r.job["project_id"], change_id=r.job["change_id"],
+                           kind=f"ansible_{run}_report", key_class="B",
+                           plaintext=r.redactor.bytes(json.dumps(report, ensure_ascii=False).encode()))
+
+
 def _host_ok(summary: dict[str, Any], name: str) -> tuple[bool, str]:
     h = summary.get("hosts", {}).get(name)
     if h is None:
@@ -486,6 +499,7 @@ def handle_ansible_configure(r: JobContext) -> None:
     rc, summary = _ansible_run(r, run_id, "ansible", stdin)
     configured = []
     with r.tx() as conn:
+        _store_ansible_report(r, conn, "configure", rc, summary)
         for h in targets:
             ok, reason = _host_ok(summary, h["name"])
             conn.execute("UPDATE hosts SET deployment_state = %s WHERE id = %s",
