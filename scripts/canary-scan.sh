@@ -52,16 +52,21 @@ fi
 
 if [ -d "$OUT" ]; then
   : > "$TMP/pw"
+  traces=0
   while IFS= read -r -d '' f; do
     case "$f" in
-      *.zip) python3 -c 'import sys, zipfile
+      *.zip) traces=$((traces + 1)); python3 -c 'import sys, zipfile
 z = zipfile.ZipFile(sys.argv[1])
 for n in z.namelist(): sys.stdout.buffer.write(z.read(n))' "$f" >> "$TMP/pw" ;;
       *.png|*.webm|*.jpeg) ;;
       *) cat "$f" >> "$TMP/pw" ;;
     esac
   done < <(find "$OUT" -type f -print0)
-  scan "sorties de test (traces réseau Playwright, journaux Compose avant T25)" "$TMP/pw"
+  echo "traces Playwright examinées : $traces"
+  if [ "$traces" -eq 0 ]; then
+    echo "  ÉCHEC    aucune trace Playwright à examiner (RACKLOOM_E2E_TRACE=1 attendu)"; leaks=$((leaks + 1))
+  fi
+  scan "sorties de test (traces Playwright : réseau et DOM ; journaux Compose avant T25)" "$TMP/pw"
 else
   echo "  ignoré   sorties Playwright : $OUT absent"
 fi
