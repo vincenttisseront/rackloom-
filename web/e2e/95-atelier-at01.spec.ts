@@ -23,10 +23,14 @@ test('AT01 — atelier, publication distincte, deux machines par vagues', async 
   )
   await press(page.getByTestId('draft-create'))
   await expect(page.getByTestId('design')).toBeVisible()
+  // Chaque acceptation re-rend la liste : on cible l'identifiant figé, puis on attend sa disparition.
   for (let i = 0; i < 12; i++) {
-    const accept = page.locator('[data-testid^="accept-"]')
-    if ((await accept.count()) === 0) break
-    await press(accept.first())
+    const next = page.locator('[data-testid^="accept-"]').first()
+    if ((await next.count()) === 0) break
+    const testId = await next.getAttribute('data-testid')
+    expect(testId).toBeTruthy()
+    await press(page.getByTestId(testId!))
+    await expect(page.getByTestId(testId!)).toHaveCount(0)
     await expect(page.getByTestId('error')).toHaveCount(0)
   }
   await expect(page.locator('[data-testid^="accept-"]')).toHaveCount(0)
