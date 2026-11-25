@@ -432,4 +432,5 @@ Les observations ne sont ni publiées ni exécutées ; le brouillon suit le cycl
 - **Lot 2** : connecteur vSphere réel (inventaire, suivi) via runner dédié, module Terraform vSphere du catalogue, backend de state distant, filtrage sortant nftables, Ansible sur VM réelles, ancre de clé d'hôte fournie par la personnalisation invitée.
 - **Lot 3** : launcher sur Podman sans root, ISO autoinstall, premier boot, sauvegarde et restauration.
 - **Lot 4** : OIDC et groupes, gouvernance renforcée, runners par zone, nouveaux adaptateurs.
-- **AT01** : première tranche de l'atelier livrée au-dessus du registre et du résolveur (brouillon assisté, revue, publication par une autre personne, vagues `pilot`, Fail2ban). La double validation de publication reste une proposition (ADR-0010), non implémentée. Ensuite F60, F57 et F55, en parallèle du lot A.
+- **AT01** : première tranche de l'atelier livrée au-dessus du registre et du résolveur (brouillon assisté, revue, publication par une autre personne, vagues `pilot`, Fail2ban). La double validation de publication reste une proposition (ADR-0010), non implémentée.
+- **F60** : « Partir d'un serveur existant » via collecteurs approuvés (liste blanche) ; observations fictives explicites tant que le collecteur réel d'atelier n'est pas branché (D21). Ensuite F57 et F55, en parallèle du lot A.

@@ -3392,6 +3392,74 @@
         ]
       }
     },
+    "/api/v1/studio/drafts/{draft_id}/reference/{item_id}": {
+      "post": {
+        "description": "Accepte ou refuse une proposition issue du serveur de référence (F60).",
+        "operationId": "decide_reference_api_v1_studio_drafts__draft_id__reference__item_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Draft Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Decide Reference Api V1 Studio Drafts  Draft Id  Reference  Item Id  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Reference",
+        "tags": [
+          "atelier"
+        ]
+      }
+    },
     "/api/v1/studio/drafts/{draft_id}/submit": {
       "post": {
         "operationId": "submit_draft_api_v1_studio_drafts__draft_id__submit_post",
@@ -3510,6 +3578,30 @@
           }
         },
         "summary": "Decide Suggestion",
+        "tags": [
+          "atelier"
+        ]
+      }
+    },
+    "/api/v1/studio/reference-sources": {
+      "get": {
+        "description": "Sources pour « Partir d'un serveur existant » : fixtures fictives et hôtes du périmètre.",
+        "operationId": "reference_sources_api_v1_studio_reference_sources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reference Sources Api V1 Studio Reference Sources Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Reference Sources",
         "tags": [
           "atelier"
         ]

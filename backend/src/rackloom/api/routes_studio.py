@@ -46,6 +46,16 @@ def bases(request: Request) -> list[dict[str, Any]]:
         return studio.bases(u.conn)
 
 
+@router.get("/studio/reference-sources")
+def reference_sources(request: Request) -> dict[str, Any]:
+    """Sources pour « Partir d'un serveur existant » : fixtures fictives et hôtes du périmètre."""
+    with unit_of_work(request) as u:
+        _reader(u.p)
+        from ..studio import reference as refmod
+
+        return refmod.list_reference_sources(u.conn, u.p)
+
+
 @router.get("/studio/drafts")
 def list_drafts(request: Request) -> list[dict[str, Any]]:
     with unit_of_work(request) as u:
@@ -89,6 +99,16 @@ def decide_suggestion(
         raise ApiError(422, "invalid_suggestion", "identifiant de suggestion invalide")
     with unit_of_work(request, write=True) as u:
         draft = studio.decide_suggestion(u.conn, u.p, draft_id, suggestion_id, body)
+        return studio.view(u.conn, u.p, draft)
+
+
+@router.post("/studio/drafts/{draft_id}/reference/{item_id}")
+def decide_reference(
+    draft_id: UUID, item_id: UUID, request: Request, body: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    """Accepte ou refuse une proposition issue du serveur de référence (F60)."""
+    with unit_of_work(request, write=True) as u:
+        draft = studio.decide_reference(u.conn, u.p, draft_id, str(item_id), body)
         return studio.view(u.conn, u.p, draft)
 
 
