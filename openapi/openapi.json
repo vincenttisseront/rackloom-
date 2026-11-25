@@ -208,6 +208,33 @@
         ]
       }
     },
+    "/api/v1/admin/environments": {
+      "get": {
+        "description": "Tous les environnements, pour geler d'urgence sans rôle sur le projet (administrateur, auditeur en lecture).",
+        "operationId": "admin_environments_api_v1_admin_environments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Admin Environments Api V1 Admin Environments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Admin Environments",
+        "tags": [
+          "environnements"
+        ]
+      }
+    },
     "/api/v1/admin/environments/{environment_id}/policies": {
       "get": {
         "operationId": "environment_policies_api_v1_admin_environments__environment_id__policies_get",
@@ -1991,6 +2018,165 @@
         "summary": "Modify Deployment",
         "tags": [
           "demandes"
+        ]
+      }
+    },
+    "/api/v1/environments/{environment_id}": {
+      "get": {
+        "operationId": "get_environment_api_v1_environments__environment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Environment Api V1 Environments  Environment Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Environment",
+        "tags": [
+          "environnements"
+        ]
+      }
+    },
+    "/api/v1/environments/{environment_id}/freeze": {
+      "post": {
+        "operationId": "freeze_api_v1_environments__environment_id__freeze_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Freeze Api V1 Environments  Environment Id  Freeze Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Freeze",
+        "tags": [
+          "environnements"
+        ]
+      }
+    },
+    "/api/v1/environments/{environment_id}/unfreeze": {
+      "post": {
+        "operationId": "unfreeze_api_v1_environments__environment_id__unfreeze_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Environment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Unfreeze Api V1 Environments  Environment Id  Unfreeze Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unfreeze",
+        "tags": [
+          "environnements"
         ]
       }
     },

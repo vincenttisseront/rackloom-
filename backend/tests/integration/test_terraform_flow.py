@@ -64,8 +64,9 @@ def test_application_cree_exactement_les_vm(conn, demo, worker, worker_env):
     assert dep["service_status"] == "unknown"
     assert flows.change(conn, c["id"])["state"] == "executing"
     assert [j["kind"] for j in flows.jobs_of(conn, c["id"])][-1] == "guest_ready"
-    decisions = conn.execute("SELECT outcome FROM admission_decisions WHERE job_id = %s", (job["id"],)).fetchall()
-    assert [d["outcome"] for d in decisions] == ["admitted"]
+    decisions = conn.execute("SELECT stage, outcome FROM admission_decisions WHERE job_id = %s ORDER BY id",
+                             (job["id"],)).fetchall()
+    assert [(d["stage"], d["outcome"]) for d in decisions] == [("start", "admitted"), ("dispatch", "admitted")]
 
 
 def test_t01_plan_altere_bloque(conn, demo, worker, worker_env):

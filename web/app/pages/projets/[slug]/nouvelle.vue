@@ -225,6 +225,10 @@ const inputs = computed(() => service.value?.inputs || {})
             Déploiement en production demandé explicitement. Circuit d'approbation de la production : approbateur distinct obligatoire.
             <button type="button" class="link" @click="cancelProduction">Annuler la demande de production</button>
           </p>
+          <p v-if="env?.freeze" class="banner warn small" data-testid="env-frozen-banner">
+            Environnement {{ env.name }} gelé par {{ env.freeze.frozen_by }} : « {{ env.freeze.reason }} ».
+            Vous pouvez préparer et soumettre la demande ; l'approbation et toute exécution attendront le dégel.
+          </p>
 
           <div v-if="inputs.quantity" class="field">
             <div class="field-head">

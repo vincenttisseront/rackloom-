@@ -3,7 +3,8 @@
 ## État au 2026-11-25
 
 - **Lot 0 (cadrage)** : fusionné dans `main` (PR #1).
-- **Lot 1 (parcours Compose avec résolveur central et modèle template/composant)** : **terminé, testé localement**. Livré en trois PR : #2 et #3 fusionnées en avance, puis la PR de clôture (branche `cursor/lot-1-cloture-e231`), qui corrige ce que ces fusions anticipées laissaient cassé et ajoute D2 à D6, T19, T24, T25, le `Makefile`, la CI et ce document.
+- **Lot 1 (parcours Compose avec résolveur central et modèle template/composant)** : **terminé, testé localement**. Livré en trois PR : #2 et #3 fusionnées en avance, puis la PR de clôture #4 (`cursor/lot-1-cloture-e231`).
+- **Lot A** : **F28** (gel d'urgence) en cours de livraison sur `cursor/lot-a-f28-gel-20f1` ; F27 puis F21 suivent. AT01 avance en parallèle sur une autre branche.
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -42,7 +43,8 @@
 | Connecteur vCenter réel (session REST, inventaire) | lot 2 | non vérifié | — |
 | ISO, premier boot, sauvegarde, restauration | lot 3 | non vérifié | — |
 | OIDC | lot 4 | non vérifié | — |
-| Fonctions F01 à F60 et atelier AT01 à AT04 | à faire | non vérifié | `docs/backlog.md` |
+| Gel d'urgence par environnement (F28, règle R080, bundle `builtin@2`) | livré | testé localement | `test_freeze.py`, `test_lab_flow.py` (F28), `60-f28-gel.spec.ts` ; vidéo `media/lot-a-f28-gel-urgence.webm` |
+| Fonctions F01 à F60 (hors F28) et atelier AT01 à AT04 | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6
 
@@ -56,8 +58,9 @@ Toutes passent dans Chromium (Playwright 1.65.1, TLS vérifié par une base NSS 
 | D4 | `web/e2e/40-d4-environnement.spec.ts` | `dev` par défaut ; octroi réseau retiré → blocage, jamais `prod` ; `prod` sans confirmation → 422 ; scénario `defaults_prod` rejeté ; production confirmée → bandeau et circuit d'approbation de production |
 | D5 | `web/e2e/90-d5-versions.spec.ts` | plan A approuvé en 1.0.0, 1.1.0 publiée avant le démarrage → A s'exécute en 1.0.0 (empreinte inchangée, déploiement épinglé) ; nouvelle demande → 1.1.0 ; 1.0.0 retirée avant le démarrage de B → job bloqué `resolution_no_longer_admissible`, plan intact |
 | D6 | `web/e2e/50-d6-assistant.spec.ts` | assistant désactivé par l'administrateur, puis en panne : bandeau clair, parcours formulaire jusqu'à « Succès — service prêt » avec la même approbation, mêmes refus (API, CI, production non confirmée) |
+| F28 | `web/e2e/60-f28-gel.spec.ts` | plan approuvé en file (worker arrêté), gel UI avec motif, redémarrage → `blocked` / `env_frozen` sans envoi ; inventaire et assistant (diagnostic) disponibles ; 403/404 ; dégel |
 
-Capture du parcours principal : `media/` du magasin de l'agent (voir le rapport de fin de lot) ; elle n'est pas versionnée.
+Capture du parcours principal et de F28 : `media/` du magasin du projet (voir le rapport de lot) ; elles ne sont pas versionnées.
 
 ## Tests obligatoires T01 à T41
 
@@ -70,7 +73,8 @@ Tous existent et passent ; aucun n'est marqué `skip` ou `xfail`. Niveau : **tes
 | T05, T08, T32, T39 | `backend/tests/integration/test_api_flow.py` |
 | T06, T16, T17, T18, T32, T34, T36 | `backend/tests/integration/test_chat.py` |
 | T06, T09, T11, T12, T29, T32 | `backend/tests/security/test_api_security.py` |
-| T10, T20, T22, T41 | `backend/tests/integration/test_lab_flow.py` (Ansible réel contre des conteneurs `lab-node`) |
+| T10, T20, T22, T41, F28 (configuration bloquée puis reprise) | `backend/tests/integration/test_lab_flow.py` (Ansible réel contre des conteneurs `lab-node`) |
+| F28 (admission, dispatch, concurrence, droits, audit) | `backend/tests/integration/test_freeze.py` |
 | T19 | `backend/tests/security/test_connector_tls.py` |
 | T21, T31, T32, T33, T34, T37, T38, T39 | `backend/tests/integration/test_resolver.py` |
 | T24, T25, T28 | `scripts/test-e2e.sh` (`canary-scan.sh`, `smoke-d1.py --restart-during`, `check-exposure.sh`) |
@@ -154,7 +158,7 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 | D5 | Moteur des runners sur l'appliance | Podman sans root (ADR-0003) | lot 3 | ouverte |
 | D6 | Une reprise ciblée exige-t-elle une nouvelle approbation ? | oui (approbation de type `retry`) | E9 | ouverte (appliquée : T22) |
 | D7 | L'administrateur de plateforme lit-il les données des projets sans rôle projet ? | l'administrateur de plateforme n'a pas accès aux données d'un projet sans rôle attribué et audité | E1 | décidé (Vincent, 2026-11-25) |
-| D8 | Qui peut geler un environnement (F28) | administrateurs de plateforme et approbateurs de l'environnement | F28 | ouverte |
+| D8 | Qui peut geler un environnement (F28) | administrateurs de plateforme et approbateurs de l'environnement | F28 | ouverte (appliquée provisoirement dans F28) |
 | D9 | Calage du lot 2 (laboratoire réel) et du lot 3 (ISO) dans l'ordre décidé | lot 2 dès qu'un laboratoire existe, pour valider F21, F05, F03, F09 et AT01 ; lot 3 avant F17 et F26 ; OIDC avant F12, F14, F41 et F59 | planification | ouverte |
 | D10 | IdP cible et second facteur local avant le lot 4 | à préciser | F12, F14, F41, F59, usage hors labo | ouverte |
 | D11 | Outils tiers du backlog : IPAM (F03), ITSM (F25), CA SSH (F15), fabrication d'images (F07), sauvegarde (F39), licences (F34) | à préciser selon l'existant | ces fonctions | ouverte |
@@ -189,11 +193,17 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Commandes et résultats : section « Commandes exécutées et résultats ».
 - Résultat : D1 à D6 et T01 à T41 passent, testés localement ; aucune capacité validée en laboratoire.
 
+### Lot A : F28 gel d'urgence (2026-11-25, heure de Paris)
+
+- Branche `cursor/lot-a-f28-gel-20f1`. Migration `0002` (`environment_freezes`), règle d'admission R080 (étapes `start` et `dispatch`), bundle `builtin@2`, API `/environments/{id}/freeze|unfreeze`, `/admin/environments`, bandeaux UI, D8 provisoire (admin plateforme ou approbateur).
+- Commandes : `make test` → **193 tests passés** (dont 7 `test_freeze` + 1 labo F28) ; `RACKLOOM_E2E_VIDEO=1 ./scripts/test-e2e.sh 60-f28-gel` → Playwright F28 OK (~19 s de vidéo), T25/T24/T28 OK. E2e de référence sur `main` avant changement : 6 Playwright verts + T25/T24/T28 OK.
+- Suivi CI : e2e a échoué une fois sur T25 (course : `ansible_configure` interrompu → `partially_succeeded` + réconciliation OK, données conservées, un seul `tf_apply`). Correctif : `finish_configure` (sorties runner, miroir de `finish_apply`) ; `smoke-d1.py` accepte reprise **ou** réconciliation sans doublon (lot-1-plan T25).
+- Preuves : `backend/tests/integration/test_freeze.py`, `test_lab_flow.py::test_f28_…` et `test_t25_reconcile_ansible_depuis_sorties`, `web/e2e/60-f28-gel.spec.ts`, vidéo magasin `/cursor/stores/…/media/lot-a-f28-gel-urgence.webm`. Niveau : **testé localement**. Labo réel : non (D2).
+- Limites : un job déjà `dispatched` n'est pas stoppé (suivi seulement) ; un job bloqué ne repart pas au dégel (nouvelle version ou reprise) ; D8 non tranchée formellement ; pas de job réellement envoyé à vCenter.
+- Suite du lot A : **F27** (calendriers), puis **F21** (chronologie unifiée).
+
 ## Prochain jalon
 
-En parallèle, sur deux branches séparées :
-
-1. branche « atelier » : **AT01** (première tranche de l'atelier de templates, avec Fail2ban), puis **F60 → F57 → F55** ; critère d'acceptation : le scénario de référence du brief F51 à F60 ;
-2. branche « lot A » : **F28 → F27 → F21**, entièrement testables localement.
-
-Ensuite **F31 → F37 → F46** (voir `docs/backlog.md`). Le lot 2 attend un laboratoire réel autorisé (D2).
+1. Finir le lot A : **F27 → F21** (après fusion de F28), entièrement testables localement.
+2. En parallèle : branche « atelier » **AT01** puis **F60 → F57 → F55**.
+3. Ensuite **F31 → F37 → F46**. Le lot 2 attend un laboratoire réel autorisé (D2).
