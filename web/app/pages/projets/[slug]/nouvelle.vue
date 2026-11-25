@@ -308,6 +308,14 @@ const inputs = computed(() => service.value?.inputs || {})
         <h2 id="risks-title">Risques et limites</h2>
         <ul>
           <li v-if="revision.summary.production"><span class="badge warn">Production</span> Déploiement en production, circuit d'approbation de la production.</li>
+          <li v-if="revision.summary.replaces?.length" data-testid="risk-destructive">
+            <span class="badge bad">Bloquant</span> Changer le niveau remplacerait {{ revision.summary.replaces.join(', ') }}
+            (suppression puis recréation). Rackloom ne supprime rien au lot 1 : le plan sera bloqué et ne pourra pas être approuvé.
+          </li>
+          <li v-if="revision.summary.removes?.length" data-testid="risk-destructive">
+            <span class="badge bad">Bloquant</span> Réduire la quantité supprimerait {{ revision.summary.removes.join(', ') }}.
+            Rackloom ne supprime rien au lot 1 : le plan sera bloqué et ne pourra pas être approuvé.
+          </li>
           <li>Approbation requise : {{ revision.summary.approval }}.</li>
           <li v-for="l in revision.summary.preview_limits" :key="l">{{ l }}</li>
           <li>Ports ouverts, sauvegarde et durée de vie : résolus et affichés, non appliqués <span class="badge neutral">Non appliqué</span></li>
