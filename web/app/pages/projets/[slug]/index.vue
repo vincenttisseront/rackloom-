@@ -42,10 +42,19 @@ function envChanged(updated: any) {
     <div v-for="e in environments.filter(x => x.frozen)" :key="`frozen-${e.id}`" class="banner warn" role="status" data-testid="project-freeze-banner">
       Environnement {{ e.name }} gelé : aucun job d'écriture ne démarre jusqu'au dégel. Lecture et diagnostic restent disponibles.
     </div>
+    <div
+      v-for="e in environments.filter(x => x.calendar?.state?.code === 'calendar_frozen')"
+      :key="`cal-frozen-${e.id}`" class="banner warn" role="status" data-testid="project-calendar-banner"
+    >
+      Environnement {{ e.name }} : {{ e.calendar.state.reason }}. Les jobs d'écriture ne démarrent pas pendant cette période.
+    </div>
 
     <section v-if="environments.length" class="card" aria-labelledby="envs-title">
       <h2 id="envs-title">Environnements</h2>
       <EnvironmentTable :environments="environments" @changed="envChanged" />
+      <CalendarPanel
+        v-for="e in environments" :key="`cal-${e.id}`" :environment="e" @changed="envChanged"
+      />
     </section>
 
     <section class="card" aria-labelledby="deps-title">

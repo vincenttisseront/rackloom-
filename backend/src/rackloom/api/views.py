@@ -12,7 +12,7 @@ from ..changes.service import change_ref
 from ..changes.transitions import STATES
 from ..db import Conn
 from ..identity.authz import Principal
-from ..projects import freezes
+from ..projects import calendars, freezes
 
 SERVICE_STATUS = {
     "unknown": "Non vérifié",
@@ -69,12 +69,13 @@ def freeze_view(row: dict[str, Any] | None) -> dict[str, Any] | None:
 
 def environment_view(conn: Conn, principal: Principal, env: dict[str, Any], *,
                      history: bool = False) -> dict[str, Any]:
-    """État de gel et actions permises ; aucune donnée d'un autre projet."""
+    """État de gel, calendrier et actions permises ; aucune donnée d'un autre projet."""
     current = freezes.active(conn, env["id"])
     out: dict[str, Any] = {
         "id": str(env["id"]), "slug": env["slug"], "name": env["name"], "kind": env["kind"],
         "is_production": env["is_production"],
         "frozen": current is not None, "freeze": freeze_view(current),
+        "calendar": calendars.summary(conn, env["id"]),
         "write_jobs": freezes.write_jobs(conn, env["id"]),
         "allowed_actions": workflow.available_actions(conn, principal, "environment", env),
     }
