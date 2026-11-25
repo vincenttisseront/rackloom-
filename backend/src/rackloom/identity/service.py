@@ -9,7 +9,6 @@ from uuid import UUID
 import psycopg
 
 from .. import audit
-from .authz import Principal, load_bindings
 from ..config import get_settings
 from ..errors import ApiError
 from ..ids import uuid7
@@ -21,6 +20,7 @@ from ..security import (
     token_hash,
     verify_password,
 )
+from .authz import Principal, load_bindings
 
 SESSION_COOKIE = "__Host-rl_session"
 DEV_SESSION_COOKIE = "rl_session"

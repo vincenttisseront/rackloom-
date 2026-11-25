@@ -7,13 +7,15 @@ class ApiError(Exception):
     """Erreur métier renvoyée telle quelle : code stable, pointeur de champ, message traduisible."""
 
     def __init__(self, status: int, code: str, message: str, field: str | None = None,
-                 details: Any = None) -> None:
+                 details: Any = None, commit: bool = False) -> None:
         super().__init__(message)
         self.status = status
         self.code = code
         self.message = message
         self.field = field
         self.details = details
+        # Les écritures déjà faites (ex. : plan marqué expiré) sont validées avant de renvoyer l'erreur.
+        self.commit = commit
 
     def to_dict(self) -> dict:
         body: dict[str, Any] = {"code": self.code, "message": self.message}

@@ -37,27 +37,33 @@ ALLOWED: dict[str, set[str]] = {
     "draft": {"needs_info", "validated", "draft", "cancelled"},
     "needs_info": {"draft", "needs_info", "validated", "cancelled"},
     "validated": {"planning", "cancelled"},
-    "planning": {"plan_ready", "plan_failed", "cancelled"},
+    # planning → succeeded : nouvelle planification après succès sans aucun changement (T27).
+    "planning": {"plan_ready", "plan_failed", "cancelled", "succeeded"},
     "plan_failed": {"draft", "needs_info", "cancelled"},
     "plan_ready": {"approved", "rejected", "plan_expired", "draft", "needs_info", "cancelled"},
     "plan_expired": {"planning", "draft", "needs_info", "cancelled"},
     "rejected": {"draft", "needs_info", "cancelled"},
     "approved": {"executing", "blocked", "plan_expired", "draft", "needs_info", "cancelled"},
     "blocked": {"planning", "draft", "needs_info", "cancelled"},
-    "executing": {"verifying", "failed", "partially_succeeded", "uncertain", "succeeded"},
+    # executing → plan_expired : Terraform refuse un plan sauvegardé périmé (aucune ressource touchée).
+    # executing → cancelled : annulation effective avant toute création de ressource.
+    "executing": {"verifying", "failed", "partially_succeeded", "uncertain", "succeeded", "plan_expired",
+                  "cancelled"},
     "verifying": {"succeeded", "partially_succeeded", "failed", "uncertain"},
     "uncertain": {"reconciling"},
     # Écart au diagramme d'architecture : une réconciliation concluant « appliqué » reprend
     # les étapes suivantes (invités, configuration) avant la vérification.
     "reconciling": {"executing", "verifying", "failed", "uncertain"},
-    "partially_succeeded": {"executing"},
-    "succeeded": set(),
+    # Révision d'une demande déjà déployée : le nouveau plan montre l'écart (remplacement bloqué).
+    "partially_succeeded": {"executing", "draft", "needs_info"},
+    "succeeded": {"planning", "draft", "needs_info"},
     "failed": set(),
     "cancelled": set(),
 }
 
-EDITABLE = {"draft", "needs_info", "plan_failed", "plan_ready", "plan_expired", "rejected", "approved", "blocked"}
-TERMINAL = {"succeeded", "failed", "cancelled"}
+EDITABLE = {"draft", "needs_info", "plan_failed", "plan_ready", "plan_expired", "rejected", "approved", "blocked",
+            "succeeded", "partially_succeeded"}
+TERMINAL = {"failed", "cancelled"}
 
 
 def transition(conn: psycopg.Connection, change: dict[str, Any], to_state: str, *, reason_code: str,

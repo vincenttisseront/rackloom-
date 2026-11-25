@@ -8,11 +8,14 @@ Chemins logiques fournis par le launcher via l'environnement :
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -35,19 +38,39 @@ def _emit(out: Path, step: str, status: str, detail: str = "", **data) -> None:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+_CURRENT: subprocess.Popen | None = None
+
+
+def _forward(signum: int, _frame) -> None:
+    """Relaie l'annulation à l'outil en cours (Terraform s'arrête proprement sur SIGINT)."""
+    if _CURRENT is not None and _CURRENT.poll() is None:
+        _CURRENT.send_signal(signum)
+
+
 def _run(cmd: list[str], cwd: Path, log: Path, env: dict[str, str], timeout: int) -> int:
+    global _CURRENT
     with log.open("ab") as fh:
         fh.write(f"$ {' '.join(cmd)}\n".encode())
         fh.flush()
+        proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=fh, stderr=subprocess.STDOUT)
+        _CURRENT = proc
         try:
-            proc = subprocess.run(cmd, cwd=cwd, env=env, stdout=fh, stderr=subprocess.STDOUT, timeout=timeout)
+            rc = proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            fh.write(b"\n[rackloom] délai d'exécution dépassé\n")
-            return 124
+            proc.send_signal(signal.SIGINT)
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            fh.write("\n[rackloom] délai d'exécution dépassé\n".encode())
+            rc = 124
+        finally:
+            _CURRENT = None
     if log.stat().st_size > MAX_LOG_BYTES:
         data = log.read_bytes()
-        log.write_bytes(data[:MAX_LOG_BYTES // 2] + b"\n[...tronqué...]\n" + data[-MAX_LOG_BYTES // 2:])
-    return proc.returncode
+        log.write_bytes(data[:MAX_LOG_BYTES // 2] + "\n[...tronqué...]\n".encode() + data[-MAX_LOG_BYTES // 2:])
+    return rc
 
 
 def _tf_env(work: Path) -> dict[str, str]:
@@ -104,7 +127,7 @@ def _tf_show_state(job: dict, work: Path, out: Path, env: dict[str, str], timeou
     return {"exists": True, "lineage": raw.get("lineage"), "serial": raw.get("serial"), "resources": resources}
 
 
-def action_tf_plan(job: dict, work: Path, out: Path, timeout: int) -> int:
+def action_tf_plan(job: dict, work: Path, out: Path, timeout: int, secret: dict) -> int:
     env = _tf_env(work)
     rc = _tf_init(job, work, out, env, timeout)
     if rc != 0:
@@ -137,7 +160,7 @@ def action_tf_plan(job: dict, work: Path, out: Path, timeout: int) -> int:
     return 0
 
 
-def action_tf_apply(job: dict, work: Path, out: Path, timeout: int) -> int:
+def action_tf_apply(job: dict, work: Path, out: Path, timeout: int, secret: dict) -> int:
     env = _tf_env(work)
     rc = _tf_init(job, work, out, env, timeout)
     if rc != 0:
@@ -157,7 +180,7 @@ def action_tf_apply(job: dict, work: Path, out: Path, timeout: int) -> int:
     return rc
 
 
-def action_tf_inspect(job: dict, work: Path, out: Path, timeout: int) -> int:
+def action_tf_inspect(job: dict, work: Path, out: Path, timeout: int, secret: dict) -> int:
     """Lecture seule : state courant et présence réelle des ressources simulées."""
     env = _tf_env(work)
     state = _tf_show_state(job, work, out, env, timeout)
@@ -170,8 +193,6 @@ def action_tf_inspect(job: dict, work: Path, out: Path, timeout: int) -> int:
         if filename:
             path = infra / Path(filename).name
             if path.exists():
-                import hashlib
-
                 present = True
                 sha = hashlib.sha256(path.read_bytes()).hexdigest()
         observed.append({"address": res["address"], "present": present, "content_sha256": sha})
@@ -180,22 +201,43 @@ def action_tf_inspect(job: dict, work: Path, out: Path, timeout: int) -> int:
     return 0
 
 
-def action_ansible_play(job: dict, work: Path, out: Path, timeout: int) -> int:
+def _start_agent(private_key: str) -> tuple[dict[str, str], int]:
+    """Agent SSH éphémère : la clé reçue sur stdin n'est jamais écrite sur disque."""
+    sock = Path(tempfile.mkdtemp(prefix="rl-agent-")) / "agent.sock"
+    proc = subprocess.run(["ssh-agent", "-s", "-a", str(sock)], capture_output=True, text=True, timeout=10,
+                          check=True)
+    pid = int(proc.stdout.split("SSH_AGENT_PID=", 1)[1].split(";", 1)[0])
+    env = {"SSH_AUTH_SOCK": str(sock)}
+    key = private_key if private_key.endswith("\n") else private_key + "\n"
+    subprocess.run(["ssh-add", "-q", "-"], input=key, text=True, env={**os.environ, **env}, timeout=10,
+                   check=True, capture_output=True)
+    return env, pid
+
+
+def action_ansible_play(job: dict, work: Path, out: Path, timeout: int, secret: dict) -> int:
     """Ansible Runner sur un playbook approuvé, inventaire limité, clé d'hôte ancrée."""
     private = work / "ansible"
+    home = work / "home"
+    home.mkdir(exist_ok=True)
+    identity = home / "identity.pub"
+    identity.write_text(job["ssh_public_key"] + "\n", encoding="utf-8")
     env = {
         "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
-        "HOME": str(work / "home"),
+        "HOME": str(home),
         "ANSIBLE_HOST_KEY_CHECKING": "True",
         "ANSIBLE_NOCOLOR": "1",
         "ANSIBLE_RETRY_FILES_ENABLED": "False",
-        "ANSIBLE_LOCAL_TEMP": str(work / "home" / ".ansible-tmp"),
+        "ANSIBLE_LOCAL_TEMP": str(home / ".ansible-tmp"),
         "ANSIBLE_SSH_ARGS": (
             f"-o UserKnownHostsFile={private / 'env' / 'known_hosts'} -o StrictHostKeyChecking=yes "
-            "-o ControlMaster=no -o IdentitiesOnly=yes"
+            f"-o GlobalKnownHostsFile=/dev/null -o ControlMaster=no -o IdentitiesOnly=yes "
+            f"-o IdentityFile={identity} -o ConnectTimeout=10"
         ),
     }
-    (work / "home").mkdir(exist_ok=True)
+    agent_pid = None
+    if secret.get("ssh_private_key"):
+        agent_env, agent_pid = _start_agent(secret["ssh_private_key"])
+        env.update(agent_env)
     cmd = [
         job.get("ansible_runner_bin", "ansible-runner"), "run", str(private),
         "-p", job["playbook"], "--ident", "run", "--rotate-artifacts", "1",
@@ -203,9 +245,17 @@ def action_ansible_play(job: dict, work: Path, out: Path, timeout: int) -> int:
     if job.get("check_mode"):
         cmd += ["--cmdline", "--check --diff"]
     _emit(out, "ansible_play", "started", playbook=job["playbook"], check_mode=bool(job.get("check_mode")))
-    rc = _run(cmd, work, out / "ansible.log", env, timeout)
+    try:
+        rc = _run(cmd, work, out / "ansible.log", env, timeout)
+    finally:
+        if agent_pid:
+            try:
+                os.kill(agent_pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
     summary = _ansible_summary(private / "artifacts" / "run")
     (out / "ansible_summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    shutil.rmtree(private / "artifacts", ignore_errors=True)
     _emit(out, "ansible_play", "ok" if rc == 0 else "error", exit_code=rc)
     return rc
 
@@ -246,7 +296,7 @@ def _ansible_summary(artifacts: Path) -> dict:
     return {"status": status, "hosts": hosts, "reports": facts}
 
 
-def action_http_probe(job: dict, work: Path, out: Path, timeout: int) -> int:
+def action_http_probe(job: dict, work: Path, out: Path, timeout: int, secret: dict) -> int:
     import urllib.error
     import urllib.request
 
@@ -266,22 +316,29 @@ def action_http_probe(job: dict, work: Path, out: Path, timeout: int) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    signal.signal(signal.SIGINT, _forward)
+    signal.signal(signal.SIGTERM, _forward)
     work = _env_path("RACKLOOM_WORK")
     out = work / "out"
     out.mkdir(exist_ok=True)
+    secret: dict = {}
+    if os.environ.get("RACKLOOM_STDIN_SECRET") == "1":
+        secret = json.loads(sys.stdin.read() or "{}")
     job = json.loads((work / "job.json").read_text(encoding="utf-8"))
     action = job.get("action")
     if action not in ACTIONS:
         _emit(out, "runner", "error", f"action refusée : {action!r}")
         return 64
-    timeout = int(job.get("timeout_seconds", 600))
+    timeout = min(int(job.get("timeout_seconds", 600)), int(os.environ.get("RACKLOOM_TIMEOUT", "3600")))
     _emit(out, "runner", "started", action=action)
     handler = globals()[f"action_{action}"]
     try:
-        rc = handler(job, work, out, timeout)
+        rc = handler(job, work, out, timeout, secret)
     except Exception as exc:  # noqa: BLE001 - toute erreur devient un code et une étape lisible
         _emit(out, "runner", "error", f"{type(exc).__name__}")
         rc = 70
+    finally:
+        secret.clear()
     (out / "exit_code").write_text(str(rc), encoding="utf-8")
     _emit(out, "runner", "finished", exit_code=rc)
     # Ménage du cache provider/plugins : le dossier de travail reste jetable.

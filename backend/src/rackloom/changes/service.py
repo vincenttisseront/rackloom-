@@ -192,6 +192,46 @@ def current_version(conn: psycopg.Connection, change: dict[str, Any]) -> dict[st
                         (change["id"], change["current_version_no"])).fetchone()
 
 
+def replan(conn: psycopg.Connection, principal: Principal, change_id: UUID,
+           request_id: str | None = None) -> dict[str, Any]:
+    """Nouvelle planification après succès : vérifie que l'infrastructure correspond toujours à la demande."""
+    change = get_change(conn, principal, change_id, for_update=True)
+    require_role(principal, "operator", change["project_id"], change["environment_id"])
+    if change["state"] != "succeeded":
+        raise ApiError(409, "invalid_state", "nouvelle planification possible uniquement après un succès")
+    stack = conn.execute("SELECT * FROM stacks WHERE change_id = %s", (change_id,)).fetchone()
+    change = transition(conn, change, "planning", reason_code="replan_requested", actor_type="user",
+                        actor_id=str(principal.user_id), request_id=request_id)
+    job = queue.enqueue(conn, kind="tf_plan", change=change, stack_id=stack["id"],
+                        idempotency_key=f"tf_plan:{change_id}:{change['current_version_no']}:{change['row_version']}",
+                        payload={"version_no": change["current_version_no"], "replan": True})
+    return {"change": change, "job_id": job["id"]}
+
+
+def cancel_job(conn: psycopg.Connection, principal: Principal, job_id: UUID,
+               request_id: str | None = None) -> dict[str, Any]:
+    """Demande d'annulation : jamais garantie une fois le runner démarré."""
+    job = conn.execute("SELECT * FROM jobs WHERE id = %s FOR UPDATE", (job_id,)).fetchone()
+    if job is None or job["project_id"] is None:
+        raise not_found("job")
+    require_project(principal, job["project_id"], "job")
+    if not (principal.has_role("operator", job["project_id"]) or principal.has_role("approver", job["project_id"])):
+        raise ApiError(403, "forbidden", "rôle opérateur ou approbateur requis")
+    if job["state"] not in ("queued", "leased", "running"):
+        raise ApiError(409, "job_finished", "le job est déjà terminé")
+    job = conn.execute(
+        "UPDATE jobs SET cancel_requested_at = coalesce(cancel_requested_at, now()), cancel_requested_by = %s, "
+        "updated_at = now() WHERE id = %s RETURNING *", (principal.user_id, job_id)).fetchone()
+    events.emit(conn, type="job.cancel_requested", source="rackloom", project_id=job["project_id"],
+                correlation_id=job["change_id"], job_id=job_id, severity="warning",
+                data={"kind": job["kind"], "message": "Annulation demandée : non garantie si le job a démarré"},
+                dedupe_key=f"job.cancel_requested:{job_id}")
+    audit.record(conn, actor_type="user", actor_id=str(principal.user_id), action="job.cancel_request",
+                 outcome="requested", project_id=job["project_id"], correlation_id=job["change_id"],
+                 targets={"job": str(job_id), "kind": job["kind"]}, request_id=request_id)
+    return {"job_id": job_id, "state": job["state"], "cancel_requested_at": job["cancel_requested_at"]}
+
+
 def cancel(conn: psycopg.Connection, principal: Principal, change_id: UUID,
            request_id: str | None = None) -> dict[str, Any]:
     change = get_change(conn, principal, change_id, for_update=True)

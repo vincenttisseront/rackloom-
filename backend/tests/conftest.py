@@ -123,3 +123,35 @@ class Demo:
 @pytest.fixture
 def demo(conn: psycopg.Connection) -> Demo:
     return Demo(conn)
+
+
+@pytest.fixture
+def worker_env(db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Worker en processus : clés de test éphémères, launcher « process », Terraform local."""
+    from rackloom import db as dbmod
+    from rackloom import security
+    from rackloom.config import get_settings
+
+    keys = tmp_path / "keys"
+    security.generate_keys(keys)
+    data = tmp_path / "data"
+    cache = Path.home() / ".cache" / "rackloom" / "tf-plugins"
+    cache.mkdir(parents=True, exist_ok=True)
+    for key, value in {
+        "RACKLOOM_KEYS_DIR": str(keys), "RACKLOOM_DATA_DIR": str(data), "RACKLOOM_LAUNCHER_MODE": "inprocess",
+        "RACKLOOM_CATALOG_DIR": str(ROOT / "catalog"), "RACKLOOM_JOB_HEARTBEAT_SECONDS": "1",
+        "RACKLOOM_JOB_LEASE_SECONDS": "10", "RACKLOOM_PROCESS_TF_PLUGIN_CACHE_DIR": str(cache),
+    }.items():
+        monkeypatch.setenv(key, value)
+    get_settings.cache_clear()
+    dbmod.close_pool()
+    return data
+
+
+@pytest.fixture
+def worker(worker_env: Path):
+    from rackloom.worker.main import Worker
+
+    w = Worker(worker_id="test-worker-1")
+    w.register()
+    return w
