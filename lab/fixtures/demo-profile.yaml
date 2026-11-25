@@ -4,6 +4,7 @@ schema: rackloom.demo-profile/v1
 users:
   - {key: admin, email: admin@demo.invalid, name: "Admin (démo)", roles: [{role: platform_admin}]}
   - {key: pub, email: pub@demo.invalid, name: "Paul (publicateur)", roles: [{role: template_publisher}]}
+  - {key: ines, email: ines@demo.invalid, name: "Inès (auteure)", roles: [{role: template_author}]}
   - {key: alice, email: alice@demo.invalid, name: "Alice (opératrice)", roles: [{role: operator, project: vitrine}]}
   - {key: bruno, email: bruno@demo.invalid, name: "Bruno (approbateur)", roles: [{role: approver, project: vitrine}]}
   - {key: chloe, email: chloe@demo.invalid, name: "Chloé (opératrice)", roles: [{role: operator, project: compta}]}
@@ -38,7 +39,7 @@ policies:
 # Octrois d'inventaire et de services. compta/dev ne reçoit aucun réseau (démonstration D3).
 grants:
   vitrine/dev:
-    service_template: [ubuntu-web]
+    service_template: [ubuntu-web, ubuntu-web-durci]
     image: [vm-500]
     cluster: [domain-c10]
     datastore: [datastore-201]

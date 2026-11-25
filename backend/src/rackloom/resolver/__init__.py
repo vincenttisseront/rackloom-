@@ -16,6 +16,7 @@ entrées. Ordre (docs/lot-1-plan.md §7.4) :
 7. blocage expliqué si une dimension n'a aucun candidat.
 """
 
+
 from __future__ import annotations
 
 import re
@@ -31,26 +32,104 @@ from ..errors import ApiError
 from ..identity.authz import Principal
 
 NEED_SCHEMA = "rackloom.need/v1"
+
+
 RESOLUTION_SCHEMA = "rackloom.resolution/v1"
+
+
 NEED_KEYS = {"schema", "project_id", "service", "environment", "confirm_production", "inputs"}
+
+
 POINTERS = ("/service/template", "/environment", "/inputs/quantity", "/inputs/size_tier", "/inputs/usage",
             "/inputs/lifetime_until")
+
+
 LOCKED_MESSAGE = "Ce réglage est déterminé par le profil de service."
 
-# V02 : clés techniques connues, à toute profondeur, et leurs variantes (mot contenu dans la clé).
+
 TECH_TOKENS = {
-    "vcpu", "vcpus", "cpu", "cpus", "core", "cores", "memory", "mem", "ram", "disk", "disks", "storage", "network",
-    "networks", "net", "vlan", "portgroup", "ip", "ips", "ipv4", "ipv6", "dns", "hostname", "fqdn", "datastore",
-    "cluster", "pool", "folder", "placement", "image", "runner", "backend", "role", "roles", "package", "packages",
-    "software", "credential", "credentials", "password", "secret", "secrets", "token", "playbook", "provider",
-    "providers", "terraform", "hcl", "ansible", "vsphere", "vcenter", "esxi",
+    "vcpu",
+    "vcpus",
+    "cpu",
+    "cpus",
+    "core",
+    "cores",
+    "memory",
+    "mem",
+    "ram",
+    "disk",
+    "disks",
+    "storage",
+    "network",
+    "networks",
+    "net",
+    "vlan",
+    "portgroup",
+    "ip",
+    "ips",
+    "ipv4",
+    "ipv6",
+    "dns",
+    "hostname",
+    "fqdn",
+    "datastore",
+    "cluster",
+    "pool",
+    "folder",
+    "placement",
+    "image",
+    "runner",
+    "backend",
+    "role",
+    "roles",
+    "package",
+    "packages",
+    "software",
+    "credential",
+    "credentials",
+    "password",
+    "secret",
+    "secrets",
+    "token",
+    "playbook",
+    "provider",
+    "providers",
+    "terraform",
+    "hcl",
+    "ansible",
+    "vsphere",
+    "vcenter",
+    "esxi",
+    # Réglages des composants et de l'exécution par vagues (AT01) : publiés dans le template.
+    "nginx",
+    "fail2ban",
+    "jail",
+    "jails",
+    "bantime",
+    "maxretry",
+    "findtime",
+    "port",
+    "ports",
+    "firewall",
+    "nftables",
+    "iptables",
+    "tls",
+    "headers",
+    "wave",
+    "waves",
+    "pilot",
 }
+
+
 TECH_KEYS = {
     "template_ref", "template_version", "version", "name", "names", "naming", "zone", "state", "state_backend",
     "module", "components", "component", "config", "backup", "quota", "approval", "approver", "policy",
     "health_checks", "verification", "outputs", "host", "hosts", "instances", "vm", "vms", "size", "tier_spec",
 }
+
+
 TECH_PREFIXES = ("ansible_", "tf_", "terraform_", "vsphere_")
+
 
 BLOCK_MESSAGES = {
     "service_not_available": "Ce service n'est pas disponible pour ce projet.",
@@ -63,6 +142,7 @@ BLOCK_MESSAGES = {
     "inventory_stale": "Les données d'inventaire sont trop anciennes ; elles doivent être actualisées.",
     "name_unavailable": "Aucun nom conforme à la convention n'est disponible.",
 }
+
 
 GROUPS = {
     "/service": "service", "/components": "service", "/placement/image": "placement",
@@ -173,8 +253,6 @@ def unconfirmed(provenance: dict[str, dict[str, str]], pointers: tuple[str, ...]
     return sorted(p for p, e in provenance.items() if e["source"] == "suggestion" and p in pointers)
 
 
-# --- Résolution -------------------------------------------------------------------------
-
 def _block(code: str, referent: str, field: str | None = None) -> dict[str, Any]:
     entry = {"code": code, "message": f"{BLOCK_MESSAGES[code]} Contactez le référent du projet {referent}."}
     if field:
@@ -244,9 +322,17 @@ def _validate_inputs(contract: dict[str, Any], inputs: dict[str, Any], env_param
             raise _input("lifetime_until", f"{lifetime['max_days']} jours au plus dans cet environnement")
 
 
-def resolve(conn: Conn, *, principal: Principal, project: dict[str, Any], need: dict[str, Any],
-            provenance: dict[str, dict[str, str]], change_id: UUID | None = None,
-            deployment: dict[str, Any] | None = None, now: datetime | None = None) -> dict[str, Any]:
+def resolve(
+    conn: Conn,
+    *,
+    principal: Principal,
+    project: dict[str, Any],
+    need: dict[str, Any],
+    provenance: dict[str, dict[str, str]],
+    change_id: UUID | None = None,
+    deployment: dict[str, Any] | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
     now = now or datetime.now(UTC)
     today = now.date()
     settings = get_settings()
@@ -255,8 +341,13 @@ def resolve(conn: Conn, *, principal: Principal, project: dict[str, Any], need: 
     slug = need["service"]["template"]
     if need.get("project_id") and need["project_id"] != str(project["id"]):
         raise _bad("/project_id", "le besoin désigne un autre projet")
-    out: dict[str, Any] = {"schema": RESOLUTION_SCHEMA, "policy_bundle": policy.active(), "blocks": [],
-                           "missing": [], "values": {}}
+    out: dict[str, Any] = {
+        "schema": RESOLUTION_SCHEMA,
+        "policy_bundle": policy.active(),
+        "blocks": [],
+        "missing": [],
+        "values": {},
+    }
     values = out["values"]
 
     def val(pointer: str, value: Any, source: str, **extra: Any) -> None:
@@ -268,8 +359,7 @@ def resolve(conn: Conn, *, principal: Principal, project: dict[str, Any], need: 
         return out
 
     fresh = inventory.freshness(conn, settings.inventory_max_age_hours)
-    out["inventory"] = {"snapshot_id": fresh["snapshot_id"], "observed_at": fresh["observed_at"],
-                        "simulated": True}
+    out["inventory"] = {"snapshot_id": fresh["snapshot_id"], "observed_at": fresh["observed_at"], "simulated": True}
 
     # 1. Service octroyé et version de template.
     if deployment is not None:
@@ -290,11 +380,20 @@ def resolve(conn: Conn, *, principal: Principal, project: dict[str, Any], need: 
             return finish("blocked")
         version_source = "template_latest_published"
     contract = tpl_row["contract"]
-    out["template"] = {"slug": slug, "version": contract["version"], "digest": tpl_row["digest"],
-                       "title": contract["title"], "description": contract["description"],
-                       "template_version_id": str(tpl_row["id"])}
-    val("/service/template", slug, provenance.get("/service/template", {"source": "user"})["source"],
-        label=contract["title"])
+    out["template"] = {
+        "slug": slug,
+        "version": contract["version"],
+        "digest": tpl_row["digest"],
+        "title": contract["title"],
+        "description": contract["description"],
+        "template_version_id": str(tpl_row["id"]),
+    }
+    val(
+        "/service/template",
+        slug,
+        provenance.get("/service/template", {"source": "user"})["source"],
+        label=contract["title"],
+    )
     val("/service/version", contract["version"], version_source)
 
     # 2. Environnement : demandé, sinon unique hors production ; jamais de repli.
@@ -304,19 +403,22 @@ def resolve(conn: Conn, *, principal: Principal, project: dict[str, Any], need: 
     if deployment is not None:
         env = next(e for e in envs if e["id"] == deployment["environment_id"])
         if need["environment"] not in (None, env["slug"]):
-            raise _bad("/environment", "une modification reste dans l'environnement du déploiement",
-                       "field_not_allowed")
+            raise _bad(
+                "/environment", "une modification reste dans l'environnement du déploiement", "field_not_allowed"
+            )
         env_source = "deployment_pinned"
     elif need["environment"] is not None:
         env = next((e for e in envs if e["slug"] == need["environment"]), None)
         if env is None:
             raise _bad("/environment", "environnement inconnu pour ce projet")
         if not principal.has_role("operator", project["id"], env["id"]):
-            raise _bad("/environment", "vous n'êtes pas autorisé à déployer dans cet environnement",
-                       "environment_not_allowed")
+            raise _bad(
+                "/environment", "vous n'êtes pas autorisé à déployer dans cet environnement", "environment_not_allowed"
+            )
         if env["kind"] not in admissible:
-            raise _bad("/environment", "ce service n'est pas admissible dans cet environnement",
-                       "environment_not_allowed")
+            raise _bad(
+                "/environment", "ce service n'est pas admissible dans cet environnement", "environment_not_allowed"
+            )
         if env["is_production"] and not need["confirm_production"]:
             raise _bad("/environment", BLOCK_MESSAGES["production_not_confirmed"], "production_not_confirmed")
         if slug not in registry.granted_services(conn, project["id"], env["id"]):
@@ -326,27 +428,48 @@ def resolve(conn: Conn, *, principal: Principal, project: dict[str, Any], need: 
     else:
         if need["confirm_production"]:
             raise _bad("/environment", "indiquez l'environnement de production demandé")
-        candidates = [e for e in envs if not e["is_production"] and e["kind"] in admissible
-                      and principal.has_role("operator", project["id"], e["id"])
-                      and slug in registry.granted_services(conn, project["id"], e["id"])]
+        candidates = [
+            e
+            for e in envs
+            if not e["is_production"]
+            and e["kind"] in admissible
+            and principal.has_role("operator", project["id"], e["id"])
+            and slug in registry.granted_services(conn, project["id"], e["id"])
+        ]
         if not candidates:
             out["blocks"].append(_block("no_non_production_environment", referent, "/environment"))
             return finish("blocked")
         if len(candidates) > 1:
-            out["missing"].append({"field": "/environment", "text": "Dans quel environnement déployer ?",
-                                   "options": [e["slug"] for e in candidates]})
+            out["missing"].append(
+                {
+                    "field": "/environment",
+                    "text": "Dans quel environnement déployer ?",
+                    "options": [e["slug"] for e in candidates],
+                }
+            )
             return finish("incomplete")
         env = candidates[0]
         env_source = "environment_default"
     pol = projects.current_policy(conn, env["id"])
     rules = pol["rules"] if pol else {}
     env_params = contract["environments"][env["kind"]]
-    out["environment"] = {"id": str(env["id"]), "slug": env["slug"], "name": env["name"], "kind": env["kind"],
-                          "is_production": env["is_production"], "policy_version": pol["version"] if pol else None,
-                          "policy_digest": pol["digest"] if pol else None, "source": env_source}
+    out["environment"] = {
+        "id": str(env["id"]),
+        "slug": env["slug"],
+        "name": env["name"],
+        "kind": env["kind"],
+        "is_production": env["is_production"],
+        "policy_version": pol["version"] if pol else None,
+        "policy_digest": pol["digest"] if pol else None,
+        "source": env_source,
+    }
     val("/environment", env["slug"], env_source, label=f"{project['name']} / {env['name']}")
-    val("/governance/environment_policy", pol["version"] if pol else None, "environment_policy",
-        ref=f"{env['slug']}@{pol['version']}" if pol else None)
+    val(
+        "/governance/environment_policy",
+        pol["version"] if pol else None,
+        "environment_policy",
+        ref=f"{env['slug']}@{pol['version']}" if pol else None,
+    )
     val("/governance/policy_bundle", out["policy_bundle"]["version"], "platform")
 
     # Entrées : validation, défauts du template et de la politique.
@@ -364,17 +487,28 @@ def resolve(conn: Conn, *, principal: Principal, project: dict[str, Any], need: 
         return provenance.get(f"/inputs/{field}", {"source": "user"})["source"] if field in inputs else default
 
     tier_labels = spec["size_tier"].get("value_labels", {})
-    out["inputs"] = {"quantity": quantity, "size_tier": tier, "size_label": tier_labels.get(tier, tier),
-                     "usage": inputs.get("usage", ""), "lifetime_until": inputs.get("lifetime_until")}
-    out["input_sources"] = {"quantity": src("quantity", "template_default"),
-                            "size_tier": src("size_tier", "template_default"),
-                            "usage": src("usage", "template_default"),
-                            "lifetime_until": src("lifetime_until", "environment_policy_default")}
+    out["inputs"] = {
+        "quantity": quantity,
+        "size_tier": tier,
+        "size_label": tier_labels.get(tier, tier),
+        "usage": inputs.get("usage", ""),
+        "lifetime_until": inputs.get("lifetime_until"),
+    }
+    out["input_sources"] = {
+        "quantity": src("quantity", "template_default"),
+        "size_tier": src("size_tier", "template_default"),
+        "usage": src("usage", "template_default"),
+        "lifetime_until": src("lifetime_until", "environment_policy_default"),
+    }
     lifetime = rules.get("lifetime", {})
     if lifetime.get("required") and not inputs.get("lifetime_until"):
-        out["missing"].append({"field": "/inputs/lifetime_until",
-                               "text": "Jusqu'à quelle date en avez-vous besoin ?"
-                               + (f" ({lifetime['max_days']} jours au plus)" if lifetime.get("max_days") else "")})
+        out["missing"].append(
+            {
+                "field": "/inputs/lifetime_until",
+                "text": "Jusqu'à quelle date en avez-vous besoin ?"
+                + (f" ({lifetime['max_days']} jours au plus)" if lifetime.get("max_days") else ""),
+            }
+        )
 
     # 3. Placement depuis l'inventaire octroyé (dernier instantané), départage rang puis identifiant.
     if fresh["stale"]:
@@ -390,8 +524,9 @@ def resolve(conn: Conn, *, principal: Principal, project: dict[str, Any], need: 
     datastores = _rank([i for i in by_kind.get("datastore", []) if _tags_match(i, placement["datastore_tags"])])
     folder_name = placement["folder"].format(project=project["slug"], environment=env["slug"])
     folders = _rank([i for i in by_kind.get("folder", []) if i["name"] == folder_name])
-    networks = _rank([i for i in by_kind.get("network", [])
-                      if i["attributes"].get("role") == placement["network_role"]])
+    networks = _rank(
+        [i for i in by_kind.get("network", []) if i["attributes"].get("role") == placement["network_role"]]
+    )
     if not fresh["stale"]:
         if not images:
             out["blocks"].append(_block("no_authorized_image", referent))
@@ -404,8 +539,14 @@ def resolve(conn: Conn, *, principal: Principal, project: dict[str, Any], need: 
 
     def pick(pointer: str, items: list[dict[str, Any]], ref: str) -> dict[str, Any]:
         chosen = items[0]
-        val(pointer, chosen["stable_id"], "tie_break" if len(items) > 1 else "inventory", label=chosen["name"],
-            ref=ref, candidates=len(items))
+        val(
+            pointer,
+            chosen["stable_id"],
+            "tie_break" if len(items) > 1 else "inventory",
+            label=chosen["name"],
+            ref=ref,
+            candidates=len(items),
+        )
         return chosen
 
     image = pick("/placement/image", images, "creation_method.image_filter")
@@ -413,16 +554,25 @@ def resolve(conn: Conn, *, principal: Principal, project: dict[str, Any], need: 
     datastore = pick("/placement/datastore", datastores, f"environments.{env['kind']}.placement.datastore_tags")
     folder = pick("/placement/folder", folders, f"environments.{env['kind']}.placement.folder")
     network = pick("/placement/network", networks, f"environments.{env['kind']}.placement.network_role")
-    val("/placement/addressing", contract["system_profile"]["network"]["addressing"], "template",
+    val(
+        "/placement/addressing",
+        contract["system_profile"]["network"]["addressing"],
+        "template",
         ref="system_profile.network.addressing",
-        label="attribuée par le laboratoire (simulé : nœud de labo associé)")
-    out["placement"] = {"image": {"stable_id": image["stable_id"], "name": image["name"],
-                                  "guest_os": image["attributes"].get("guest_os")},
-                        "cluster": {"stable_id": cluster["stable_id"], "name": cluster["name"]},
-                        "datastore": {"stable_id": datastore["stable_id"], "name": datastore["name"]},
-                        "folder": {"stable_id": folder["stable_id"], "name": folder["name"]},
-                        "network": {"stable_id": network["stable_id"], "name": network["name"]},
-                        "addressing": contract["system_profile"]["network"]["addressing"]}
+        label="attribuée par le laboratoire (simulé : nœud de labo associé)",
+    )
+    out["placement"] = {
+        "image": {
+            "stable_id": image["stable_id"],
+            "name": image["name"],
+            "guest_os": image["attributes"].get("guest_os"),
+        },
+        "cluster": {"stable_id": cluster["stable_id"], "name": cluster["name"]},
+        "datastore": {"stable_id": datastore["stable_id"], "name": datastore["name"]},
+        "folder": {"stable_id": folder["stable_id"], "name": folder["name"]},
+        "network": {"stable_id": network["stable_id"], "name": network["name"]},
+        "addressing": contract["system_profile"]["network"]["addressing"],
+    }
 
     # Instances : noms existants conservés, nouveaux noms selon la convention.
     dims = env_params["size_tiers"][tier]
@@ -444,24 +594,50 @@ def resolve(conn: Conn, *, principal: Principal, project: dict[str, Any], need: 
         val(f"/instances/{index}/name", name, "template", ref=f"environments.{env['kind']}.naming")
         for key in ("vcpu", "memory_mb", "disk_gb"):
             val(f"/instances/{index}/{key}", dims[key], "template", ref=tier_ref)
+    waves_spec = contract["deployment_policy"]["waves"]
+    out["waves"] = registry.plan_waves(waves_spec, names)
+    val(
+        "/execution/waves",
+        " ; ".join(", ".join(w) for w in out["waves"]),
+        "template",
+        ref="deployment_policy.waves",
+        label=(
+            "un pilote, puis les vagues suivantes ; un échec arrête la suite"
+            if waves_spec["mode"] == "pilot"
+            else "toutes les machines ensemble"
+        ),
+    )
     if previous:
         # Annoncé dès l'étape 2 ; le plan correspondant sera bloqué (aucune suppression au lot 1).
-        out["modification"] = {"removes": [n for n in previous if n not in names],
-                               "replaces": [n for n in names if n in previous and previous[n]["size_tier"] != tier]}
+        out["modification"] = {
+            "removes": [n for n in previous if n not in names],
+            "replaces": [n for n in names if n in previous and previous[n]["size_tier"] != tier],
+        }
 
     # Composants, module, rôles, exécution, gouvernance.
     comps = registry.template_components(conn, contract)
     out["components"] = comps
     for c in comps:
-        val(f"/components/{c['slug']}", c["version"], "template", label=c["title"],
-            ref=f"rôle {c['role']['name']}@{c['role']['version']}")
+        val(
+            f"/components/{c['slug']}",
+            c["version"],
+            "template",
+            label=c["title"],
+            ref=f"rôle {c['role']['name']}@{c['role']['version']}",
+        )
     tf = contract["terraform"]
     module = registry.artifact(conn, "tf_module", tf["module"], tf["version"])
     playbooks = {k: registry.artifact(conn, "playbook", k, v) for k, v in registry.PLAYBOOKS.items()}
-    out["terraform"] = {"module": tf["module"], "version": tf["version"], "digest": module["digest"],
-                        "lockfile_sha256": module["lockfile_sha256"]}
-    out["ansible"] = {"roles": [c["role"] for c in comps],
-                      "playbooks": {k: {"version": v["version"], "digest": v["digest"]} for k, v in playbooks.items()}}
+    out["terraform"] = {
+        "module": tf["module"],
+        "version": tf["version"],
+        "digest": module["digest"],
+        "lockfile_sha256": module["lockfile_sha256"],
+    }
+    out["ansible"] = {
+        "roles": [c["role"] for c in comps],
+        "playbooks": {k: {"version": v["version"], "digest": v["digest"]} for k, v in playbooks.items()},
+    }
     val("/execution/terraform_module", f"{tf['module']}@{tf['version']}", "template", ref="terraform")
     val("/execution/runner_terraform", "terraform (réseau : aucun)", "platform")
     val("/execution/runner_ansible", "ansible (réseau : rn-lab)", "platform")
@@ -469,17 +645,32 @@ def resolve(conn: Conn, *, principal: Principal, project: dict[str, Any], need: 
     val("/execution/identity_configuration", "rackloom-config", "platform", label="élévation requise")
     val("/execution/identity_collect", "rackloom-collect", "platform", label="sans élévation")
     approval = rules.get("approval", {})
-    distinct = bool(env["requires_distinct_approver"] or approval.get("distinct_approver")
-                    or contract["deployment_policy"]["approval"].get("distinct_approver"))
-    out["approval"] = {"required": True, "distinct_approver": distinct, "approver_role": "approver",
-                       "production": env["is_production"]}
-    val("/governance/approval", "approbateur distinct" if distinct else "approbateur", "environment_policy",
-        label=f"un approbateur de {project['name']} autre que le demandeur" if distinct else None)
+    distinct = bool(
+        env["requires_distinct_approver"]
+        or approval.get("distinct_approver")
+        or contract["deployment_policy"]["approval"].get("distinct_approver")
+    )
+    out["approval"] = {
+        "required": True,
+        "distinct_approver": distinct,
+        "approver_role": "approver",
+        "production": env["is_production"],
+    }
+    val(
+        "/governance/approval",
+        "approbateur distinct" if distinct else "approbateur",
+        "environment_policy",
+        label=f"un approbateur de {project['name']} autre que le demandeur" if distinct else None,
+    )
     val("/governance/backup", env_params.get("backup", "none"), "template", applied=False)
     val("/governance/open_ports", contract["system_profile"]["security"]["open_ports"], "template", applied=False)
     if out["inputs"]["lifetime_until"]:
-        val("/governance/lifetime_until", out["inputs"]["lifetime_until"], out["input_sources"]["lifetime_until"],
-            applied=False)
+        val(
+            "/governance/lifetime_until",
+            out["inputs"]["lifetime_until"],
+            out["input_sources"]["lifetime_until"],
+            applied=False,
+        )
     out["health_checks"] = contract["health_checks"]
     out["preview_limits"] = contract.get("preview_limits", [])
     out["simulated_steps"] = contract.get("simulated_steps", [])
@@ -491,8 +682,12 @@ def resolution_digest(resolution: dict[str, Any]) -> str:
     return "sha256:" + digest({k: v for k, v in resolution.items() if k != "resolution_digest"})
 
 
-CHECK_LABELS = {"package_installed": "paquet {package} installé", "service_active": "service {unit} actif",
-                "http_probe": "page HTTP {expect_status}"}
+CHECK_LABELS = {
+    "package_installed": "paquet {package} installé",
+    "service_active": "service {unit} actif",
+    "http_probe": "page HTTP {expect_status}",
+    "jail_active": "jail Fail2ban {jail} active",
+}
 
 
 def summary(resolution: dict[str, Any], project: dict[str, Any]) -> dict[str, Any]:
@@ -515,17 +710,37 @@ def summary(resolution: dict[str, Any], project: dict[str, Any]) -> dict[str, An
     env = resolution["environment"]
     until = resolution["inputs"].get("lifetime_until")
     until_txt = f", jusqu'au {date.fromisoformat(until).strftime('%d/%m/%Y')}" if until else ""
-    headline = (f"{n} {noun} {os_label} avec {comps} dans {project['name']} / {env['name']}, "
-                f"niveau {resolution['inputs']['size_label']}{until_txt}.").replace("  ", " ")
+    headline = (
+        f"{n} {noun} {os_label} avec {comps} dans {project['name']} / {env['name']}, "
+        f"niveau {resolution['inputs']['size_label']}{until_txt}."
+    ).replace("  ", " ")
     checks = ", ".join(CHECK_LABELS[c["type"]].format(**c) for c in resolution["health_checks"])
-    approver = (f"un approbateur de {project['name']} autre que vous" if resolution["approval"]["distinct_approver"]
-                else f"un approbateur de {project['name']}")
+    approver = (
+        f"un approbateur de {project['name']} autre que vous"
+        if resolution["approval"]["distinct_approver"]
+        else f"un approbateur de {project['name']}"
+    )
     if env["is_production"]:
         approver += " (circuit de production)"
-    return {"outcome": resolution["outcome"], "headline": headline, "verifications": checks, "approval": approver,
-            "creates": [i["name"] for i in resolution["instances"] if not i["existing"]],
-            "keeps": [i["name"] for i in resolution["instances"] if i["existing"]],
-            "removes": resolution.get("modification", {}).get("removes", []),
-            "replaces": resolution.get("modification", {}).get("replaces", []),
-            "production": env["is_production"], "missing": resolution["missing"],
-            "simulated_steps": resolution["simulated_steps"], "preview_limits": resolution["preview_limits"]}
+    waves = resolution.get("waves") or []
+    waves_text = None
+    if len(waves) > 1:
+        waves_text = (
+            " ; ".join(f"{'pilote' if i == 0 else f'vague {i + 1}'} : {', '.join(w)}" for i, w in enumerate(waves))
+            + ". Un échec arrête les vagues suivantes."
+        )
+    return {
+        "outcome": resolution["outcome"],
+        "headline": headline,
+        "verifications": checks,
+        "approval": approver,
+        "waves": waves_text,
+        "creates": [i["name"] for i in resolution["instances"] if not i["existing"]],
+        "keeps": [i["name"] for i in resolution["instances"] if i["existing"]],
+        "removes": resolution.get("modification", {}).get("removes", []),
+        "replaces": resolution.get("modification", {}).get("replaces", []),
+        "production": env["is_production"],
+        "missing": resolution["missing"],
+        "simulated_steps": resolution["simulated_steps"],
+        "preview_limits": resolution["preview_limits"],
+    }

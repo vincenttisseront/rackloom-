@@ -22,6 +22,10 @@ const ACTIONS: Record<string, string> = { create: 'Création', update: 'Modifica
         {{ r.text }}
       </li>
     </ul>
+    <p v-if="props.plan.waves?.length > 1" class="small" data-testid="plan-waves">
+      Vagues approuvées : {{ props.plan.waves.map((w: string[], i: number) => `${i === 0 ? 'pilote' : 'vague ' + (i + 1)} (${w.join(', ')})`).join(' ; ') }}.
+      Un échec arrête les vagues suivantes.
+    </p>
     <h3>Machines</h3>
     <table>
       <thead><tr><th scope="col">Nom</th><th scope="col">Action</th></tr></thead>

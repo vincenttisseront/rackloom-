@@ -1,0 +1,35 @@
+schema: rackloom.component/v1
+slug: fail2ban
+version: 1.0.0
+title: "Protection Fail2ban"
+description: "Bannit temporairement les adresses qui multiplient les échecs d'authentification (SSH, Nginx en option)."
+supports: {os: [ubuntu-24.04], prerequisites: [apt_signed_repository]}
+parameters:
+  jail_sshd: {type: boolean, default: true, label: "Surveiller les connexions SSH (jail sshd)"}
+  jail_nginx_http_auth:
+    type: boolean
+    default: false
+    label: "Surveiller l'authentification HTTP de Nginx (jail nginx-http-auth)"
+    requires_component: nginx
+  maxretry: {type: integer, min: 3, max: 10, default: 5, label: "Échecs tolérés avant bannissement"}
+  findtime_seconds: {type: integer, min: 60, max: 3600, default: 600, label: "Fenêtre d'observation (secondes)"}
+  bantime_seconds: {type: integer, min: 300, max: 86400, default: 600, label: "Durée du bannissement (secondes)"}
+secret_refs: {}
+depends_on: []
+incompatible_with: []
+effects:
+  packages: [fail2ban, nftables]
+  services: [{unit: fail2ban, enabled: true, state: started, process: fail2ban-server}]
+  ports: []
+  files: [/etc/fail2ban/jail.d/rackloom.local, /etc/fail2ban/jail.d/defaults-debian.conf]
+  logs: [{name: fail2ban, path: /var/log/fail2ban.log}]
+  reads_logs: [/var/log/auth.log, /var/log/nginx/error.log]
+  reboot: never
+checks:
+  - {type: package_installed, package: fail2ban}
+  - {type: service_active, unit: fail2ban, process: fail2ban-server}
+  - {type: jail_active, jail: sshd, when: jail_sshd}
+  - {type: jail_active, jail: nginx-http-auth, when: jail_nginx_http_auth}
+not_covered:
+  - "bannissement effectif : exige nftables et la capacité NET_ADMIN sur l'hôte (absente des nœuds de labo)"
+implementation: {ansible_role: rackloom.fail2ban, version: 1.0.0}

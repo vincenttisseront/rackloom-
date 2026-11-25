@@ -1,5 +1,6 @@
 """Autorisation côté serveur. Hors périmètre → 404 ; dans le périmètre sans le rôle → 403."""
 
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -8,8 +9,10 @@ from uuid import UUID
 
 from ..errors import forbidden, not_found
 
-ROLES = ("platform_admin", "template_publisher", "operator", "approver", "auditor")
-GLOBAL_ROLES = ("platform_admin", "template_publisher", "auditor")
+ROLES = ("platform_admin", "template_publisher", "template_author", "operator", "approver", "auditor")
+
+
+GLOBAL_ROLES = ("platform_admin", "template_publisher", "template_author", "auditor")
 
 
 @dataclass(frozen=True)
@@ -85,6 +88,11 @@ def require_admin(principal: Principal) -> None:
 def require_publisher(principal: Principal) -> None:
     if not principal.has_role("template_publisher"):
         raise forbidden("rôle template_publisher requis pour publier, déprécier ou retirer un template")
+
+
+def require_author(principal: Principal) -> None:
+    if not principal.has_role("template_author"):
+        raise forbidden("rôle template_author requis pour concevoir un template")
 
 
 def require_auditor(principal: Principal, project_id: UUID | None = None) -> None:

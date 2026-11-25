@@ -1,4 +1,5 @@
-# Nœud de labo Rackloom : Ubuntu 24.04, OpenSSH et un dépôt apt local signé contenant Nginx.
+# Nœud de labo Rackloom : Ubuntu 24.04, OpenSSH et un dépôt apt local signé contenant Nginx,
+# Fail2ban et nftables (avec leurs dépendances).
 # Aucun accès réseau sortant à l'exécution (réseau rn-lab interne).
 # Les clés d'hôte SSH sont générées au premier démarrage, jamais embarquées dans l'image.
 #
@@ -12,7 +13,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends apt-utils gnupg ca-certificates dpkg-dev \
  && mkdir -p /srv/lab-repo && cd /srv/lab-repo \
  && apt-get download $(apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts \
-      --no-breaks --no-replaces --no-enhances nginx | grep '^\w' | sort -u) \
+      --no-breaks --no-replaces --no-enhances nginx fail2ban nftables | grep '^\w' | sort -u) \
  && dpkg-scanpackages --multiversion . /dev/null > Packages && gzip -k9 Packages \
  && apt-ftparchive -o APT::FTPArchive::Release::Origin=rackloom-lab \
       -o APT::FTPArchive::Release::Label=rackloom-lab release . > Release \

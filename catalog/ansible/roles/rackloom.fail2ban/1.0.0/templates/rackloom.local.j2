@@ -1,0 +1,16 @@
+# Géré par Rackloom (composant fail2ban {{ rackloom_component_version }}) : ne pas modifier à la main.
+[DEFAULT]
+backend = polling
+banaction = nftables-multiport
+banaction_allports = nftables[type=allports]
+maxretry = {{ rackloom_params.maxretry | int }}
+findtime = {{ rackloom_params.findtime_seconds | int }}
+bantime = {{ rackloom_params.bantime_seconds | int }}
+
+[sshd]
+enabled = {{ 'true' if rackloom_params.jail_sshd else 'false' }}
+logpath = /var/log/auth.log
+
+[nginx-http-auth]
+enabled = {{ 'true' if rackloom_params.jail_nginx_http_auth else 'false' }}
+logpath = /var/log/nginx/error.log

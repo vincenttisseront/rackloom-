@@ -94,6 +94,14 @@ forbidden_modules = ["rackloom.inventory", "rackloom.resolver", "rackloom.secret
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
+name = "atelier : ni inventaire, ni secrets, ni exécution, ni approbation"
+type = "forbidden"
+source_modules = ["rackloom.studio"]
+forbidden_modules = ["rackloom.inventory", "rackloom.secrets", "rackloom.executions", "rackloom.approvals",
+                     "rackloom.connectors", "rackloom.worker", "rackloom.resolver"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
 name = "registry : publier ne crée aucun job"
 type = "forbidden"
 source_modules = ["rackloom.registry"]

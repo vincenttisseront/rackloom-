@@ -77,7 +77,7 @@ La WebUI (Nuxt, Vue, TypeScript) est générée en mode SPA (`ssr: false`) et se
 
 ## 3. Modules du monolithe et règles de dépendance
 
-`identity`, `projects` (projets, environnements, politiques d'environnement, octrois), `registry` (composants, templates, publication), `resolver`, `connectors`, `inventory`, `changes` (besoins, révisions, transitions), `deployments`, `approvals`, `executions`, `admission`, `policy`, `hosts`, `events`, `audit`, `chat`, `secrets`, `artifacts`, `telemetry`, plus `api` (routes) et `worker` (boucle d'exécution).
+`identity`, `projects` (projets, environnements, politiques d'environnement, octrois), `registry` (composants, templates, publication), `studio` (brouillons de l'atelier, AT01), `resolver`, `connectors`, `inventory`, `changes` (besoins, révisions, transitions), `deployments`, `approvals`, `executions`, `admission`, `policy`, `hosts`, `events`, `audit`, `chat`, `secrets`, `artifacts`, `telemetry`, plus `api` (routes) et `worker` (boucle d'exécution).
 
 Règles vérifiées par `import-linter` dans `make test` :
 
@@ -85,6 +85,7 @@ Règles vérifiées par `import-linter` dans `make test` :
 - `changes` accepte uniquement des besoins de catégorie A et obtient les valeurs techniques du `resolver` ; `executions` ne lit que les révisions enregistrées.
 - `chat` ne peut importer ni `inventory`, ni `resolver`, ni `secrets`, ni `executions`, ni `approvals`, ni `connectors`. Il lit les services déployables et les événements via des fonctions déjà filtrées par périmètre, et produit un *brouillon de besoin* revalidé par `changes`.
 - `registry` publie des versions ; il n'importe ni `executions` ni `approvals` : publier ne crée aucun job.
+- `studio` (atelier) ne produit aucune valeur technique de déploiement et n'importe ni `inventory`, ni `secrets`, ni `executions`, ni `approvals`, ni `connectors`, ni `worker`, ni `resolver`. Une suggestion acceptée est réappliquée comme une saisie, sur les seuls chemins de conception.
 - Le déchiffrement des secrets (`secrets.unseal`) et des plans n'est importable que depuis `worker`.
 - Toute écriture d'état d'un changement passe par `changes.transitions`, qui écrit l'événement et l'audit dans la même transaction.
 - Toute lecture de données projet passe par un dépôt « scopé » qui exige un `Principal` et filtre par projets autorisés.
@@ -198,8 +199,10 @@ erDiagram
 - **Composant versionné** : OS et prérequis pris en charge, contrat de paramètres (types, valeurs, défauts, conditions, références de secrets), dépendances et incompatibilités, effets attendus (paquets, fichiers, services, ports, redémarrage), contrôles après installation, implémentation (rôle Ansible épinglé). Les formulaires et vues sont générés depuis ces contrats.
 - **Version de template** : méthode de création (clonage d'image vSphere ou installation Ubuntu automatisée), profil système (OS, volumes et partitionnement, réseau, règles de sécurité), composants épinglés avec configuration déclarative, contrat d'entrées fonctionnelles (catégorie A), paramètres par environnement, références de secrets, contrôles de santé, politique de déploiement (cibles admissibles, approbation, vagues, conditions d'arrêt, reprise), liste des sorties publiables.
 - **Image vSphere** : point de départ inventorié, avec attributs déclarés à sa construction (OS, `layout_id`). Le partitionnement exact vient de l'image ou d'une installation automatisée, jamais d'un rôle Ansible appliqué après coup.
-- **Cycle de vie** : `validated` → `published` → `deprecated`, avec `withdrawn` pour un retrait. `draft`, `lab_tested` et `in_review` sont réservés à l'atelier AT01. Toute modification produit une nouvelle version ; passer un déploiement à une nouvelle version est un changement distinct.
-- **Droits** : déployer (`operator`), approuver (`approver`), concevoir (`template_author`, AT01) et publier (`template_publisher`) sont distincts. Publier ne déploie rien, et approuver un déploiement ne permet pas de modifier un template.
+- **Cycle de vie** : `validated` → `published` → `deprecated`, avec `withdrawn` pour un retrait. L'atelier ajoute `in_review` (soumis, immuable, empreinte affichée) et `returned` (renvoyé à l'auteur, qui produit une nouvelle version). `draft` et `lab_tested` restent des statuts réservés. Toute modification produit une nouvelle version ; passer un déploiement à une nouvelle version est un changement distinct.
+- **Atelier (AT01)** : un auteur part d'une version publiée. Il ne décrit que le besoin de conception (titre, description, composants du catalogue et leurs paramètres déclarés, mode de vagues). Placement, réseau, taille, module Terraform, secrets et commandes sont refusés. L'assistant propose ; chaque suggestion est acceptée une par une et revalidée. Une demande hors catalogue devient une proposition d'extension, jamais une exécution. Soumettre crée une version `in_review`. Publier est un autre geste, par le publicateur, sur l'empreinte affichée, et ne crée aucun job.
+- **Vagues** : `deployment_policy.waves` vaut `single` (une seule vague, seul mode du lot 1 pour `ubuntu-web`) ou `pilot` (pilote de 1 à 3 machines, puis vagues de 1 à 10, arrêt obligatoire si une vague échoue). Le plan fige la liste. Une machine rattachée après l'approbation est `out_of_scope` et n'est pas configurée. L'échec du pilote laisse la vague suivante `wave_blocked`.
+- **Droits** : déployer (`operator`), approuver (`approver`), concevoir (`template_author`) et publier (`template_publisher`) sont distincts. Publier ne déploie rien, et approuver un déploiement ne permet pas de modifier un template. Pour une version `in_review`, l'auteur qui l'a soumise ne peut ni la publier ni la renvoyer.
 
 ## 8. Cycle d'un changement
 
@@ -258,6 +261,7 @@ stateDiagram-v2
   reconciling --> uncertain: arbitrage humain requis
   verifying --> succeeded: service prêt
   verifying --> partially_succeeded: créé mais pas prêt ou vérification indisponible
+  verifying --> executing: vague suivante après vérification réussie
   partially_succeeded --> executing: reprise ciblée approuvée
   succeeded --> [*]
   failed --> [*]
@@ -350,6 +354,7 @@ Chaque type de job déclare une classe `read` ou `write`. Les règles d'écritur
 | 50 | empreinte du dossier recalculée identique | write | 1 |
 | 55 | résolution toujours admissible : version de template non retirée, valeurs résolues encore octroyées | write | 1 |
 | 60 | plan non expiré (marge 60 s), sans suppression ni remplacement | write | 1 |
+| 65 | configuration limitée aux cibles de la liste approuvée (reprise : intersection avec le périmètre approuvé) | write (`ansible_configure`) | AT01 |
 | 70 | annulation non demandée | toutes | 1 |
 | 80 | gel d'environnement | write | réservé F28 |
 | 90 | fenêtre ou période de gel du calendrier | write | réservé F27 |
@@ -375,7 +380,7 @@ Ils sont présents au lot 1 parce qu'ils coûtent peu et évitent une migration 
 | Départage du résolveur isolé dans une fonction remplaçable | oui (rang, puis identifiant) | F32 |
 | Source `ci` acceptée par le même schéma et le même résolveur | oui (client simulé) | F35 |
 | `outputs_allowlist` dans le contrat de template | déclarée, non publiée | F33 |
-| Statuts `draft`, `lab_tested`, `in_review`, rôle `template_author`, `deployment_policy.waves` | réservés (`waves: single`) | AT01, F19 |
+| Statuts `draft`, `lab_tested`, rôle `template_author`, `deployment_policy.waves` | `in_review`, `returned`, rôle auteur et vagues `single` ou `pilot` livrés (AT01) ; `draft` et `lab_tested` restent réservés | F19 (trois nœuds, fenêtres, redémarrage) |
 | `verification_level` des composants calculé depuis les preuves | oui | AT01, F38 |
 | Versions réellement utilisées enregistrées dans le dossier d'exécution | oui | F38 |
 | Insertion d'un job avant `tf_plan` dans la chaîne | oui (aucun job inséré) | F31 |
@@ -427,4 +432,4 @@ Les observations ne sont ni publiées ni exécutées ; le brouillon suit le cycl
 - **Lot 2** : connecteur vSphere réel (inventaire, suivi) via runner dédié, module Terraform vSphere du catalogue, backend de state distant, filtrage sortant nftables, Ansible sur VM réelles, ancre de clé d'hôte fournie par la personnalisation invitée.
 - **Lot 3** : launcher sur Podman sans root, ISO autoinstall, premier boot, sauvegarde et restauration.
 - **Lot 4** : OIDC et groupes, gouvernance renforcée, runners par zone, nouveaux adaptateurs.
-- **AT01** : atelier de conception de templates (brouillon assisté, revue, publication, application par vagues), au-dessus du registre et du résolveur du lot 1, puis F60, F57 et F55 sur la même branche, en parallèle du lot A.
+- **AT01** : première tranche de l'atelier livrée au-dessus du registre et du résolveur (brouillon assisté, revue, publication par une autre personne, vagues `pilot`, Fail2ban). La double validation de publication reste une proposition (ADR-0010), non implémentée. Ensuite F60, F57 et F55, en parallèle du lot A.

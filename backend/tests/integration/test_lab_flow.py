@@ -6,6 +6,7 @@ l'attribution d'adresse restent SIMULÉES (vCenter fictif) ; SSH, Ansible et la 
 Niveau de preuve : testé localement (Terraform CLI, ansible-runner, OpenSSH réels ; aucun vCenter).
 """
 
+
 from __future__ import annotations
 
 import pytest
@@ -14,6 +15,8 @@ import flows
 from rackloom import approvals
 
 pytestmark = [pytest.mark.terraform, pytest.mark.ansible, pytest.mark.docker]
+
+
 API = "/api/v1"
 
 
@@ -146,5 +149,99 @@ def test_t22_echec_partiel_puis_reprise_ciblee(conn, demo, worker, lab):
     assert worker.drain() == ["ansible_configure", "verify"]
     configure = flows.jobs_of(conn, c["id"], "ansible_configure")[-1]
     assert configure["payload"]["host_ids"] == [str(second["id"])]
+    assert flows.change(conn, c["id"])["state"] == "succeeded"
+    assert flows.deployment(conn, c["deployment_id"])["service_status"] == "ready"
+
+
+def test_at01_vagues_nginx_fail2ban_et_second_passage(conn, demo, worker, lab):
+    """Deux machines, pilote puis vague ; Fail2ban vérifié ; second passage sans changement."""
+    from rackloom.executions import queue
+
+    lab.start(2)
+    flows.publish_hardened(conn, demo)
+    c = _approved_and_applied(conn, demo, worker, template="ubuntu-web-durci", quantity=2)
+    deployment = flows.deployment(conn, c["deployment_id"])
+    conn.execute(
+        "INSERT INTO hosts (id, project_id, environment_id, deployment_id, template_version_id, change_id, "
+        "stack_id, vm_stable_id, name, deployment_state) SELECT %s, project_id, environment_id, id, "
+        "template_version_id, %s, stack_id, 'vm-lab-rogue', 'vit-dev-web-99', 'created' "
+        "FROM deployments WHERE id = %s",
+        (queue.new_id(), c["id"], c["deployment_id"]),
+    )
+    conn.commit()
+    assert worker.drain() == ["guest_ready", "ansible_configure", "verify", "ansible_configure", "verify"]
+    dep = flows.deployment(conn, c["deployment_id"])
+    assert dep["service_status"] == "ready", dep["service_reason"]
+    hosts = _hosts(conn, c["deployment_id"])
+    states = {h["name"]: h["deployment_state"] for h in hosts}
+    assert states == {"vit-dev-web-01": "verified", "vit-dev-web-02": "verified", "vit-dev-web-99": "out_of_scope"}
+    checks = {h["host"]: {ck["type"]: ck["ok"] for ck in h["checks"]} for h in dep["service_checks"]}
+    for name in ("vit-dev-web-01", "vit-dev-web-02"):
+        assert checks[name]["package_installed"] and checks[name]["jail_active"] and checks[name]["http_probe"]
+    steps = _step_names(conn, c["id"])
+    assert any(s.startswith("Pilote · Configuration") for s in steps)
+    assert any(s.startswith("Vague 2 · Configuration") for s in steps)
+    assert any("Hors de la liste approuvée" in s for s in steps)
+    level = conn.execute("SELECT verification_level FROM component_versions WHERE slug = 'fail2ban'").fetchone()
+    assert level["verification_level"] == "tested_locally"
+    # Second passage : la même configuration approuvée ne change plus rien.
+    execution = conn.execute("SELECT id FROM executions WHERE change_id = %s", (c["id"],)).fetchone()
+    change = flows.change(conn, c["id"])
+    queue.enqueue(
+        conn,
+        kind="ansible_configure",
+        change=change,
+        execution_id=execution["id"],
+        idempotency_key=f"ansible_configure:second:{c['id']}",
+        payload={"host_ids": [str(h["id"]) for h in hosts if h["name"] != "vit-dev-web-99"]},
+    )
+    conn.commit()
+    assert worker.drain(kinds=["ansible_configure"]) == ["ansible_configure"]
+    second = flows.jobs_of(conn, c["id"], "ansible_configure")[-1]
+    steps = conn.execute(
+        "SELECT name, state, summary FROM job_steps WHERE job_id = %s ORDER BY seq", (second["id"],)
+    ).fetchall()
+    changed = [s["summary"].get("changed") for s in steps if "changed" in (s["summary"] or {})]
+    detail = {
+        "state": second["state"],
+        "blocked": second.get("blocked_reason"),
+        "result": second.get("result"),
+        "steps": [(s["name"], s["state"], dict(s["summary"] or {})) for s in steps],
+    }
+    assert second["state"] == "succeeded" and changed and set(changed) == {0}, detail
+    assert deployment["id"]  # le déploiement créé par l'application reste celui de ce changement
+
+
+def test_at01_echec_du_pilote_bloque_la_vague(conn, demo, worker, lab):
+    lab.start(2)
+    flows.publish_hardened(conn, demo)
+    c = _approved_and_applied(conn, demo, worker, template="ubuntu-web-durci", quantity=2)
+    assert worker.drain(kinds=["guest_ready"]) == ["guest_ready"]
+    pilot, follow = _hosts(conn, c["deployment_id"])
+    broken = lab.node_of(pilot["address"])
+    lab.exec(broken, "mv", "/etc/apt/sources.list.d/rackloom-lab.list", "/root/rackloom-lab.list")
+    assert worker.drain() == ["ansible_configure", "verify"]
+    states = {h["name"]: h["deployment_state"] for h in _hosts(conn, c["deployment_id"])}
+    assert states[pilot["name"]] == "config_failed"
+    assert states[follow["name"]] == "wave_blocked"
+    probe = lab.exec(lab.node_of(follow["address"]), "sh", "-c", "dpkg-query -W nginx >/dev/null 2>&1; echo $?")
+    assert probe == "1"
+    dep = flows.deployment(conn, c["deployment_id"])
+    assert dep["service_status"] == "created_not_ready"
+    assert "bloquée" in dep["service_reason"]
+    assert flows.change(conn, c["id"])["state"] == "partially_succeeded"
+
+    lab.exec(broken, "mv", "/root/rackloom-lab.list", "/etc/apt/sources.list.d/rackloom-lab.list")
+    retry = approvals.request_retry(conn, demo.principal("alice"), c["id"], {"step": "ansible_configure"})
+    conn.commit()
+    assert set(retry["host_ids"]) == {str(pilot["id"]), str(follow["id"])}
+    approvals.decide(
+        conn,
+        demo.principal("bruno"),
+        c["id"],
+        {"retry_id": str(retry["retry_id"]), "bundle_digest": retry["bundle_digest"], "decision": "approved"},
+    )
+    conn.commit()
+    assert worker.drain() == ["ansible_configure", "verify", "ansible_configure", "verify"]
     assert flows.change(conn, c["id"])["state"] == "succeeded"
     assert flows.deployment(conn, c["deployment_id"])["service_status"] == "ready"

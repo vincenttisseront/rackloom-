@@ -6,6 +6,7 @@ const status = ref<any>(null)
 const recent = ref<Record<string, any[]>>({})
 const error = ref<string | null>(null)
 const isAdmin = computed(() => hasRole(session.value, 'platform_admin'))
+const isAuthor = computed(() => hasRole(session.value, 'template_author'))
 const ROLE_LABELS: Record<string, string> = { operator: 'Opérateur', approver: 'Approbateur', auditor: 'Auditeur' }
 
 onMounted(async () => {
@@ -47,7 +48,10 @@ onMounted(async () => {
       <p v-if="status.stuck_jobs?.length" class="banner warn">Jobs au bail expiré : {{ status.stuck_jobs.length }}</p>
     </section>
 
-    <p v-if="!projects.length && !error" class="empty">Aucun projet ne vous est attribué. Les rôles d'administration et de publication ne donnent accès à aucune donnée de projet.</p>
+    <p v-if="!projects.length && !error" class="empty">
+      Aucun projet ne vous est attribué. Les rôles d'administration, de publication et de conception ne donnent accès à aucune donnée de projet.
+      <template v-if="isAuthor"> L'atelier de templates est dans la navigation.</template>
+    </p>
     <div class="grid-2">
       <section v-for="p in projects" :key="p.slug" class="card" :aria-labelledby="`p-${p.slug}`">
         <div class="field-head">

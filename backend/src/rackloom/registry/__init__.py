@@ -10,9 +10,15 @@
 - Une image vSphere n'est qu'un point de départ inventorié, jamais un template Rackloom.
 
 `load` valide le dépôt `catalog/` et enregistre les versions au statut `validated` sans rien
-publier. La publication est une action d'administration distincte, auditée, avec motif ;
-elle ne crée aucun job et ne modifie ni plan ni déploiement.
+publier. L'atelier (AT01) dépose une version `in_review` dont le contenu est déjà immuable.
+La publication est une action d'administration distincte, auditée, avec motif ; elle ne crée
+aucun job et ne modifie ni plan ni déploiement. Une version soumise par un auteur n'est pas
+publiée par lui-même.
+
+Le niveau de vérification d'un composant est calculé à partir des preuves enregistrées
+(`component_evidence`), jamais déclaré dans le catalogue.
 """
+
 
 from __future__ import annotations
 
@@ -27,17 +33,44 @@ import yaml
 from .. import audit
 from ..canonical import digest, file_tree_digest
 from ..db import Conn, Jsonb
-from ..errors import ApiError
+from ..errors import ApiError, forbidden
 from ..identity.authz import Principal, require_publisher
 from ..ids import uuid7
 
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
+
+
 SLUG_RE = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
+
+
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9.+_-]{0,62}$")
+
+
+LOG_PATH_RE = re.compile(r"^/var/log/[a-z0-9][a-z0-9._/-]{0,120}$")
+
+
 INPUT_NAMES = {"quantity", "size_tier", "usage", "lifetime_until"}
+
+
 PARAM_TYPES = {"integer", "boolean", "enum", "string", "secret_ref"}
+
+
+PARAM_KEYS = {"type", "default", "min", "max", "values", "label", "requires_component"}
+
+
+CHECK_TYPES = {"package_installed", "service_active", "http_probe", "jail_active"}
+
+
 SECRET_KEY_RE = re.compile(r"(pass(word)?|secret|token|private_key|api_key|credential)", re.I)
-# Playbooks génériques de la plateforme (les rôles viennent des composants du template).
-PLAYBOOKS = {"configure": "1.0.0", "collect": "1.0.0"}
+
+
+PLAYBOOKS = {"configure": "1.0.0", "collect": "1.1.0"}
+
+
+LEGACY_LOGS = {"nginx": [{"name": "nginx", "path": "/var/log/nginx/error.log"}]}
+
+
+WAVE_LIMITS = {"pilot_size": (1, 3), "wave_size": (1, 10)}
 
 
 class CatalogError(Exception):
@@ -87,8 +120,6 @@ def _check_lockfile(module_dir: Path) -> dict[str, Any]:
     return {"providers": providers}
 
 
-# --- Contrats ---------------------------------------------------------------------------
-
 def _require(m: dict[str, Any], keys: tuple[str, ...], what: str) -> None:
     for key in keys:
         if key not in m:
@@ -109,16 +140,48 @@ def _reject_secret_literals(value: Any, where: str) -> None:
 
 
 def validate_component(m: dict[str, Any]) -> None:
-    _require(m, ("schema", "slug", "version", "title", "supports", "parameters", "effects", "checks",
-                 "implementation"), "composant")
-    if m["schema"] != "rackloom.component/v1" or not VERSION_RE.match(str(m["version"])) \
-            or not SLUG_RE.match(str(m["slug"])):
+    _require(
+        m,
+        ("schema", "slug", "version", "title", "supports", "parameters", "effects", "checks", "implementation"),
+        "composant",
+    )
+    if (
+        m["schema"] != "rackloom.component/v1"
+        or not VERSION_RE.match(str(m["version"]))
+        or not SLUG_RE.match(str(m["slug"]))
+    ):
         raise CatalogError("composant : schéma, slug ou version invalide")
     for name, spec in m["parameters"].items():
         if spec.get("type") not in PARAM_TYPES:
             raise CatalogError(f"composant {m['slug']} : type du paramètre {name} non pris en charge")
+        if set(spec) - PARAM_KEYS:
+            raise CatalogError(
+                f"composant {m['slug']} : attribut inconnu pour {name} : {sorted(set(spec) - PARAM_KEYS)}"
+            )
         if "default" in spec and check_parameter(spec, spec["default"]):
             raise CatalogError(f"composant {m['slug']} : défaut invalide pour {name}")
+        if "requires_component" in spec and (
+            spec["type"] != "boolean" or not SLUG_RE.match(str(spec["requires_component"]))
+        ):
+            raise CatalogError(f"composant {m['slug']} : requires_component réservé aux booléens ({name})")
+    for check in m["checks"]:
+        if check.get("type") not in CHECK_TYPES:
+            raise CatalogError(f"composant {m['slug']} : contrôle « {check.get('type')} » non pris en charge")
+        if "when" in check and m["parameters"].get(check["when"], {}).get("type") != "boolean":
+            raise CatalogError(f"composant {m['slug']} : condition de contrôle sur un paramètre non booléen")
+    for pkg in m["effects"].get("packages", []):
+        if not NAME_RE.match(str(pkg)):
+            raise CatalogError(f"composant {m['slug']} : nom de paquet invalide ({pkg})")
+    for svc in m["effects"].get("services", []):
+        if not NAME_RE.match(str(svc.get("unit", ""))) or not NAME_RE.match(str(svc.get("process", svc["unit"]))):
+            raise CatalogError(f"composant {m['slug']} : service ou processus invalide")
+    for log in m["effects"].get("logs", []):
+        if (
+            not NAME_RE.match(str(log.get("name", "")))
+            or not LOG_PATH_RE.match(str(log.get("path", "")))
+            or ".." in str(log.get("path"))
+        ):
+            raise CatalogError(f"composant {m['slug']} : journal déclaré invalide ({log})")
     _reject_secret_literals(m.get("parameters", {}), f"composant {m['slug']}")
 
 
@@ -156,17 +219,99 @@ def check_component_config(component: dict[str, Any], config: dict[str, Any]) ->
     return problems
 
 
+def check_waves(waves: dict[str, Any]) -> None:
+    """`single` : toutes les cibles ensemble. `pilot` : un pilote, puis des vagues ; tout échec arrête la suite."""
+    mode = waves.get("mode")
+    if mode == "single" and set(waves) == {"mode"}:
+        return
+    if mode != "pilot" or set(waves) != {"mode", "pilot_size", "wave_size", "stop_on_failure"}:
+        raise CatalogError(
+            "template : vagues attendues « single » ou « pilot » (pilot_size, wave_size, stop_on_failure)"
+        )
+    for key, (low, high) in WAVE_LIMITS.items():
+        value = waves[key]
+        if not isinstance(value, int) or isinstance(value, bool) or not low <= value <= high:
+            raise CatalogError(f"template : {key} hors bornes [{low}, {high}]")
+    if waves["stop_on_failure"] is not True:
+        raise CatalogError("template : un échec d'une vague arrête toujours les vagues suivantes")
+
+
+def plan_waves(waves: dict[str, Any], names: list[str]) -> list[list[str]]:
+    """Découpe ordonnée des cibles approuvées en vagues (le pilote d'abord)."""
+    if not names:
+        return []
+    if waves.get("mode") != "pilot":
+        return [list(names)]
+    pilot, rest = list(names[: waves["pilot_size"]]), list(names[waves["pilot_size"] :])
+    size = waves["wave_size"]
+    return [pilot] + [rest[i : i + size] for i in range(0, len(rest), size)]
+
+
+def component_checks(contract: dict[str, Any], config: dict[str, Any]) -> list[dict[str, Any]]:
+    """Contrôles de santé d'un composant configuré : paramètres substitués, conditions évaluées."""
+    checks = []
+    for check in contract["checks"]:
+        if "when" in check and not config.get(check["when"]):
+            continue
+        item = {}
+        for key, value in check.items():
+            if key == "when":
+                continue
+            if isinstance(value, str) and value.startswith("{") and value.endswith("}"):
+                value = config[value[1:-1]]
+            item[key] = value
+        checks.append(item)
+    return checks
+
+
+def collect_spec(components: list[dict[str, Any]], health_checks: list[dict[str, Any]]) -> dict[str, Any]:
+    """Ce que la collecte en lecture seule interroge : paquets, processus et journaux déclarés."""
+    packages: list[str] = []
+    for c in components:
+        packages += [p for p in c["effects"].get("packages", []) if p not in packages]
+    for check in health_checks:
+        if check["type"] == "package_installed" and check["package"] not in packages:
+            packages.append(check["package"])
+    processes = list(
+        dict.fromkeys(str(c.get("process", c["unit"])) for c in health_checks if c["type"] == "service_active")
+    )
+    journals: list[dict[str, str]] = []
+    for c in components:
+        for log in c["effects"].get("logs") or LEGACY_LOGS.get(c["slug"], []):
+            if log not in journals:
+                journals.append({"name": log["name"], "path": log["path"]})
+    return {"packages": packages, "processes": processes, "journals": journals}
+
+
 def validate_template(m: dict[str, Any]) -> None:
-    _require(m, ("schema", "slug", "version", "title", "description", "creation_method", "system_profile",
-                 "components", "inputs", "environments", "health_checks", "deployment_policy", "terraform",
-                 "outputs_allowlist"), "template")
+    _require(
+        m,
+        (
+            "schema",
+            "slug",
+            "version",
+            "title",
+            "description",
+            "creation_method",
+            "system_profile",
+            "components",
+            "inputs",
+            "environments",
+            "health_checks",
+            "deployment_policy",
+            "terraform",
+            "outputs_allowlist",
+        ),
+        "template",
+    )
     if m["schema"] != "rackloom.template/v1" or not SLUG_RE.match(str(m["slug"])):
         raise CatalogError("template : schéma ou slug invalide")
     if not VERSION_RE.match(str(m["version"])):
         raise CatalogError("template : version non conforme (x.y.z)")
     if m["creation_method"].get("kind") != "clone_image":
-        raise CatalogError(f"template : méthode de création « {m['creation_method'].get('kind')} » non prise en "
-                           "charge au lot 1")
+        raise CatalogError(
+            f"template : méthode de création « {m['creation_method'].get('kind')} » non prise en charge au lot 1"
+        )
     unknown = set(m["inputs"]) - INPUT_NAMES
     if unknown:
         raise CatalogError(f"template : entrée(s) non prise(s) en charge : {sorted(unknown)}")
@@ -175,8 +320,10 @@ def validate_template(m: dict[str, Any]) -> None:
         raise CatalogError("template : bornes de quantité invalides")
     tiers = set(m["inputs"].get("size_tier", {}).get("values", []))
     kinds = set(m["deployment_policy"].get("admissible_environment_kinds", []))
-    if m["deployment_policy"].get("waves", {}).get("mode") != "single":
-        raise CatalogError("template : seules les vagues « single » sont prises en charge au lot 1")
+    check_waves(m["deployment_policy"].get("waves", {}))
+    for check in m["health_checks"]:
+        if check.get("type") not in CHECK_TYPES:
+            raise CatalogError(f"template : contrôle de santé « {check.get('type')} » non pris en charge")
     for kind, env in m["environments"].items():
         if kind not in kinds:
             raise CatalogError(f"template : paramètres pour un type d'environnement non admissible ({kind})")
@@ -194,8 +341,6 @@ def validate_template(m: dict[str, Any]) -> None:
             raise CatalogError("template : les secrets sont des références secret://, jamais des valeurs")
     _reject_secret_literals(m["components"], f"template {m['slug']}")
 
-
-# --- Lecture du dépôt -------------------------------------------------------------------
 
 def scan(catalog_dir: Path) -> dict[str, list[dict[str, Any]]]:
     artifacts: list[dict[str, Any]] = []
@@ -267,14 +412,17 @@ def check_template_references(m: dict[str, Any], component_lookup, artifact_look
     for ref in m["components"]:
         comp = component_lookup(ref["component"], ref["version"])
         if comp is None:
-            raise CatalogError(f"template {m['slug']}@{m['version']} : composant {ref['component']}@"
-                               f"{ref['version']} absent du registre")
+            raise CatalogError(
+                f"template {m['slug']}@{m['version']} : composant {ref['component']}@"
+                f"{ref['version']} absent du registre"
+            )
         problems = check_component_config(comp, ref.get("config", {}))
         if problems:
             raise CatalogError(f"template {m['slug']}@{m['version']} : " + "; ".join(problems))
         if os_ not in comp["supports"]["os"]:
-            raise CatalogError(f"template {m['slug']}@{m['version']} : composant {comp['slug']} incompatible "
-                               f"avec {os_}")
+            raise CatalogError(
+                f"template {m['slug']}@{m['version']} : composant {comp['slug']} incompatible avec {os_}"
+            )
         slugs.add(comp["slug"])
     for ref in m["components"]:
         comp = component_lookup(ref["component"], ref["version"])
@@ -284,6 +432,12 @@ def check_template_references(m: dict[str, Any], component_lookup, artifact_look
         for dep in comp.get("depends_on", []):
             if dep not in slugs:
                 raise CatalogError(f"template {m['slug']} : {comp['slug']} dépend de {dep}")
+        config = {k: v["default"] for k, v in comp["parameters"].items() if "default" in v}
+        config.update(ref.get("config", {}))
+        for name, spec in comp["parameters"].items():
+            needed = spec.get("requires_component")
+            if needed and config.get(name) and needed not in slugs:
+                raise CatalogError(f"template {m['slug']} : {comp['slug']}.{name} exige le composant {needed}")
 
 
 def load(conn: Conn, catalog_dir: Path) -> dict[str, int]:
@@ -333,8 +487,6 @@ def load(conn: Conn, catalog_dir: Path) -> dict[str, int]:
         counts["templates"] += 1
     return counts
 
-
-# --- Requêtes ---------------------------------------------------------------------------
 
 def artifact(conn: Conn, kind: str, slug: str, version: str) -> dict[str, Any] | None:
     return conn.execute("SELECT * FROM catalog_artifacts WHERE kind = %s AND slug = %s AND version = %s",
@@ -392,8 +544,6 @@ def template_components(conn: Conn, contract: dict[str, Any]) -> list[dict[str, 
     return result
 
 
-# --- Publication ------------------------------------------------------------------------
-
 def impact(conn: Conn, slug: str, version: str) -> dict[str, Any]:
     projects = [r["slug"] for r in conn.execute(
         "SELECT DISTINCT p.slug FROM resource_grants g JOIN projects p ON p.id = g.project_id "
@@ -416,55 +566,167 @@ def impact(conn: Conn, slug: str, version: str) -> dict[str, Any]:
                     "les nouvelles demandes utiliseront la dernière version publiée."}
 
 
-TRANSITIONS = {"publish": ({"validated"}, "published"),
-               "deprecate": ({"published"}, "deprecated"),
-               "withdraw": ({"published", "deprecated"}, "withdrawn")}
+TRANSITIONS = {
+    "publish": ({"validated", "in_review"}, "published"),
+    "return": ({"in_review"}, "returned"),
+    "deprecate": ({"published"}, "deprecated"),
+    "withdraw": ({"published", "deprecated"}, "withdrawn"),
+}
 
 
-def change_status(conn: Conn, actor_id: UUID, slug: str, version: str, action: str,
-                  reason: str) -> dict[str, Any]:
-    """Publier, déprécier ou retirer une version. Le droit est vérifié par l'appelant."""
+EVENT_ACTIONS = {"publish": "published", "return": "returned", "deprecate": "deprecated", "withdraw": "withdrawn"}
+
+
+def change_status(
+    conn: Conn, actor_id: UUID, slug: str, version: str, action: str, reason: str, digest_seen: str | None = None
+) -> dict[str, Any]:
+    """Publier, renvoyer, déprécier ou retirer une version. Le droit est vérifié par l'appelant.
+
+    Une version soumise depuis l'atelier se publie sur l'empreinte affichée au relecteur, par une
+    autre personne que l'auteur qui l'a soumise.
+    """
     if action not in TRANSITIONS:
-        raise ApiError(422, "invalid_action", "action attendue : publish, deprecate ou withdraw")
+        raise ApiError(422, "invalid_action", "action attendue : publish, return, deprecate ou withdraw")
     if not reason or not reason.strip():
         raise ApiError(422, "reason_required", "un motif est obligatoire", field="/reason")
-    row = conn.execute("SELECT * FROM template_versions WHERE slug = %s AND version = %s FOR UPDATE",
-                       (slug, version)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM template_versions WHERE slug = %s AND version = %s FOR UPDATE", (slug, version)
+    ).fetchone()
     if row is None:
         raise ApiError(404, "not_found", "version de template introuvable")
     allowed, target = TRANSITIONS[action]
     if row["status"] not in allowed:
         raise ApiError(409, "invalid_status", f"statut actuel « {row['status']} » : action « {action} » impossible")
+    if row["status"] == "in_review":
+        if actor_id is not None and actor_id == row["submitted_by"]:
+            raise forbidden(
+                "un auteur ne publie ni ne renvoie sa propre version (séparation des droits)",
+                code="separation_of_duties",
+            )
+        if digest_seen != row["digest"]:
+            raise ApiError(
+                409,
+                "stale_digest",
+                "l'empreinte affichée ne correspond pas à la version soumise : recharger avant de décider",
+                field="/digest",
+            )
     effect = impact(conn, slug, version)
-    if action == "publish":
+    if action == "return":
+        conn.execute("UPDATE template_versions SET status = 'returned' WHERE id = %s", (row["id"],))
+        if row["draft_id"]:
+            conn.execute(
+                "UPDATE template_drafts SET status = 'editing', version = %s, template_version_id = NULL, "
+                "updated_at = now(), row_version = row_version + 1 WHERE id = %s",
+                (next_patch(version), row["draft_id"]),
+            )
+    elif action == "publish":
         for comp in row["contract"]["components"]:
             c = component(conn, comp["component"], comp["version"])
             if c is None or c["status"] in ("withdrawn",):
-                raise ApiError(409, "component_unavailable", f"composant {comp['component']}@{comp['version']} "
-                               "absent ou retiré")
+                raise ApiError(
+                    409, "component_unavailable", f"composant {comp['component']}@{comp['version']} absent ou retiré"
+                )
             if c["status"] == "validated":
                 conn.execute("UPDATE component_versions SET status = 'published' WHERE id = %s", (c["id"],))
-        conn.execute("UPDATE template_versions SET status = 'published', published_by = %s, published_at = now(), "
-                     "publish_reason = %s WHERE id = %s", (actor_id, reason.strip(), row["id"]))
+        conn.execute(
+            "UPDATE template_versions SET status = 'published', published_by = %s, published_at = now(), "
+            "publish_reason = %s WHERE id = %s",
+            (actor_id, reason.strip(), row["id"]),
+        )
+        if row["draft_id"]:
+            conn.execute(
+                "UPDATE template_drafts SET status = 'published', updated_at = now(), "
+                "row_version = row_version + 1 WHERE id = %s",
+                (row["draft_id"],),
+            )
     else:
         conn.execute("UPDATE template_versions SET status = %s WHERE id = %s", (target, row["id"]))
-    conn.execute("INSERT INTO template_events (template_version_id, action, actor_id, reason, impact) "
-                 "VALUES (%s, %s, %s, %s, %s)",
-                 (row["id"], {"publish": "published", "deprecate": "deprecated", "withdraw": "withdrawn"}[action],
-                  actor_id, reason.strip(), Jsonb(effect)))
-    audit.record(conn, actor_type="user" if actor_id else "system", actor_id=str(actor_id) if actor_id else "seed",
-                 action=f"registry.template.{action}", outcome="ok",
-                 targets={"template": slug, "projects": effect["projects"]},
-                 versions={"template": version, "digest": row["digest"]},
-                 policy_decision={"reason": reason.strip()})
+    conn.execute(
+        "INSERT INTO template_events (template_version_id, action, actor_id, reason, impact) "
+        "VALUES (%s, %s, %s, %s, %s)",
+        (row["id"], EVENT_ACTIONS[action], actor_id, reason.strip(), Jsonb(effect)),
+    )
+    if row["draft_id"]:
+        conn.execute(
+            "INSERT INTO template_draft_events (draft_id, action, actor_type, actor_id, data, content_digest) "
+            "VALUES (%s, %s, 'user', %s, %s, %s)",
+            (
+                row["draft_id"],
+                EVENT_ACTIONS[action],
+                str(actor_id) if actor_id else None,
+                Jsonb({"version": version, "reason": reason.strip()}),
+                row["digest"],
+            ),
+        )
+    audit.record(
+        conn,
+        actor_type="user" if actor_id else "system",
+        actor_id=str(actor_id) if actor_id else "seed",
+        action=f"registry.template.{action}",
+        outcome="ok",
+        targets={"template": slug, "projects": effect["projects"]},
+        versions={"template": version, "digest": row["digest"]},
+        policy_decision={"reason": reason.strip()},
+    )
     return {"template": slug, "version": version, "status": target, "impact": effect}
 
 
-def publish_action(conn: Conn, principal: Principal, slug: str, version: str, action: str,
-                   reason: str) -> dict[str, Any]:
+def publish_action(
+    conn: Conn, principal: Principal, slug: str, version: str, action: str, reason: str, digest_seen: str | None = None
+) -> dict[str, Any]:
     """Point d'entrée des routes d'administration : publier n'est ni déployer ni approuver."""
     require_publisher(principal)
-    return change_status(conn, principal.user_id, slug, version, action, reason)
+    return change_status(conn, principal.user_id, slug, version, action, reason, digest_seen)
+
+
+def next_patch(version: str) -> str:
+    major, minor, patch = semver_key(version)
+    return f"{major}.{minor}.{patch + 1}"
+
+
+LEVELS = ("not_tested", "tested_locally", "lab_validated")
+
+
+def record_evidence(
+    conn: Conn,
+    component_version_id: UUID,
+    *,
+    level: str,
+    job_id: UUID | None,
+    deployment_id: UUID | None,
+    host_id: UUID | None,
+    connector_mode: str,
+    checks: list[dict[str, Any]],
+) -> str:
+    """Enregistre une preuve et recalcule le niveau de vérification (le plus élevé atteint)."""
+    conn.execute(
+        "INSERT INTO component_evidence (component_version_id, level, source, job_id, deployment_id, "
+        "host_id, connector_mode, checks) VALUES (%s, %s, 'verify_job', %s, %s, %s, %s, %s)",
+        (component_version_id, level, job_id, deployment_id, host_id, connector_mode, Jsonb(checks)),
+    )
+    best = max(
+        (
+            r["level"]
+            for r in conn.execute(
+                "SELECT DISTINCT level FROM component_evidence WHERE component_version_id = %s", (component_version_id,)
+            ).fetchall()
+        ),
+        key=LEVELS.index,
+    )
+    conn.execute(
+        "UPDATE component_versions SET verification_level = %s WHERE id = %s AND verification_level <> %s",
+        (best, component_version_id, best),
+    )
+    return best
+
+
+def evidence_summary(conn: Conn, component_version_id: UUID) -> dict[str, Any]:
+    """Résumé sans donnée de projet : nombre de preuves, dernier niveau et date."""
+    row = conn.execute(
+        "SELECT count(*) AS n, max(recorded_at) AS last FROM component_evidence WHERE component_version_id = %s",
+        (component_version_id,),
+    ).fetchone()
+    return {"count": row["n"], "last_at": row["last"].isoformat() if row["last"] else None}
 
 
 def template_history(conn: Conn, slug: str) -> list[dict[str, Any]]:

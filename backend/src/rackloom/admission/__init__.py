@@ -1,9 +1,11 @@
 """Admission au démarrage effectif d'un job : registre ordonné de règles, décision enregistrée.
 
 Chaque job est réévalué au moment où un worker le réclame, quelle que soit sa date de mise en
-file. Emplacements réservés, non enregistrés au lot 1 : 80 (F28), 90 (F27), 95 (F37),
+file. R065 (AT01) borne la configuration aux cibles approuvées. Emplacements réservés, non
+enregistrés : 80 (F28), 90 (F27), 95 (F37),
 100 (F11), 110 (F05), 115 (F39), 120 (F03), 125 (F34), 130 (F16), 135 (F38), 140 (F10).
 """
+
 
 from __future__ import annotations
 
@@ -39,6 +41,8 @@ class Context:
 
 
 Rule = Callable[[Context], Verdict]
+
+
 REGISTRY: list[tuple[int, str, str, Rule]] = []
 
 
@@ -180,6 +184,38 @@ def plan_valid(ctx: Context) -> Verdict:
     margin = timedelta(seconds=policy.BUILTIN_RULES["platform"]["plan_expiry_margin_seconds"])
     if plan["valid_until"] <= datetime.now(UTC) + margin:
         return Verdict(False, "le plan a expiré", "plan_expired")
+    return Verdict(True)
+
+
+@rule(65, "R065", "write")
+def approved_targets(ctx: Context) -> Verdict:
+    """Une configuration ne vise que des machines de la liste figée à l'approbation (ou de la reprise)."""
+    if ctx.job["kind"] != "ansible_configure":
+        return Verdict(True)
+    payload = ctx.job["payload"]
+    if payload.get("waves"):
+        names = set(payload["waves"][payload["wave"]])
+    else:
+        ids = list(payload.get("host_ids") or [])
+        names = {
+            r["name"] for r in ctx.conn.execute("SELECT name FROM hosts WHERE id = ANY(%s::uuid[])", (ids,)).fetchall()
+        }
+        if len(names) != len(ids):
+            return Verdict(False, "cible de configuration inconnue", "target_not_approved")
+    approved = set(ctx.plan["bundle"]["targets"]["instances"]) if ctx.plan else set()
+    if ctx.approval is not None and ctx.approval["kind"] == "retry":
+        scope = [str(i) for i in (ctx.approval["retry_scope"] or {}).get("host_ids", [])]
+        approved &= {
+            r["name"]
+            for r in ctx.conn.execute("SELECT name FROM hosts WHERE id = ANY(%s::uuid[])", (scope,)).fetchall()
+        }
+    outside = sorted(names - approved)
+    if outside:
+        return Verdict(
+            False,
+            f"cible hors de la liste approuvée : {', '.join(outside)} (nouvelle approbation requise)",
+            "target_not_approved",
+        )
     return Verdict(True)
 
 

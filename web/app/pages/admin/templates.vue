@@ -9,8 +9,11 @@ const reason = ref('')
 const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
 const busy = ref(false)
-const STATUS: Record<string, string> = { validated: 'Validée', published: 'Publiée', deprecated: 'Dépréciée', withdrawn: 'Retirée', draft: 'Brouillon' }
-const ACTIONS: Record<string, string> = { publish: 'Publier', deprecate: 'Déprécier', withdraw: 'Retirer' }
+const STATUS: Record<string, string> = {
+  validated: 'Validée', in_review: 'En revue', returned: 'Renvoyée', published: 'Publiée',
+  deprecated: 'Dépréciée', withdrawn: 'Retirée', draft: 'Brouillon', lab_tested: 'Testée en labo',
+}
+const ACTIONS: Record<string, string> = { publish: 'Publier', return: 'Renvoyer à l\'auteur', deprecate: 'Déprécier', withdraw: 'Retirer' }
 const VERIF: Record<string, string> = { not_tested: 'non testé', tested_locally: 'testé localement', lab_validated: 'validé en laboratoire' }
 
 async function load() {
@@ -36,7 +39,9 @@ async function act(action: string) {
   busy.value = true
   error.value = null
   try {
-    await api.post(`/admin/templates/${selected.value.slug}/versions/${selected.value.version}/${action}`, { reason: reason.value })
+    await api.post(`/admin/templates/${selected.value.slug}/versions/${selected.value.version}/${action}`, {
+      reason: reason.value, digest: selected.value.digest,
+    })
     notice.value = `${ACTIONS[action]} : fait. Aucun job créé, aucun déploiement modifié.`
     await load()
     await open(selected.value.slug, selected.value.version)
@@ -82,13 +87,27 @@ async function act(action: string) {
         <section v-if="selected" class="card" aria-labelledby="ver-title" data-testid="template-version">
           <h2 id="ver-title">{{ selected.contract.title }} {{ selected.version }} <span class="badge info">{{ STATUS[selected.status] }}</span></h2>
           <p class="small">{{ selected.contract.description }}</p>
+          <p v-if="selected.separation_notice" class="banner warn" data-testid="separation-notice">{{ selected.separation_notice }}</p>
+          <template v-if="selected.review">
+            <h3>Revue</h3>
+            <p class="small" data-testid="review-origin">{{ selected.review.origin_label }}. Auteur : {{ selected.review.author || '—' }}.</p>
+            <ul class="small" data-testid="review-changes">
+              <li v-for="c in selected.review.changes_from_base" :key="c">{{ c }}</li>
+            </ul>
+            <p v-if="!selected.review.changes_from_base.length" class="small muted">Aucun écart avec la base.</p>
+            <h3 v-if="selected.review.extensions.length">Propositions d'extension (non appliquées)</h3>
+            <ul class="small">
+              <li v-for="e in selected.review.extensions" :key="e.subject">{{ e.subject }} — {{ e.summary }}</li>
+            </ul>
+            <p class="banner info small">{{ selected.review.notice }}</p>
+          </template>
           <h3>Entrées proposées au demandeur</h3>
           <ul class="small">
             <li v-for="(i, k) in selected.contract.inputs" :key="k">{{ i.label }} <span class="muted mono">({{ k }}, {{ i.type }})</span></li>
           </ul>
           <h3>Composants</h3>
           <ul class="small">
-            <li v-for="c in selected.components" :key="c.slug">{{ c.title }} {{ c.version }} — {{ STATUS[c.status] || c.status }} — vérification : {{ VERIF[c.verification_level] || c.verification_level }}</li>
+            <li v-for="c in selected.components" :key="c.slug">{{ c.title }} {{ c.version }} — {{ STATUS[c.status] || c.status }} — vérification : {{ VERIF[c.verification_level] || c.verification_level }}<template v-if="c.evidence"> ({{ c.evidence.count }} preuve(s))</template></li>
           </ul>
           <h3>Contrôles de santé</h3>
           <ul class="small"><li v-for="(h, i) in selected.contract.health_checks" :key="i">{{ h.type }} <span class="muted mono">{{ h.package || h.unit || `:${h.port}${h.path}` }}</span></li></ul>

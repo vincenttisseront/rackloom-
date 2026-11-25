@@ -5,6 +5,7 @@ const route = useRoute()
 
 const isAdmin = computed(() => hasRole(session.value, 'platform_admin'))
 const isPublisher = computed(() => hasRole(session.value, 'template_publisher'))
+const isAuthor = computed(() => hasRole(session.value, 'template_author'))
 const isAuditor = computed(() => hasRole(session.value, 'auditor'))
 
 async function logout() {
@@ -25,6 +26,7 @@ async function logout() {
         <NuxtLink to="/" class="brand">Rackloom</NuxtLink>
         <nav v-if="session" aria-label="Navigation principale">
           <NuxtLink to="/">Accueil</NuxtLink>
+          <NuxtLink v-if="isAuthor || isPublisher || isAdmin" to="/atelier">Atelier</NuxtLink>
           <NuxtLink v-if="isPublisher" to="/admin/templates">Administration › Templates</NuxtLink>
           <NuxtLink v-if="isAdmin" to="/admin/connecteurs">Administration › Connecteurs</NuxtLink>
           <NuxtLink v-if="isAuditor || isAdmin" to="/audit">Audit</NuxtLink>

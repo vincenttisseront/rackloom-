@@ -13,3 +13,4 @@ Format : contexte, décision, conséquences, alternatives écartées, points à 
 | [0007](0007-secrets-et-cles.md) | Secrets et clés de chiffrement | proposé |
 | [0008](0008-resolveur-central.md) | Résolveur central, besoin et valeurs verrouillées | proposé |
 | [0009](0009-modele-template-composant.md) | Templates Rackloom, registre de composants, images vSphere | proposé |
+| [0010](0010-double-validation-publication.md) | Double validation avant publication (non implémentée) | proposé |

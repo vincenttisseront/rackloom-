@@ -1,5 +1,6 @@
 """Raccourcis de parcours pour les tests (services appelés comme le ferait l'API)."""
 
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -19,6 +20,51 @@ def need(*, template: str = "ubuntu-web", environment: str | None = None, confir
     inputs.setdefault("lifetime_until", until())
     return {"schema": "rackloom.need/v1", "service": {"template": template}, "environment": environment,
             "confirm_production": confirm_production, "inputs": {k: v for k, v in inputs.items() if v is not None}}
+
+
+def publish_hardened(conn, demo) -> dict[str, Any]:
+    """Inès conçoit « ubuntu-web-durci » avec l'assistant fictif ; Paul le publie. Aucun job n'est créé."""
+    from rackloom import registry, studio
+
+    before = conn.execute("SELECT count(*) AS n FROM jobs").fetchone()["n"]
+    ines = demo.principal("ines")
+    result = studio.create(
+        conn,
+        ines,
+        {
+            "slug": "ubuntu-web-durci",
+            "base": {"slug": "ubuntu-web", "version": "1.0.0"},
+            "brief": "Je veux un serveur web Ubuntu durci, avec Fail2ban sur SSH, déployé une machine d'abord",
+        },
+    )
+    assert result["turn"]["status"] == "ok", result["turn"]
+    draft = result["draft"]
+    for _ in range(12):
+        pending = [s for s in draft["proposals"] if s["status"] == "pending"]
+        if not pending:
+            break
+        draft = studio.decide_suggestion(
+            conn, ines, draft["id"], pending[0]["id"], {"row_version": draft["row_version"], "decision": "accepted"}
+        )
+    assert not studio.problems(conn, draft), studio.problems(conn, draft)
+    submitted = studio.submit(
+        conn,
+        ines,
+        draft["id"],
+        {"row_version": draft["row_version"], "digest": studio.content_digest(draft["content"])},
+    )
+    registry.publish_action(
+        conn,
+        demo.principal("pub"),
+        submitted["slug"],
+        submitted["version"],
+        "publish",
+        "Revue de la première tranche de l'atelier",
+        submitted["digest"],
+    )
+    conn.commit()
+    assert conn.execute("SELECT count(*) AS n FROM jobs").fetchone()["n"] == before
+    return submitted
 
 
 def create_and_submit(conn, demo, *, who: str = "alice", project: str = "vitrine", **need_kw: Any) -> dict[str, Any]:

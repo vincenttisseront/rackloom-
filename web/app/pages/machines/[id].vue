@@ -2,14 +2,20 @@
 const route = useRoute()
 const api = useApi()
 const host = ref<any>(null)
-const journal = ref<any>(null)
+const journals = ref<any[]>([])
 const error = ref<string | null>(null)
 
 onMounted(async () => {
   try {
     host.value = await api.get(`/hosts/${route.params.id}`)
     const obs = await api.get(`/hosts/${route.params.id}/observations?kind=journal`)
-    journal.value = obs[0] || null
+    const seen = new Set<string>()
+    journals.value = obs.filter((j: any) => {
+      const name = j.data?.name || 'journal'
+      if (seen.has(name)) return false
+      seen.add(name)
+      return true
+    })
   } catch (e) {
     error.value = errorText(e)
   }
@@ -65,13 +71,14 @@ onMounted(async () => {
         <p class="small muted">Les valeurs collectées sur la machine sont des données non fiables : elles sont affichées, jamais interprétées.</p>
       </section>
       <section class="card" aria-labelledby="journal-title">
-        <h2 id="journal-title">Extrait du journal nginx</h2>
-        <p v-if="!journal" class="empty">Non collecté.</p>
-        <template v-else>
+        <h2 id="journal-title">Extraits de journaux</h2>
+        <p v-if="!journals.length" class="empty">Non collecté.</p>
+        <div v-for="journal in journals" :key="journal.id">
+          <h3>{{ journal.data.name || 'journal' }}</h3>
           <p class="small muted">{{ journal.data.source }} · collecté le {{ dateTime(journal.collected_at) }}</p>
-          <pre v-if="journal.data.lines.length" class="mono small" style="white-space: pre-wrap; background: var(--surface-2); padding: 0.75rem; border-radius: 8px">{{ journal.data.lines.join('\n') }}</pre>
-          <p v-else class="empty small">Aucune ligne d'erreur.</p>
-        </template>
+          <pre v-if="journal.data.lines?.length" class="mono small" style="white-space: pre-wrap; background: var(--surface-2); padding: 0.75rem; border-radius: 8px">{{ journal.data.lines.join('\n') }}</pre>
+          <p v-else class="empty small">Aucune ligne.</p>
+        </div>
       </section>
     </template>
   </div>

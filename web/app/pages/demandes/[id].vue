@@ -205,7 +205,7 @@ const resultTone = computed(() => SERVICE_TONE[service.value?.service_status] ||
             <tbody>
               <tr v-for="h in deployment.hosts" :key="h.id">
                 <td><NuxtLink :to="`/machines/${h.id}`">{{ h.name }}</NuxtLink></td>
-                <td>{{ h.deployment_state }}</td>
+                <td>{{ h.deployment_state_label || h.deployment_state }}</td>
                 <td><span class="badge" :class="h.health.state === 'healthy' ? 'ok' : h.health.state === 'error' ? 'bad' : 'warn'">{{ h.health.label }}</span></td>
               </tr>
             </tbody>

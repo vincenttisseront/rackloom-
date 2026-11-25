@@ -3,6 +3,7 @@
 Publier n'est ni déployer ni approuver : aucune de ces routes ne crée de job ni d'approbation.
 """
 
+
 from __future__ import annotations
 
 import os
@@ -13,7 +14,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Request
 from pydantic import ValidationError
 
-from .. import audit, inventory, projects, registry, secrets
+from .. import audit, inventory, projects, registry, secrets, studio
 from ..config import get_settings
 from ..connectors import MATRIX, vsphere
 from ..db import Conn, Jsonb, get_pool
@@ -27,13 +28,18 @@ from .views import iso
 
 router = APIRouter(tags=["administration"], dependencies=[Depends(csrf_guard)])
 
+
 SECRET_HINTS = ("password", "secret", "token", "passphrase", "private_key", "api_key")
+
+
 ASSIGNABLE_ROLES = tuple(r for r in ROLES)
 
 
 def _registry_reader(p: Principal) -> None:
-    if not (p.is_platform_admin or p.has_role("template_publisher") or p.is_global_auditor):
-        raise forbidden("rôle administrateur, éditeur de templates ou auditeur requis")
+    if not (
+        p.is_platform_admin or p.has_role("template_publisher") or p.has_role("template_author") or p.is_global_auditor
+    ):
+        raise forbidden("rôle administrateur, auteur ou éditeur de templates, ou auditeur requis")
 
 
 def _only(body: dict[str, Any], allowed: set[str]) -> None:
@@ -42,8 +48,6 @@ def _only(body: dict[str, Any], allowed: set[str]) -> None:
         key = sorted(extra)[0]
         raise ApiError(422, "unknown_field", f"champ « {key} » refusé", field=f"/{key}")
 
-
-# --- Registre ---------------------------------------------------------------------------
 
 @router.get("/admin/components")
 def list_components(request: Request) -> list[dict[str, Any]]:
@@ -83,16 +87,53 @@ def get_template(slug: str, version: str, request: Request) -> dict[str, Any]:
         if row is None:
             raise not_found("version de template")
         comps = registry.template_components(u.conn, row["contract"])
-        return {"slug": slug, "version": version, "status": row["status"], "digest": row["digest"],
-                "contract": row["contract"], "published_at": iso(row["published_at"]),
-                "components": [{"slug": c["slug"], "version": c["version"], "status": c["status"],
-                                "digest": c["digest"], "title": c["title"],
-                                "verification_level": c["verification_level"]} for c in comps],
-                "history": [{"version": h["version"], "action": h["action"], "reason": h["reason"],
-                             "actor": h["actor"], "at": iso(h["at"])}
-                            for h in registry.template_history(u.conn, slug)],
-                "allowed_actions": [a for a, (states, _) in registry.TRANSITIONS.items()
-                                    if row["status"] in states and u.p.has_role("template_publisher")]}
+        own = row["submitted_by"] is not None and row["submitted_by"] == u.p.user_id
+        actions = [
+            a
+            for a, (states, _) in registry.TRANSITIONS.items()
+            if row["status"] in states
+            and u.p.has_role("template_publisher")
+            and not (own and row["status"] == "in_review")
+        ]
+        if row["status"] != "in_review":
+            actions = [a for a in actions if a != "return"]
+        return {
+            "slug": slug,
+            "version": version,
+            "status": row["status"],
+            "digest": row["digest"],
+            "contract": row["contract"],
+            "published_at": iso(row["published_at"]),
+            "components": [
+                {
+                    "slug": c["slug"],
+                    "version": c["version"],
+                    "status": c["status"],
+                    "digest": c["digest"],
+                    "title": c["title"],
+                    "verification_level": c["verification_level"],
+                    "evidence": registry.evidence_summary(
+                        u.conn, registry.component(u.conn, c["slug"], c["version"])["id"]
+                    ),
+                }
+                for c in comps
+            ],
+            "history": [
+                {
+                    "version": h["version"],
+                    "action": h["action"],
+                    "reason": h["reason"],
+                    "actor": h["actor"],
+                    "at": iso(h["at"]),
+                }
+                for h in registry.template_history(u.conn, slug)
+            ],
+            "review": studio.review_view(u.conn, row) if row["draft_id"] else None,
+            "separation_notice": "Vous avez soumis cette version : une autre personne la publie."
+            if own and row["status"] == "in_review"
+            else None,
+            "allowed_actions": actions,
+        }
 
 
 @router.get("/admin/templates/{slug}/versions/{version}/impact")
@@ -106,14 +147,27 @@ def template_impact(slug: str, version: str, request: Request) -> dict[str, Any]
 
 
 def _publication(slug: str, version: str, action: str, request: Request, body: dict[str, Any]) -> dict[str, Any]:
-    _only(body, {"reason"})
+    _only(body, {"reason", "digest"})
     with unit_of_work(request, write=True) as u:
-        return registry.publish_action(u.conn, u.p, slug, version, action, str(body.get("reason") or ""))
+        return registry.publish_action(
+            u.conn,
+            u.p,
+            slug,
+            version,
+            action,
+            str(body.get("reason") or ""),
+            str(body["digest"]) if body.get("digest") else None,
+        )
 
 
 @router.post("/admin/templates/{slug}/versions/{version}/publish")
 def publish(slug: str, version: str, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return _publication(slug, version, "publish", request, body)
+
+
+@router.post("/admin/templates/{slug}/versions/{version}/return")
+def return_to_author(slug: str, version: str, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return _publication(slug, version, "return", request, body)
 
 
 @router.post("/admin/templates/{slug}/versions/{version}/deprecate")
@@ -137,8 +191,6 @@ def environment_policies(environment_id: UUID, request: Request) -> list[dict[st
                               "WHERE environment_id = %s ORDER BY version", (environment_id,)).fetchall()
         return [{**r, "created_at": iso(r["created_at"])} for r in rows]
 
-
-# --- Connecteurs ------------------------------------------------------------------------
 
 def _connector(conn, connector_id: UUID) -> dict[str, Any]:
     row = conn.execute("SELECT * FROM connectors WHERE id = %s", (connector_id,)).fetchone()
@@ -283,8 +335,6 @@ def refresh_inventory(connector_id: UUID, request: Request) -> dict[str, Any]:
         return {"snapshot_id": str(snapshot), "items": len(fixture["items"]), "simulated": True}
 
 
-# --- Utilisateurs et rôles --------------------------------------------------------------
-
 @router.get("/users")
 def list_users(request: Request) -> list[dict[str, Any]]:
     with unit_of_work(request) as u:
@@ -328,7 +378,7 @@ def grant_role(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, 
         environment_id = UUID(body["environment_id"]) if body.get("environment_id") else None
     except ValueError as exc:
         raise ApiError(422, "invalid_identifier", "identifiant invalide") from exc
-    if role in ("platform_admin", "template_publisher") and project_id is not None:
+    if role in ("platform_admin", "template_publisher", "template_author") and project_id is not None:
         raise ApiError(422, "global_role", "ce rôle est global", field="/project_id")
     if role in ("operator", "approver") and project_id is None:
         raise ApiError(422, "project_required", "ce rôle exige un projet", field="/project_id")
@@ -340,17 +390,29 @@ def grant_role(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, 
             env = projects.get_environment(u.conn, environment_id)
             if env is None or env["project_id"] != project_id:
                 raise ApiError(422, "invalid_environment", "environnement hors du projet", field="/environment_id")
-        if role == "template_publisher" and u.conn.execute(
-                "SELECT 1 FROM role_bindings WHERE role = 'template_publisher' AND revoked_at IS NULL").fetchone():
+        if (
+            role == "template_publisher"
+            and u.conn.execute(
+                "SELECT 1 FROM role_bindings WHERE role = 'template_publisher' AND revoked_at IS NULL"
+            ).fetchone()
+        ):
             raise ApiError(409, "single_publisher", "une seule personne publie au lot 1 (décision D16)")
         binding_id = uuid7()
-        u.conn.execute("INSERT INTO role_bindings (id, user_id, role, project_id, environment_id, granted_by) "
-                       "VALUES (%s, %s, %s, %s, %s, %s)",
-                       (binding_id, user_id, role, project_id, environment_id, u.p.user_id))
-        audit.record(u.conn, actor_type="user", actor_id=str(u.p.user_id), action="role.grant", outcome="ok",
-                     project_id=project_id, targets={"user": str(user_id), "role": role,
-                                                     "environment": str(environment_id or "")},
-                     request_id=u.request_id)
+        u.conn.execute(
+            "INSERT INTO role_bindings (id, user_id, role, project_id, environment_id, granted_by) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (binding_id, user_id, role, project_id, environment_id, u.p.user_id),
+        )
+        audit.record(
+            u.conn,
+            actor_type="user",
+            actor_id=str(u.p.user_id),
+            action="role.grant",
+            outcome="ok",
+            project_id=project_id,
+            targets={"user": str(user_id), "role": role, "environment": str(environment_id or "")},
+            request_id=u.request_id,
+        )
         return {"id": str(binding_id)}
 
 
@@ -368,8 +430,6 @@ def revoke_role(binding_id: UUID, request: Request) -> dict[str, Any]:
                      request_id=u.request_id)
         return {"id": str(binding_id), "revoked": True, "sessions": "invalidées"}
 
-
-# --- Audit, état ------------------------------------------------------------------------
 
 @router.get("/audit")
 def list_audit(request: Request, project_id: UUID | None = None, correlation_id: UUID | None = None,
