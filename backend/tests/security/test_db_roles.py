@@ -15,12 +15,15 @@ ALLOWED = {
         "SELECT id, ref, key_id FROM secrets",
         "SELECT id_hash FROM sessions",
         "SELECT count(*) FROM audit_log",
+        "SELECT id, reason FROM environment_freezes",
+        "UPDATE environment_freezes SET lifted_at = lifted_at WHERE false",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
         "SELECT ciphertext FROM secrets",
         "SELECT id, user_id, revoked_at FROM sessions",
         "SELECT count(*) FROM audit_log",
+        "SELECT id, reason FROM environment_freezes",
     ],
 }
 
@@ -31,6 +34,7 @@ DENIED = {
         "DELETE FROM audit_log",
         "DELETE FROM secrets",
         "UPDATE alembic_version SET version_num = version_num",
+        "DELETE FROM environment_freezes",
     ],
     "rackloom_worker": [
         "SELECT id_hash FROM sessions",
@@ -41,6 +45,9 @@ DENIED = {
         "UPDATE audit_log SET action = action",
         "DELETE FROM audit_log",
         "UPDATE alembic_version SET version_num = version_num",
+        # Le worker lit le gel (R080) sans pouvoir le poser ni le lever.
+        "INSERT INTO environment_freezes (id) VALUES (gen_random_uuid())",
+        "UPDATE environment_freezes SET lifted_at = now()",
     ],
 }
 

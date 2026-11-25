@@ -11,8 +11,9 @@ from .. import projects, registry
 from ..changes import service
 from ..errors import ApiError
 from ..identity.authz import Principal
+from ..projects import freezes
 from .deps import csrf_guard, idempotent, unit_of_work
-from .views import change_summary, change_view, deployment_summary
+from .views import change_summary, change_view, deployment_summary, environment_view, freeze_view
 
 router = APIRouter(tags=["projets"], dependencies=[Depends(csrf_guard)])
 
@@ -36,7 +37,7 @@ def list_environments(project: str, request: Request) -> list[dict[str, Any]]:
         out = []
         for env in projects.environments(u.conn, p["id"]):
             pol = projects.current_policy(u.conn, env["id"])
-            out.append({**_env_view(env), "policy_version": pol["version"] if pol else None})
+            out.append({**environment_view(u.conn, u.p, env), "policy_version": pol["version"] if pol else None})
         return out
 
 
@@ -61,7 +62,7 @@ def services_for(conn, principal: Principal, project: dict[str, Any]) -> list[di
             rules = (projects.current_policy(conn, env["id"]) or {}).get("rules", {})
             lifetime = rules.get("lifetime", {})
             labels = spec["size_tier"].get("value_labels", {})
-            targets.append({**_env_view(env),
+            targets.append({**_env_view(env), "freeze": freeze_view(freezes.active(conn, env["id"])),
                             "size_tiers": [{"value": t, "label": labels.get(t, t)} for t in params["size_tiers"]],
                             "default_size_tier": params["default_size_tier"],
                             "lifetime": {"required": bool(lifetime.get("required")),

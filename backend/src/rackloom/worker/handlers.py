@@ -63,21 +63,26 @@ def _load(conn: Conn, job: dict[str, Any], lock: bool = True) -> dict[str, Any]:
     return ctx
 
 
-def _admit(r: JobContext, conn: Conn, ctx: dict[str, Any], recompute=None) -> None:
+def _admit(r: JobContext, conn: Conn, ctx: dict[str, Any], recompute=None, stage: str = "start") -> None:
     decision = admission.evaluate(admission.Context(
         conn=conn, job=r.job, change=ctx["change"], environment=ctx["env"], execution=ctx["execution"],
-        approval=ctx["approval"], plan=ctx["plan"], revision=ctx["revision"], recompute_digest=recompute))
+        approval=ctx["approval"], plan=ctx["plan"], revision=ctx["revision"], recompute_digest=recompute),
+        stage=stage)
+    label = (f"Admission (règles {decision['policy']['version']})" if stage == "start"
+             else "Contrôle avant envoi au fournisseur")
     if decision["outcome"] == "admitted":
-        r.fenced(conn, "state = 'running', blocked_reason = NULL")
-        r.step(conn, "Admission (règles builtin@1)", "succeeded",
+        if stage == "start":
+            r.fenced(conn, "state = 'running', blocked_reason = NULL")
+        r.step(conn, label, "succeeded",
                summary={"rules": [x["id"] for x in decision["rules"]], "policy": decision["policy"]["version"]})
         return
     refusal = decision["refusal"]
     r.fenced(conn, "state = 'blocked', blocked_reason = %s, finished_at = now(), lease_owner = NULL",
              (refusal["code"],))
     admission.release_stack(conn, r.job)
-    r.step(conn, "Admission (règles builtin@1)", "failed", summary={"rule": refusal["id"], "reason": refusal["reason"]})
+    r.step(conn, label, "failed", summary={"rule": refusal["id"], "reason": refusal["reason"]})
     r.event(conn, "job.blocked", {"kind": r.job["kind"], "rule": refusal["id"], "code": refusal["code"],
+                                  "stage": stage,
                                   "message": f"Admission refusée ({refusal['id']}) : {refusal['reason']}"},
             severity="error")
     change = ctx["change"]
@@ -210,13 +215,18 @@ def handle_tf_apply(r: JobContext) -> None:
     (work / "in" / "plan.bin").write_bytes(plan_bytes)
     if hashlib.sha256((work / "in" / "plan.bin").read_bytes()).hexdigest() != plan["plan_sha256"]:
         raise RuntimeError("copie du plan altérée")
-    with r.tx() as conn:
-        r.fenced(conn, "dispatched_at = now(), provider_ref = %s", (run_id,))
-        conn.execute("UPDATE executions SET started_at = coalesce(started_at, now()), state = 'running' WHERE id = %s",
-                     (r.job["execution_id"],))
-        change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (r.job["change_id"],)).fetchone()
-        transition(conn, change, "executing", reason_code="apply_dispatched", actor_type="worker",
-                   actor_id=r.worker_id, detail={"plan_id": str(plan["id"])})
+    try:
+        with r.tx() as conn:
+            current = _load(conn, r.job)
+            _admit(r, conn, current, stage="dispatch")
+            r.fenced(conn, "dispatched_at = now(), provider_ref = %s", (run_id,))
+            conn.execute("UPDATE executions SET started_at = coalesce(started_at, now()), state = 'running' "
+                         "WHERE id = %s", (r.job["execution_id"],))
+            transition(conn, current["change"], "executing", reason_code="apply_dispatched", actor_type="worker",
+                       actor_id=r.worker_id, detail={"plan_id": str(plan["id"])})
+    except Refused:
+        r.cleanup(run_id)
+        raise
     status = r.run({"run_id": run_id, "kind": "terraform", "stack": ctx["stack"]["slug"], "timeout_seconds": 1800})
     finish_apply(r, run_id, status)
 
@@ -657,61 +667,78 @@ def _start_wave(
         )
 
 
+def _configure_targets(conn: Conn, job: dict[str, Any], ctx: dict[str, Any]) -> list[dict[str, Any]]:
+    payload = job["payload"]
+    if payload.get("waves"):
+        return list(
+            conn.execute(
+                "SELECT * FROM hosts WHERE deployment_id = %s AND name = ANY(%s) "
+                "AND deployment_state = ANY(%s) ORDER BY name",
+                (ctx["deployment"]["id"], payload["waves"][payload["wave"]], list(CONFIGURABLE)),
+            ).fetchall()
+        )
+    ids = [UUID(i) for i in payload["host_ids"]]
+    return list(
+        conn.execute(
+            "SELECT * FROM hosts WHERE id = ANY(%s) AND deployment_id = %s ORDER BY name",
+            (ids, ctx["deployment"]["id"]),
+        ).fetchall()
+    )
+
+
+def _record_configure(r: JobContext, conn: Conn, job: dict[str, Any], targets: list[dict[str, Any]],
+                      resolution: dict[str, Any], rc: int | None, summary: dict[str, Any], *,
+                      source: str) -> list[dict[str, Any]]:
+    """Enregistre le rapport configure et met à jour les hôtes. Retourne ceux configurés avec succès."""
+    _store_ansible_report(r, conn, "configure", rc, summary)
+    payload = job["payload"]
+    waves = payload.get("waves") or []
+    prefix = f"{_wave_label(waves, payload['wave']).capitalize()} · " if len(waves) > 1 else ""
+    configured: list[dict[str, Any]] = []
+    for h in targets:
+        ok, reason = _host_ok(summary, h["name"])
+        conn.execute("UPDATE hosts SET deployment_state = %s WHERE id = %s",
+                     ("configured" if ok else "config_failed", h["id"]))
+        comps = ", ".join(f"{c['slug']} {c['version']}" for c in resolution["components"])
+        host_stats = summary.get("hosts", {}).get(h["name"]) or {}
+        # Ansible omet l'hôte du compteur `changed` quand rien n'a changé.
+        changed = host_stats.get("changed", 0)
+        r.step(
+            conn,
+            f"{prefix}Configuration {comps} ({h['name']})",
+            "succeeded" if ok else "failed",
+            summary={
+                "host": h["name"],
+                **({"changed": changed} if ok else {}),
+                **({"reason": reason} if not ok else {}),
+            },
+        )
+        if ok:
+            configured.append(h)
+    result = {"configured": [h["name"] for h in configured], "exit_code": rc, "outcome": "configured",
+              "source": source}
+    if source == "workspace":
+        conn.execute("UPDATE jobs SET state = 'succeeded', finished_at = now(), result = %s, updated_at = now() "
+                     "WHERE id = %s AND state = 'uncertain'", (Jsonb(result), job["id"]))
+    else:
+        r.fenced(conn, "state = 'succeeded', finished_at = now(), result = %s", (Jsonb(result),))
+    return configured
+
+
 def handle_ansible_configure(r: JobContext) -> None:
     with r.tx() as conn:
         ctx = _load(conn, r.job)
         _admit(r, conn, ctx)
         resolution = ctx["resolution"]
         payload = r.job["payload"]
-        if payload.get("waves"):
-            targets = conn.execute(
-                "SELECT * FROM hosts WHERE deployment_id = %s AND name = ANY(%s) "
-                "AND deployment_state = ANY(%s) ORDER BY name",
-                (ctx["deployment"]["id"], payload["waves"][payload["wave"]], list(CONFIGURABLE)),
-            ).fetchall()
-        else:
-            ids = [UUID(i) for i in payload["host_ids"]]
-            targets = conn.execute(
-                "SELECT * FROM hosts WHERE id = ANY(%s) AND deployment_id = %s ORDER BY name",
-                (ids, ctx["deployment"]["id"]),
-            ).fetchall()
+        targets = _configure_targets(conn, r.job, ctx)
         targets = [h for h in targets if h["address"] and hosts.anchor_for(conn, h["address"])]
         run_id = str(r.job["id"])
         work, stdin = _prepare_ansible(r, conn, run_id, resolution, "configure", targets)
         r.fenced(conn, "dispatched_at = now(), provider_ref = %s", (run_id,))
     rc, summary = _ansible_run(r, run_id, "ansible", stdin)
-    configured = []
-    waves = payload.get("waves") or []
-    prefix = f"{_wave_label(waves, payload['wave']).capitalize()} · " if len(waves) > 1 else ""
     with r.tx() as conn:
-        _store_ansible_report(r, conn, "configure", rc, summary)
-        for h in targets:
-            ok, reason = _host_ok(summary, h["name"])
-            conn.execute(
-                "UPDATE hosts SET deployment_state = %s WHERE id = %s",
-                ("configured" if ok else "config_failed", h["id"]),
-            )
-            comps = ", ".join(f"{c['slug']} {c['version']}" for c in resolution["components"])
-            host_stats = summary.get("hosts", {}).get(h["name"]) or {}
-            # Ansible omet l'hôte du compteur `changed` quand rien n'a changé.
-            changed = host_stats.get("changed", 0)
-            r.step(
-                conn,
-                f"{prefix}Configuration {comps} ({h['name']})",
-                "succeeded" if ok else "failed",
-                summary={
-                    "host": h["name"],
-                    **({"changed": changed} if ok else {}),
-                    **({"reason": reason} if not ok else {}),
-                },
-            )
-            if ok:
-                configured.append(h)
-        r.fenced(
-            conn,
-            "state = 'succeeded', finished_at = now(), result = %s",
-            (Jsonb({"configured": [h["name"] for h in configured], "exit_code": rc}),),
-        )
+        _record_configure(r, conn, r.job, targets, resolution, rc, summary, source="runner")
         change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (r.job["change_id"],)).fetchone()
         queue.enqueue(
             conn,
@@ -722,6 +749,38 @@ def handle_ansible_configure(r: JobContext) -> None:
             payload={k: v for k, v in payload.items() if k in ("waves", "wave", "retry_approval_id")},
         )
     r.cleanup(run_id)
+
+
+def finish_configure(r: JobContext, run_id: str, status: dict[str, Any], *, job: dict[str, Any]) -> str:
+    """Conclut un ansible_configure à partir des sorties du runner (réconciliation, aucune relance)."""
+    work = r.settings.workspaces_dir / run_id
+    summary = read_json(work / "out" / "ansible_summary.json", {}) or {}
+    rc = status.get("exit_code")
+    if rc is None and (work / "out" / "exit_code").exists():
+        try:
+            rc = int((work / "out" / "exit_code").read_text(encoding="utf-8").strip())
+        except ValueError:
+            rc = None
+    with r.tx() as conn:
+        ctx = _load(conn, job)
+        targets = _configure_targets(conn, job, ctx)
+        configured = _record_configure(r, conn, job, targets, ctx["resolution"], rc, summary, source="workspace")
+        change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (job["change_id"],)).fetchone()
+        if change["state"] == "reconciling":
+            change = transition(conn, change, "executing", reason_code="reconciled_configure",
+                                actor_type="worker", actor_id=r.worker_id,
+                                detail={"outcome": "configured", "source": "workspace"})
+        payload = job["payload"]
+        queue.enqueue(
+            conn,
+            kind="verify",
+            change=change,
+            execution_id=job["execution_id"],
+            idempotency_key=f"verify:reconcile:{job['id']}",
+            payload={k: v for k, v in payload.items() if k in ("waves", "wave", "retry_approval_id")},
+        )
+    r.cleanup(run_id)
+    return "configured" if configured else "configure_failed"
 
 
 CHECK_FAILURES = {
@@ -1204,7 +1263,17 @@ def handle_reconcile(r: JobContext) -> None:
 
 
 def _reconcile_other(r: JobContext, target: dict[str, Any], status: dict[str, Any]) -> None:
-    """Configuration Ansible interrompue : aucune relance, l'opérateur demande une reprise approuvée."""
+    """Ansible : conclure depuis les sorties si présentes ; sinon interrompu, aucune relance automatique."""
+    run_id = target["provider_ref"] or str(target["id"])
+    out = r.settings.workspaces_dir / run_id / "out"
+    if (target["kind"] == "ansible_configure" and status["state"] == "exited" and (out / "exit_code").exists()
+            and (out / "ansible_summary.json").exists()):
+        outcome = finish_configure(r, run_id, status, job=target)
+        with r.tx() as conn:
+            r.step(conn, "Conclusion : sorties du runner retrouvées", "succeeded", summary={"outcome": outcome})
+            r.fenced(conn, "state = 'succeeded', finished_at = now(), result = %s",
+                     (Jsonb({"source": "launcher", "outcome": outcome}),))
+        return
     with r.tx() as conn:
         conn.execute("UPDATE jobs SET state = 'failed', finished_at = now(), result = %s WHERE id = %s "
                      "AND state = 'uncertain'", (Jsonb({"outcome": "interrupted", "launcher": status["state"]}),

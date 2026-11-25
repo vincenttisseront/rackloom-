@@ -23,6 +23,7 @@ from . import (
     routes_auth,
     routes_changes,
     routes_chat,
+    routes_environments,
     routes_follow,
     routes_projects,
     routes_resources,
@@ -116,6 +117,7 @@ def create_app() -> FastAPI:
     for module in (
         routes_auth,
         routes_projects,
+        routes_environments,
         routes_changes,
         routes_follow,
         routes_resources,

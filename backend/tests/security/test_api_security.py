@@ -22,6 +22,7 @@ from rackloom.api import (
     routes_auth,
     routes_changes,
     routes_chat,
+    routes_environments,
     routes_follow,
     routes_projects,
     routes_resources,
@@ -31,11 +32,10 @@ from rackloom.changes import service
 from rackloom.identity.service import create_bootstrap_token
 
 API = "/api/v1"
-
-
 MODULES = (
     routes_auth,
     routes_projects,
+    routes_environments,
     routes_changes,
     routes_follow,
     routes_resources,

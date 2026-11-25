@@ -39,6 +39,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/environments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Environments
+         * @description Tous les environnements, pour geler d'urgence sans rôle sur le projet (administrateur, auditeur en lecture).
+         */
+        get: operations["admin_environments_api_v1_admin_environments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/environments/{environment_id}/policies": {
         parameters: {
             query?: never;
@@ -651,6 +671,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/environments/{environment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Environment */
+        get: operations["get_environment_api_v1_environments__environment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/environments/{environment_id}/freeze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Freeze */
+        post: operations["freeze_api_v1_environments__environment_id__freeze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/environments/{environment_id}/unfreeze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unfreeze */
+        post: operations["unfreeze_api_v1_environments__environment_id__unfreeze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health/live": {
         parameters: {
             query?: never;
@@ -1239,6 +1310,28 @@ export interface operations {
         };
     };
     list_components_api_v1_admin_components_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+    };
+    admin_environments_api_v1_admin_environments_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -2480,6 +2573,117 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_environment_api_v1_environments__environment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                environment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    freeze_api_v1_environments__environment_id__freeze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                environment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unfreeze_api_v1_environments__environment_id__unfreeze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                environment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
             content: {
                 "application/json": {
                     [key: string]: unknown;

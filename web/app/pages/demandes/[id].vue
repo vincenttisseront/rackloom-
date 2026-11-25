@@ -141,6 +141,12 @@ const resultTone = computed(() => SERVICE_TONE[service.value?.service_status] ||
     <div v-if="error" class="banner bad" role="alert" data-testid="error">{{ error }}</div>
     <div v-if="notice" class="banner info" role="status">{{ notice }}</div>
     <div v-if="stream.ended.value" class="banner warn" role="status">Session terminée : le suivi en direct est interrompu. Reconnectez-vous.</div>
+    <div v-if="change.environment_freeze" class="banner warn" role="status" data-testid="freeze-banner">
+      <strong>Environnement {{ change.environment?.name }} gelé</strong> depuis le {{ dateTime(change.environment_freeze.frozen_at) }}
+      par {{ change.environment_freeze.frozen_by }} : « {{ change.environment_freeze.reason }} ».
+      Aucun job d'écriture ne démarre pendant le gel, même déjà approuvé ; un job déjà envoyé au fournisseur continue et son état réel s'affiche ci-dessous.
+      La lecture et le diagnostic restent disponibles.
+    </div>
 
     <!-- Résultat : l'état du service vient des contrôles de santé, pas du succès des jobs. -->
     <div v-if="service" class="result" :class="resultTone" data-testid="service-result">
@@ -161,6 +167,7 @@ const resultTone = computed(() => SERVICE_TONE[service.value?.service_status] ||
           <div v-if="can('approve') || can('reject')" class="card" style="margin-top: 1rem; background: var(--surface-2)" data-testid="approval">
             <h3>Votre décision</h3>
             <p class="small">Vous approuvez exactement ce plan et cette empreinte. Une nouvelle version du besoin révoquerait l'approbation.</p>
+            <p v-if="change.environment_freeze && !can('approve')" class="small field-error" data-testid="approval-frozen">Approbation suspendue pendant le gel de l'environnement ; le refus reste possible.</p>
             <label for="approval-comment">Commentaire <span class="muted small">(obligatoire pour un refus)</span></label>
             <textarea id="approval-comment" v-model="comment" maxlength="1000" />
             <div class="actions" style="margin-top: 0.5rem">
@@ -169,7 +176,8 @@ const resultTone = computed(() => SERVICE_TONE[service.value?.service_status] ||
             </div>
           </div>
           <p v-else-if="change.state === 'plan_ready'" class="banner info small" data-testid="awaiting-approval">
-            En attente d'approbation par {{ change.revision?.summary?.approval }}.
+            <template v-if="change.environment_freeze">Approbation suspendue : l'environnement est gelé.</template>
+            <template v-else>En attente d'approbation par {{ change.revision?.summary?.approval }}.</template>
           </p>
         </PlanPanel>
 
@@ -177,6 +185,7 @@ const resultTone = computed(() => SERVICE_TONE[service.value?.service_status] ||
           <h2>Reprise de la configuration demandée</h2>
           <p class="small">Hôtes concernés : {{ change.pending_retry.host_ids.length }} · demandée le {{ dateTime(change.pending_retry.requested_at) }}</p>
           <template v-if="can('approve_retry') || can('reject_retry')">
+            <p v-if="change.environment_freeze && !can('approve_retry')" class="small field-error">Approbation suspendue pendant le gel de l'environnement ; le refus reste possible.</p>
             <label for="retry-comment">Commentaire</label>
             <textarea id="retry-comment" v-model="comment" maxlength="1000" />
             <div class="actions" style="margin-top: 0.5rem">
@@ -184,7 +193,7 @@ const resultTone = computed(() => SERVICE_TONE[service.value?.service_status] ||
               <button v-if="can('reject_retry')" type="button" class="danger" :disabled="busy" @click="decideRetry('rejected')">{{ label('reject_retry') }}</button>
             </div>
           </template>
-          <p v-else class="small muted">En attente d'un approbateur.</p>
+          <p v-else class="small muted">{{ change.environment_freeze ? "Approbation suspendue : l'environnement est gelé." : "En attente d'un approbateur." }}</p>
         </section>
 
         <div v-if="can('request_retry')" class="banner warn">

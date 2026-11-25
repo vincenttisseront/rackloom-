@@ -5,10 +5,11 @@ Alice décrit le besoin et soumet, Bruno approuve l'empreinte du plan, puis le s
 le résultat du service. Lancer depuis la racine : `uv run --project backend python scripts/smoke-d1.py`.
 
 `--restart-during KIND` (T25) : dès qu'un job de ce type est en cours, `docker compose down` des services
-de l'appliance sans suppression de volumes, puis `up`. Si la réconciliation laisse un succès partiel
-(Ansible interrompu : aucune relance automatique), Alice demande une reprise et Bruno l'approuve.
-Le script vérifie ensuite que les données sont conservées, que la modification aboutit et qu'aucun
-job ni hôte n'est en double.
+de l'appliance sans suppression de volumes, puis `up`. Si les sorties Ansible sont sur disque, la
+réconciliation conclut sans relance ; sinon un succès partiel peut être repris (Alice demande, Bruno
+approuve). Le script vérifie ensuite que les données sont conservées, que la modification aboutit
+(reprise jusqu'à succès, ou réconciliation sans doublon) et qu'aucun job `tf_apply` ni hôte n'est
+en double.
 """
 
 from __future__ import annotations
@@ -123,31 +124,50 @@ def main() -> int:
 
     terminal = ("succeeded", "partially_succeeded", "failed", "cancelled")
     view = wait(alice, cid, lambda x: x["state"] in terminal, "fin de la modification")
-    # Ansible interrompu : réconciliation sans relance → succès partiel ; reprise humaine approuvée.
-    if args.restart_during and view["state"] == "partially_succeeded":
+    jobs = alice.get(f"{API}/changes/{cid}/jobs").json()
+    # Interrompu sans sorties exploitables : reprise humaine. Si la réconciliation a déjà conclu
+    # depuis le disque (F28), on n'ajoute pas de reprise (hôtes peut-être hors états retryables).
+    reconciled_already = (
+        view["state"] == "partially_succeeded"
+        and any(j["kind"] == "reconcile" and j["state"] == "succeeded" for j in jobs)
+        and any(j["kind"] == args.restart_during and j["state"] in ("failed", "succeeded")
+                for j in jobs)
+    ) if args.restart_during else False
+    if args.restart_during and view["state"] == "partially_succeeded" and not reconciled_already:
         print("T25 : succès partiel après redémarrage — demande de reprise ansible_configure")
         retry = post(alice, f"/changes/{cid}/retries", {"step": "ansible_configure"})
         post(bruno, f"/changes/{cid}/approvals",
              {"retry_id": retry["retry_id"], "bundle_digest": retry["bundle_digest"], "decision": "approved"})
         view = wait(alice, cid, lambda x: x["state"] in terminal, "fin après reprise")
+        jobs = alice.get(f"{API}/changes/{cid}/jobs").json()
     dep = view["deployment"]
     print("modification :", view["state"], "| service :", dep["service_status"], "—", dep.get("service_reason"))
-    jobs = alice.get(f"{API}/changes/{cid}/jobs").json()
     for job in jobs:
         simulated = [s["name"] for s in job.get("steps", []) if s["simulated"]]
         print(f"  {job['kind']:<18} {job['state']:<10} tentatives={job['attempts']}",
               f"SIMULÉ : {', '.join(simulated)}" if simulated else "")
-    ok = view["state"] == "succeeded" and dep["service_status"] == "ready"
-    print("D1 (Compose) :", "OK" if ok else "ÉCHEC")
+    resumed = view["state"] == "succeeded" and dep["service_status"] == "ready"
+    print("D1 (Compose) :", "OK" if resumed else "ÉCHEC" if not args.restart_during else
+          ("OK (reprise)" if resumed else "réconciliation attendue"))
     if args.restart_during:
         hosts = alice.get(f"{API}/deployments/{dep['id']}").json()["hosts"]
         changes_after = alice.get(f"{API}/projects/vitrine/changes").json()
         kept = {c["id"] for c in changes_before} <= {c["id"] for c in changes_after}
         applies = Counter(j["kind"] for j in jobs)["tf_apply"]
         names = [h["name"] for h in hosts]
-        print(f"T25 : données conservées={kept}, jobs tf_apply={applies}, hôtes={names}")
-        ok = ok and kept and applies == 1 and len(names) == len(set(names)) == plan["counts"]["create"]
+        # lot-1-plan T25 : reprise *ou* réconciliation, données conservées, aucun doublon.
+        reconciled = (
+            view["state"] == "partially_succeeded"
+            and any(j["kind"] == "reconcile" and j["state"] == "succeeded" for j in jobs)
+            and any(j["kind"] == args.restart_during and j["state"] in ("failed", "succeeded") for j in jobs)
+        )
+        print(f"T25 : données conservées={kept}, jobs tf_apply={applies}, hôtes={names}",
+              f"reprise={resumed} réconcilié={reconciled}")
+        unique = len(names) == len(set(names)) == plan["counts"]["create"]
+        ok = (resumed or reconciled) and kept and applies == 1 and unique
         print("T25 (redémarrage) :", "OK" if ok else "ÉCHEC")
+    else:
+        ok = resumed
     return 0 if ok else 1
 
 

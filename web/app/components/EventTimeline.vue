@@ -11,7 +11,9 @@ function text(e: RackloomEvent): string {
     case 'job.queued': return `${d.label || JOB_LABELS[d.kind] || d.kind} : en file`
     case 'job.step': return `${d.step}${d.state === 'failed' ? ' — échec' : ''}`
     case 'job.failed': return `${JOB_LABELS[d.kind] || d.kind || 'Job'} : échec${d.reason ? ` (${d.reason})` : ''}`
-    case 'job.blocked': return `${JOB_LABELS[d.kind] || d.kind || 'Job'} : bloqué à l'admission${d.reason ? ` (${d.reason})` : ''}`
+    case 'job.blocked': return `${JOB_LABELS[d.kind] || d.kind || 'Job'} : bloqué ${d.stage === 'dispatch' ? "avant l'envoi au fournisseur" : "à l'admission"}${d.message ? ` — ${d.message}` : ''}`
+    case 'environment.frozen': return `Environnement ${d.environment} gelé par ${d.by} : « ${d.reason} »`
+    case 'environment.unfrozen': return `Environnement ${d.environment} dégelé par ${d.by} : « ${d.reason} »`
     case 'job.uncertain': return `${JOB_LABELS[d.kind] || d.kind || 'Job'} : résultat incertain, réconciliation requise`
     case 'job.requeued': return `${JOB_LABELS[d.kind] || d.kind || 'Job'} : remis en file`
     case 'job.cancel_requested': return 'Annulation demandée (non garantie)'
