@@ -34,7 +34,6 @@ check_cmd() {
 }
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-VENV_PY="$ROOT/.venv/bin/python"
 
 echo "Rackloom doctor — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo
@@ -44,6 +43,16 @@ check_cmd docker 1 24.0 docker version --format '{{.Client.Version}}'
 check_cmd "docker compose" 1 2.20 docker compose version --short
 if docker info >/dev/null 2>&1; then
   ok "docker daemon" "joignable"
+  if [ "$(docker info --format '{{.CgroupVersion}}' 2>/dev/null)" = 2 ]; then
+    ok "cgroup" "v2"
+  else
+    fail "cgroup" "v2 requis (limites des runners)"
+  fi
+  missing=""
+  for image in backend launcher runner-terraform runner-ansible lab-node web; do
+    docker image inspect "rackloom/$image:dev" >/dev/null 2>&1 || missing="$missing $image"
+  done
+  if [ -z "$missing" ]; then ok "images" "rackloom/*:dev construites"; else warn "images" "absentes :$missing ('make images')"; fi
 else
   fail "docker daemon" "injoignable (démarrer dockerd ou ajouter l'utilisateur au groupe docker)"
 fi
@@ -51,31 +60,23 @@ fi
 echo
 echo "== Langages =="
 check_cmd python3 1 3.12 python3 --version
+check_cmd uv 1 0.5 uv --version
 check_cmd node 1 22.0 node --version
 check_cmd npm 1 10.0 npm --version
-check_cmd pnpm 0 9.0 pnpm --version
-if [ -x "$VENV_PY" ]; then
-  ok "venv" "$ROOT/.venv"
+if [ -x "$ROOT/backend/.venv/bin/python" ]; then
+  ok "venv" "backend/.venv"
 else
   warn "venv" "absent : lancer 'make venv'"
 fi
+if [ -d "$ROOT/web/node_modules" ]; then ok "web" "dépendances installées"; else warn "web" "lancer 'make venv'"; fi
 
 echo
-echo "== Base de données (dev natif, optionnel en mode Compose) =="
+echo "== Outils natifs (optionnels : runners Terraform et Ansible conteneurisés) =="
+check_cmd terraform 0 1.6 terraform version
+check_cmd ansible-playbook 0 2.16 ansible-playbook --version
 check_cmd psql 0 16.0 psql --version
 check_cmd postgres 0 16.0 bash -c 'ls /usr/lib/postgresql/*/bin/postgres >/dev/null 2>&1 && /usr/lib/postgresql/*/bin/postgres --version'
-
-echo
-echo "== Outils d'exécution =="
-check_cmd terraform 1 1.6 terraform version
-check_cmd ansible-playbook 1 2.16 ansible-playbook --version
-if [ -x "$ROOT/.venv/bin/ansible-runner" ]; then
-  check_cmd ansible-runner 1 2.3 "$ROOT/.venv/bin/ansible-runner" --version
-else
-  check_cmd ansible-runner 1 2.3 ansible-runner --version
-fi
 check_cmd ssh-keygen 1 "" bash -c 'ssh -V 2>&1'
-check_cmd sshd 0 "" bash -c '/usr/sbin/sshd -V 2>&1 || true'
 
 echo
 echo "== Navigateur (tests e2e) =="
@@ -84,6 +85,11 @@ if command -v google-chrome >/dev/null 2>&1 || command -v chromium >/dev/null 2>
   ok "chromium" "disponible"
 else
   warn "chromium" "absent : 'npx playwright install chromium' pour make test-e2e"
+fi
+if command -v certutil >/dev/null 2>&1; then
+  ok "certutil" "magasin NSS de test (CA locale vérifiée)"
+else
+  warn "certutil" "absent (libnss3-tools) : requis par make test-e2e"
 fi
 
 echo
