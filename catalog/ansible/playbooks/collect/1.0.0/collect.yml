@@ -1,0 +1,42 @@
+---
+# Collecte en lecture seule (identité rackloom-collect, sans élévation) : OS, paquet,
+# état du service, extrait borné du journal d'erreurs nginx.
+- name: Collecter l'état des hôtes enrôlés
+  hosts: enrolled
+  gather_facts: true
+  become: false
+  tasks:
+    - name: Version du paquet nginx
+      ansible.builtin.command: dpkg-query -W -f=${Version} nginx
+      register: rl_pkg
+      changed_when: false
+      failed_when: false
+
+    - name: Processus nginx
+      ansible.builtin.command: pgrep -x nginx
+      register: rl_proc
+      changed_when: false
+      failed_when: false
+
+    - name: Gestionnaire de services
+      ansible.builtin.command: cat /proc/1/comm
+      register: rl_init
+      changed_when: false
+      failed_when: false
+
+    - name: Extrait du journal d'erreurs nginx (50 lignes, 16 Kio au plus)
+      ansible.builtin.shell: "tail -n 50 /var/log/nginx/error.log 2>/dev/null | head -c 16384"
+      register: rl_journal
+      changed_when: false
+      failed_when: false
+
+    - name: Rapport Rackloom
+      ansible.builtin.set_fact:
+        rackloom_report:
+          os: "{{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+          kernel: "{{ ansible_facts['kernel'] }}"
+          package_nginx: "{{ rl_pkg.stdout if rl_pkg.rc == 0 else None }}"
+          process_nginx: "{{ rl_proc.rc == 0 }}"
+          init: "{{ rl_init.stdout }}"
+          journal_source: "/var/log/nginx/error.log"
+          journal: "{{ rl_journal.stdout }}"

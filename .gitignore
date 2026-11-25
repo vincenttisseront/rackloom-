@@ -1,0 +1,35 @@
+# Secrets et données de laboratoire : jamais dans le dépôt.
+.lab/
+.env
+.env.*
+.secrets/
+*.key
+*.pem
+*.p12
+*.tfstate
+*.tfstate.*
+*.tfplan
+plan.bin
+plan.json
+*.dump
+*.sql.gz
+exports/
+
+# Outillage
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.import_linter_cache/
+.terraform/
+node_modules/
+web/.nuxt/
+web/.output/
+web/.data/
+web/test-results/
+web/playwright-report/
+dist/
+build/
+*.egg-info/

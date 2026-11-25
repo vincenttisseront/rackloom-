@@ -1,0 +1,21 @@
+---
+- name: Installer nginx depuis le dépôt approuvé et signé
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: true
+    install_recommends: false
+
+- name: Démarrer nginx et l'activer au démarrage
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true
+
+- name: Marquer nginx comme activé au redémarrage du nœud de labo
+  ansible.builtin.file:
+    path: /var/lib/lab-node/nginx-enabled
+    state: touch
+    mode: "0644"
+    modification_time: preserve
+    access_time: preserve

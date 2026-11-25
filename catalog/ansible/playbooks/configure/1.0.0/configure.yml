@@ -1,0 +1,9 @@
+---
+# Configuration approuvée : applique les rôles du profil de service aux hôtes enrôlés.
+# Aucune variable utilisateur ne peut changer la destination, la connexion ou les privilèges.
+- name: Configurer les hôtes enrôlés
+  hosts: enrolled
+  gather_facts: true
+  become: true
+  roles:
+    - role: rackloom.nginx

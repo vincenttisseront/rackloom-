@@ -1,0 +1,55 @@
+schema: rackloom.demo-profile/v1
+# Profil de démonstration. Refusé en profil production. Identités fictives en .demo.invalid ;
+# mots de passe générés à chaque chargement, jamais stockés dans le dépôt.
+projects:
+  - slug: vitrine
+    name: Vitrine
+    templates: [ubuntu-web]
+    environments:
+      - {slug: lab, name: Lab, kind: lab, requires_distinct_approver: true, plan_ttl_seconds: 14400}
+      - {slug: prod, name: Production, kind: prod, requires_distinct_approver: true,
+         plan_ttl_seconds: 3600}
+  - slug: compta
+    name: Comptabilité
+    templates: [ubuntu-web]
+    environments:
+      - {slug: lab, name: Lab, kind: lab, requires_distinct_approver: true, plan_ttl_seconds: 14400}
+  # Projet sans réseau octroyé : la résolution est bloquée avec une explication (démonstration 3).
+  - slug: recherche
+    name: Recherche
+    templates: [ubuntu-web]
+    environments:
+      - {slug: lab, name: Lab, kind: lab, requires_distinct_approver: true, plan_ttl_seconds: 14400}
+
+users:
+  - {email: admin@demo.invalid, name: "Admin (démo)",
+     roles: [{role: platform_admin}, {role: template_publisher}]}
+  - {email: alice@demo.invalid, name: "Alice (opératrice)", roles: [{role: operator, project: vitrine}]}
+  - {email: bruno@demo.invalid, name: "Bruno (approbateur)", roles: [{role: approver, project: vitrine}]}
+  - {email: chloe@demo.invalid, name: "Chloé (opératrice compta)",
+     roles: [{role: operator, project: compta}, {role: operator, project: recherche}]}
+  - {email: david@demo.invalid, name: "David (auditeur)", roles: [{role: auditor}]}
+
+# Octrois de ressources de l'inventaire simulé. vitrine/prod ne reçoit rien : une demande
+# explicite de production y est bloquée avec une explication, jamais redirigée.
+grants:
+  - {project: vitrine, environment: lab, kind: network, stable_id: network-101}
+  - {project: vitrine, environment: lab, kind: image, stable_id: vm-500}
+  - {project: vitrine, environment: lab, kind: cluster, stable_id: domain-c10}
+  - {project: vitrine, environment: lab, kind: datastore, stable_id: datastore-201}
+  - {project: vitrine, environment: lab, kind: datastore, stable_id: datastore-202}
+  - {project: vitrine, environment: lab, kind: folder, stable_id: group-v21}
+  - {project: compta, environment: lab, kind: network, stable_id: network-102}
+  - {project: compta, environment: lab, kind: image, stable_id: vm-500}
+  - {project: compta, environment: lab, kind: cluster, stable_id: domain-c10}
+  - {project: compta, environment: lab, kind: datastore, stable_id: datastore-201}
+  - {project: compta, environment: lab, kind: folder, stable_id: group-v22}
+  - {project: recherche, environment: lab, kind: image, stable_id: vm-500}
+  - {project: recherche, environment: lab, kind: cluster, stable_id: domain-c10}
+  - {project: recherche, environment: lab, kind: datastore, stable_id: datastore-201}
+
+connectors:
+  - {slug: vsphere-fake, kind: vsphere, mode: simulated}
+  - {slug: terraform-cli, kind: terraform, mode: real}
+  - {slug: ansible-runner, kind: ansible, mode: real}
+  - {slug: assistant, kind: model, mode: simulated}

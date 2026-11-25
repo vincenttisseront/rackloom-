@@ -1,0 +1,45 @@
+schema: rackloom.component/v1
+name: nginx
+version: 1.0.0
+title: "Serveur web Nginx"
+# Niveau de preuve du composant : testé localement sur les nœuds de labo (pas en laboratoire réel).
+evidence: tested_locally
+
+supports:
+  os:
+    - {family: ubuntu, versions: ["24.04"]}
+prerequisites:
+  - {id: apt_signed_repository, description: "dépôt apt signé contenant nginx configuré sur l'hôte"}
+
+# Contrat de paramètres : seuls ces paramètres existent ; un paramètre inconnu est refusé
+# et signalé « non pris en charge », jamais transformé en argument libre.
+parameters:
+  mode:
+    type: enum
+    values: [static_site]
+    default: static_site
+    description: "Contenu statique local. Le mode reverse proxy n'est pas encore pris en charge."
+  listen_port:
+    type: integer
+    values: [80]
+    default: 80
+    description: "Port HTTP d'écoute."
+
+dependencies: []
+incompatibilities: [apache2]
+
+effects:
+  packages: [nginx]
+  services: [{name: nginx, state: started, enabled: true}]
+  ports: [{port: 80, protocol: tcp}]
+  files: [/etc/nginx/sites-enabled/default]
+  reboot: false
+
+implementation:
+  ansible_role: {name: rackloom.nginx, version: 1.0.0}
+  privilege_escalation: required
+
+health_checks:
+  - {type: package_installed, package: nginx}
+  - {type: service_active, unit: nginx}
+  - {type: http_probe, port: 80, path: /, expect_status: 200}
