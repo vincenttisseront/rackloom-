@@ -107,8 +107,10 @@ def _bad(field: str, message: str, code: str = "invalid_input") -> ApiError:
     return ApiError(422, code, message, field=field)
 
 
-def validate_need(raw: Any) -> dict[str, Any]:
-    """V01 et V02 : forme exacte du besoin. Renvoie le besoin normalisé."""
+def validate_need(raw: Any, partial: bool = False) -> dict[str, Any]:
+    """V01 et V02 : forme exacte du besoin. Renvoie le besoin normalisé.
+
+    `partial` admet un service non encore choisi (brouillon transmis à l'assistant)."""
     if not isinstance(raw, dict):
         raise _bad("/", "le besoin doit être un objet JSON", "field_not_allowed")
     _scan_locked(raw)
@@ -122,7 +124,9 @@ def validate_need(raw: Any) -> dict[str, Any]:
         extra = sorted(set(service) - {"template"}) if isinstance(service, dict) else []
         raise ApiError(422, "field_not_allowed", "service : seul « template » est attendu",
                        field=f"/service/{extra[0]}" if extra else "/service")
-    if not isinstance(service["template"], str) or not re.match(r"^[a-z][a-z0-9-]{1,40}$", service["template"]):
+    if partial and service["template"] is None:
+        pass
+    elif not isinstance(service["template"], str) or not re.match(r"^[a-z][a-z0-9-]{1,40}$", service["template"]):
         raise _bad("/service/template", "identifiant de service invalide")
     env = raw.get("environment")
     if env is not None and (not isinstance(env, str) or not re.match(r"^[a-z][a-z0-9-]{1,40}$", env)):

@@ -12,7 +12,15 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..errors import ApiError
-from . import routes_admin, routes_auth, routes_changes, routes_follow, routes_projects, routes_resources
+from . import (
+    routes_admin,
+    routes_auth,
+    routes_changes,
+    routes_chat,
+    routes_follow,
+    routes_projects,
+    routes_resources,
+)
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +81,8 @@ def create_app() -> FastAPI:
                              "details": {"request_id": getattr(request.state, "request_id", None)}},
                             status_code=500)
 
-    for module in (routes_auth, routes_projects, routes_changes, routes_follow, routes_resources, routes_admin):
+    for module in (routes_auth, routes_projects, routes_changes, routes_follow, routes_resources, routes_chat,
+                   routes_admin):
         app.include_router(module.router, prefix=PREFIX)
     app.include_router(routes_admin.health, prefix=PREFIX)
     return app
