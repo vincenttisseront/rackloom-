@@ -22,7 +22,8 @@ from uuid import UUID
 import httpx
 import psycopg
 
-from .. import audit, events, projects, registry, resolver
+from .. import audit, events, projects, registry
+from ..changes import need as need_schema
 from ..config import get_settings
 from ..db import Jsonb
 from ..errors import ApiError, not_found
@@ -118,7 +119,7 @@ def _target_env(envs: list[dict[str, Any]], slug: str | None) -> dict[str, Any] 
 
 def _invalid_patch_path(path: Any) -> TurnInvalid:
     last = str(path).rstrip("/").rsplit("/", 1)[-1]
-    if resolver._is_technical(last):
+    if need_schema.is_locked_key(last):
         return TurnInvalid("locked_field", f"valeur technique proposée ({path}) : réglage verrouillé, choisi par "
                            "Rackloom")
     return TurnInvalid("schema_violation", f"champ non modifiable par l'assistant : {path!r}")
@@ -399,7 +400,7 @@ def post_message(conn: psycopg.Connection, principal: Principal, conversation_id
         raise ApiError(422, "invalid_mode", "mode attendu : draft ou explain", field="/mode")
     raw_need = body.get("need") or {"schema": "rackloom.need/v1", "service": {"template": None},
                                     "environment": None, "confirm_production": False, "inputs": {}}
-    need = resolver.validate_need(raw_need, partial=True)
+    need = need_schema.validate(raw_need, partial=True)
     redactor = Redactor()
     project = conn.execute("SELECT * FROM projects WHERE id = %s", (conv["project_id"],)).fetchone()
     context = build_context(conn, principal, project, need)

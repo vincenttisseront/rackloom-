@@ -73,3 +73,28 @@ ignore_missing_imports = true
 check_untyped_defs = true
 warn_unused_ignores = true
 no_implicit_optional = true
+
+# docs/architecture.md §3. Le chat passe par `changes` pour faire revalider son brouillon : seuls ses
+# imports directs sont contraints.
+[tool.importlinter]
+root_package = "rackloom"
+
+[[tool.importlinter.contracts]]
+name = "resolver : fonction pure, sans connecteurs, exécutions ni secrets"
+type = "forbidden"
+source_modules = ["rackloom.resolver"]
+forbidden_modules = ["rackloom.connectors", "rackloom.executions", "rackloom.secrets"]
+
+[[tool.importlinter.contracts]]
+name = "chat : ni inventaire, ni résolveur, ni secrets, ni exécutions, ni approbations, ni connecteurs"
+type = "forbidden"
+source_modules = ["rackloom.chat"]
+forbidden_modules = ["rackloom.inventory", "rackloom.resolver", "rackloom.secrets", "rackloom.executions",
+                     "rackloom.approvals", "rackloom.connectors"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "registry : publier ne crée aucun job"
+type = "forbidden"
+source_modules = ["rackloom.registry"]
+forbidden_modules = ["rackloom.executions", "rackloom.approvals", "rackloom.worker"]
