@@ -1,8 +1,8 @@
-"""Environnements : état, gel et dégel d'urgence (F28).
+"""Environnements : gel d'urgence (F28) et calendrier de changement (F27).
 
-Geler suspend le démarrage des jobs d'écriture de l'environnement ; la lecture (inventaire,
-collecte, vérification, diagnostic) reste disponible. Le contrôle effectif est la règle
-d'admission R080 évaluée par le worker, jamais seulement cette route.
+Geler suspend le démarrage des jobs d'écriture ; le calendrier programme les écritures dans
+des fenêtres et refuse les périodes de gel planifiées. Le contrôle effectif est l'admission
+(R080, R090) évaluée par le worker, jamais seulement ces routes.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from fastapi import APIRouter, Body, Depends, Request
 
 from .. import workflow
 from ..errors import ApiError, forbidden
-from ..projects import freezes
+from ..projects import calendars, freezes
 from .deps import csrf_guard, idempotent, unit_of_work
 from .views import environment_view
 
@@ -57,6 +57,87 @@ def freeze(environment_id: UUID, request: Request, body: dict[str, Any] = Body(.
 @router.post("/environments/{environment_id}/unfreeze")
 def unfreeze(environment_id: UUID, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return _toggle(environment_id, request, body, "unfreeze")
+
+
+@router.get("/environments/{environment_id}/calendar")
+def get_calendar(environment_id: UUID, request: Request) -> dict[str, Any]:
+    with unit_of_work(request) as u:
+        env = freezes.load(u.conn, u.p, environment_id)
+        return {"environment_id": str(env["id"]), **calendars.summary(u.conn, env["id"])}
+
+
+@router.put("/environments/{environment_id}/calendar/timezone")
+def put_timezone(environment_id: UUID, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    _only(body, {"timezone"})
+    with unit_of_work(request, write=True) as u:
+        env = freezes.load(u.conn, u.p, environment_id)
+
+        def act() -> dict[str, Any]:
+            workflow.require_action(u.conn, u.p, "environment", env, "manage_calendar")
+            calendars.set_timezone(u.conn, u.p, environment_id, str(body.get("timezone") or ""), u.request_id)
+            return {"environment_id": str(env["id"]), **calendars.summary(u.conn, env["id"])}
+
+        return idempotent(u, request, body, act)
+
+
+@router.post("/environments/{environment_id}/calendar/windows")
+def post_window(environment_id: UUID, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    _only(body, {"weekdays", "start_local", "end_local", "label"})
+    with unit_of_work(request, write=True) as u:
+        env = freezes.load(u.conn, u.p, environment_id)
+
+        def act() -> dict[str, Any]:
+            workflow.require_action(u.conn, u.p, "environment", env, "manage_calendar")
+            calendars.add_window(u.conn, u.p, environment_id, body, u.request_id)
+            return {"environment_id": str(env["id"]), **calendars.summary(u.conn, env["id"])}
+
+        return idempotent(u, request, body, act)
+
+
+@router.post("/environments/{environment_id}/calendar/windows/{window_id}/revoke")
+def revoke_window(environment_id: UUID, window_id: UUID, request: Request,
+                  body: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+    payload = body or {}
+    _only(payload, set())
+    with unit_of_work(request, write=True) as u:
+        env = freezes.load(u.conn, u.p, environment_id)
+
+        def act() -> dict[str, Any]:
+            workflow.require_action(u.conn, u.p, "environment", env, "manage_calendar")
+            calendars.revoke_window(u.conn, u.p, environment_id, window_id, u.request_id)
+            return {"environment_id": str(env["id"]), **calendars.summary(u.conn, env["id"])}
+
+        return idempotent(u, request, payload, act)
+
+
+@router.post("/environments/{environment_id}/calendar/freezes")
+def post_calendar_freeze(environment_id: UUID, request: Request,
+                         body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    _only(body, {"starts_at", "ends_at", "timezone", "reason"})
+    with unit_of_work(request, write=True) as u:
+        env = freezes.load(u.conn, u.p, environment_id)
+
+        def act() -> dict[str, Any]:
+            workflow.require_action(u.conn, u.p, "environment", env, "manage_calendar")
+            calendars.add_freeze(u.conn, u.p, environment_id, body, u.request_id)
+            return {"environment_id": str(env["id"]), **calendars.summary(u.conn, env["id"])}
+
+        return idempotent(u, request, body, act)
+
+
+@router.post("/environments/{environment_id}/calendar/freezes/{freeze_id}/cancel")
+def cancel_calendar_freeze(environment_id: UUID, freeze_id: UUID, request: Request,
+                           body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    _only(body, {"reason"})
+    with unit_of_work(request, write=True) as u:
+        env = freezes.load(u.conn, u.p, environment_id)
+
+        def act() -> dict[str, Any]:
+            workflow.require_action(u.conn, u.p, "environment", env, "manage_calendar")
+            calendars.cancel_freeze(u.conn, u.p, environment_id, freeze_id, body.get("reason"), u.request_id)
+            return {"environment_id": str(env["id"]), **calendars.summary(u.conn, env["id"])}
+
+        return idempotent(u, request, body, act)
 
 
 @router.get("/admin/environments")

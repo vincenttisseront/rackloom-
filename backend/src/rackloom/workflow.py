@@ -8,10 +8,10 @@ Un droit manquant ou la séparation des rôles renvoie 403 ; une action devenue 
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
-from . import resolver
+from . import clock, resolver
 from .changes.transitions import ALLOWED, EDITABLE, STATES
 from .db import Conn
 from .errors import ApiError
@@ -33,16 +33,18 @@ LABELS = {
     "modify": "Modifier ce déploiement",
     "freeze": "Geler l'environnement",
     "unfreeze": "Dégeler l'environnement",
+    "manage_calendar": "Gérer le calendrier",
 }
 
 # Rôle exigé par action (sur le projet et l'environnement de la ressource).
-# Gel : décision D8, provisoire (administrateur de plateforme ou approbateur de l'environnement).
+# Gel / calendrier : décision D8, provisoire (administrateur de plateforme ou approbateur).
 ROLES = {
     "edit": ("operator",), "submit": ("operator",), "cancel": ("operator", "approver"),
     "approve": ("approver",), "reject": ("approver",), "request_retry": ("operator",),
     "approve_retry": ("approver",), "reject_retry": ("approver",), "replan": ("operator",),
     "duplicate": ("operator",), "cancel_job": ("operator", "approver"), "modify": ("operator",),
     "freeze": ("approver", "platform_admin"), "unfreeze": ("approver", "platform_admin"),
+    "manage_calendar": ("approver", "platform_admin"),
 }
 
 
@@ -191,12 +193,13 @@ def _deployment_actions(conn: Conn, deployment: dict[str, Any]) -> dict[str, str
 def _environment_actions(conn: Conn, env: dict[str, Any]) -> dict[str, str | None]:
     frozen = freezes.active(conn, env["id"]) is not None
     return {"freeze": "environnement déjà gelé" if frozen else None,
-            "unfreeze": None if frozen else "environnement non gelé"}
+            "unfreeze": None if frozen else "environnement non gelé",
+            "manage_calendar": None}
 
 
 def evaluate(conn: Conn, principal: Principal, kind: str, resource: dict[str, Any],
              now: datetime | None = None) -> dict[str, dict[str, Any]]:
-    now = now or datetime.now(UTC)
+    now = now or clock.now()
     environment_id = resource.get("environment_id")
     if kind == "change":
         raw = _change_actions(conn, principal, resource, now)

@@ -17,6 +17,9 @@ ALLOWED = {
         "SELECT count(*) FROM audit_log",
         "SELECT id, reason FROM environment_freezes",
         "UPDATE environment_freezes SET lifted_at = lifted_at WHERE false",
+        "SELECT timezone FROM environment_calendars",
+        "SELECT id FROM change_windows",
+        "SELECT id, reason FROM calendar_freezes",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -24,6 +27,9 @@ ALLOWED = {
         "SELECT id, user_id, revoked_at FROM sessions",
         "SELECT count(*) FROM audit_log",
         "SELECT id, reason FROM environment_freezes",
+        "SELECT timezone FROM environment_calendars",
+        "SELECT id FROM change_windows",
+        "SELECT id, reason FROM calendar_freezes",
     ],
 }
 
@@ -35,6 +41,8 @@ DENIED = {
         "DELETE FROM secrets",
         "UPDATE alembic_version SET version_num = version_num",
         "DELETE FROM environment_freezes",
+        "DELETE FROM change_windows",
+        "DELETE FROM calendar_freezes",
     ],
     "rackloom_worker": [
         "SELECT id_hash FROM sessions",
@@ -45,9 +53,11 @@ DENIED = {
         "UPDATE audit_log SET action = action",
         "DELETE FROM audit_log",
         "UPDATE alembic_version SET version_num = version_num",
-        # Le worker lit le gel (R080) sans pouvoir le poser ni le lever.
+        # Le worker lit le gel (R080) et le calendrier (R090) sans pouvoir les modifier.
         "INSERT INTO environment_freezes (id) VALUES (gen_random_uuid())",
         "UPDATE environment_freezes SET lifted_at = now()",
+        "INSERT INTO change_windows (id) VALUES (gen_random_uuid())",
+        "INSERT INTO calendar_freezes (id) VALUES (gen_random_uuid())",
     ],
 }
 

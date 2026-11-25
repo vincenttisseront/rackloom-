@@ -22,6 +22,7 @@ from ..db import Conn, Jsonb
 from ..executions import bundle as bundles
 from ..executions import plans as plan_summary
 from ..executions import queue
+from ..projects import calendars
 from .core import JobContext, Refused, read_json
 
 TERRAFORM_BIN = "terraform"
@@ -648,6 +649,7 @@ def _start_wave(
             },
         )
     if ready:
+        run_after = calendars.schedule_run_after(conn, change["environment_id"])
         queue.enqueue(
             conn,
             kind="ansible_configure",
@@ -655,6 +657,7 @@ def _start_wave(
             execution_id=r.job["execution_id"],
             idempotency_key=f"ansible_configure:{r.job['execution_id']}{suffix}",
             payload=payload,
+            run_after=run_after,
         )
     else:
         queue.enqueue(
