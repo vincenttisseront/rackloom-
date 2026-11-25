@@ -16,7 +16,9 @@ test('F60 — partir d\'un serveur de référence (observations fictives)', asyn
   await expect(page.getByRole('heading', { level: 1, name: 'Atelier de templates' })).toBeVisible()
   await typeInto(page.getByTestId('draft-slug'), 'ubuntu-web-depuis-ref')
   await page.getByTestId('draft-base').selectOption(`${base!.slug}@${base!.version}`)
-  await press(page.getByTestId('mode-reference'))
+  // Space coche la radio ; Enter soumettrait le formulaire encore en mode brief.
+  await press(page.getByTestId('mode-reference'), 'Space')
+  await expect(page.getByTestId('mode-reference')).toBeChecked()
   await expect(page.getByTestId('reference-picker')).toBeVisible()
   await expect(page.getByText(/Observations fictives/i).first()).toBeVisible()
   await press(page.getByTestId('draft-create'))
