@@ -57,8 +57,7 @@ jobs:
       - run: make venv
       - run: make test
       - name: mypy (non bloquant au lot 1, dette chiffrée dans docs/progress.md)
-        continue-on-error: true
-        run: make typecheck
+        run: make typecheck || echo "::warning title=mypy::erreurs de typage restantes (dette du lot 1, non bloquante)"
 
   e2e:
     name: make test-e2e
