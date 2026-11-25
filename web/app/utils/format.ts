@@ -45,6 +45,8 @@ export const JOB_STATES: Record<string, string> = {
 
 export const BLOCK_REASONS: Record<string, string> = {
   env_frozen: 'Environnement gelé : le job ne démarre pas pendant le gel',
+  calendar_frozen: 'Période de gel du calendrier : le job ne démarre pas',
+  outside_change_window: 'Hors fenêtre de maintenance : le job ne démarre pas',
   plan_expired: 'Plan expiré',
   cancel_requested: 'Annulation demandée avant le démarrage',
   requester_revoked: "Le demandeur n'a plus le rôle opérateur",

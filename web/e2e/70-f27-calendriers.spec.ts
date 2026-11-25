@@ -40,7 +40,7 @@ test('F27 — gel calendaire : job en file bloqué à l\'admission, lecture disp
       await page.goto(`/demandes/${planned.id}`)
       await expect(page.getByTestId('plan-panel')).toBeVisible()
       await press(page.getByTestId('approve'))
-      await expect(page.getByText('Plan approuvé')).toBeVisible()
+      await expect(page.getByText('Plan approuvé : exécution du plan approuvé.')).toBeVisible()
       const apply = page.getByTestId('job').filter({ hasText: 'Application du plan' })
       await expect(apply).toContainText('En file')
       await beat(page)
@@ -68,28 +68,50 @@ test('F27 — gel calendaire : job en file bloqué à l\'admission, lecture disp
     }
 
     await page.goto(`/demandes/${planned.id}`)
-    await waitState(page, /Bloquée/)
-    await expect(page.getByTestId('job').filter({ hasText: 'Application du plan' })).toContainText('Bloqué')
-    await expect(page.locator('body')).toContainText(/calendrier|période de gel/i)
+    await waitState(page, "Bloquée à l'admission")
+    const apply = page.getByTestId('job').filter({ hasText: 'Application du plan' })
+    await expect(apply).toContainText('Bloqué')
+    await expect(page.getByTestId('timeline')).toContainText(/R090|période de gel|calendrier/i)
+    const jobs = (await alice.call('GET', `/changes/${planned.id}/jobs`)).body
+    const job = jobs.find((j: any) => j.kind === 'tf_apply')
+    expect([job.state, job.blocked_reason, job.dispatched_at]).toEqual(['blocked', 'calendar_frozen', null])
+    await beat(page)
 
-    await openProject(page)
-    await expect(page.getByTestId('project-calendar-banner')).toBeVisible()
+    const admin = await session('admin')
+    try {
+      const connectors = (await admin.call('GET', '/connectors')).body
+      const fake = connectors.find((c: any) => c.slug === 'vsphere-fake')
+      const inv = await admin.call('POST', `/connectors/${fake.id}/inventory-refresh`)
+      expect(inv.status, JSON.stringify(inv.body)).toBe(200)
+      expect(inv.body.simulated).toBe(true)
+    } finally {
+      await admin.dispose()
+    }
+
     await logout(page)
     await login(page, 'alice')
     await page.goto(`/demandes/${planned.id}`)
-    await expect(page.getByTestId('chat-form')).toBeVisible()
+    await press(page.getByRole('button', { name: "Expliquer avec l'assistant" }))
+    await expect(page.getByText('Voici les derniers événements de ce job')).toBeVisible()
+    await expectAccessible(page, 'F27 demande bloquée par le gel calendaire')
+    await beat(page)
+
+    await logout(page)
+    await login(page, 'bruno')
+    await openProject(page)
+    await expect(page.getByTestId('project-calendar-banner')).toBeVisible()
+    await press(page.getByTestId('calendar-freeze-cancel'))
+    await expect(page.getByTestId('project-calendar-banner')).toHaveCount(0)
+    await beat(page)
   } finally {
     const cal = await bruno.call('GET', `/environments/${dev.id}/calendar`)
-    for (const f of (cal.body.calendar_freezes || []).filter((x: any) => x.active || !x.cancelled_at)) {
-      if (f.active) {
-        await bruno.call('POST', `/environments/${dev.id}/calendar/freezes/${f.id}/cancel`, {
-          reason: 'Fin du scénario F27',
-        })
-      }
+    for (const f of (cal.body.calendar_freezes || []).filter((x: any) => x.active)) {
+      await bruno.call('POST', `/environments/${dev.id}/calendar/freezes/${f.id}/cancel`, {
+        reason: 'Fin du scénario F27',
+      })
     }
     await alice.dispose()
     await chloe.dispose()
     await bruno.dispose()
-    compose('start', 'worker')
   }
 })
