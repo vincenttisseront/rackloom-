@@ -56,8 +56,10 @@ def test_f32_replicas_separes_deterministes(conn, demo):
     assert a["values"]["/placement/instances/0/cluster"]["label"] == "cl-dev-a"
     assert a["values"]["/placement/instances/1/cluster"]["label"] == "cl-dev-b"
     assert [i["datastore"]["stable_id"] for i in a["instances"]] == ["datastore-201", "datastore-202"]
-    # placement ne contient que des refs inventaire (stable_id) — le bundle d'exécution les lit.
+    # Refs inventaire (stable_id) : le bundle d'exécution les lit ; ipam_preview (F03) est métadonnée.
     for key, val in a["placement"].items():
+        if key == "ipam_preview":
+            continue
         if isinstance(val, dict):
             assert "stable_id" in val, key
 
