@@ -122,7 +122,11 @@ def build(
             "stack": stack["slug"],
             "instances": [i["name"] for i in resolution["instances"]],
             "waves": resolution.get("waves") or [[i["name"] for i in resolution["instances"]]],
-            "placement": {k: v["stable_id"] for k, v in resolution["placement"].items() if isinstance(v, dict)},
+            "placement": {
+                k: v["stable_id"]
+                for k, v in resolution["placement"].items()
+                if isinstance(v, dict) and "stable_id" in v
+            },
             "connectors": connectors,
         },
         **_pinned(conn, resolution),

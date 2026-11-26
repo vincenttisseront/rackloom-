@@ -2,10 +2,10 @@
 
 Chaque job est réévalué au moment où un worker le réclame, quelle que soit sa date de mise en
 file (étape `start`). R065 (AT01) borne la configuration aux cibles approuvées. Les règles qui
-dépendent d'un état pouvant changer entre l'admission et l'envoi au fournisseur (gel, calendrier)
-sont rejouées dans la transaction qui marque cet envoi (étape `dispatch`). Emplacements
-réservés, non encore enregistrés : 100 (F11), 110 (F05), 115 (F39), 120 (F03),
-125 (F34), 130 (F16), 135 (F38), 140 (F10). R095 (F37) est enregistrée.
+dépendent d'un état pouvant changer entre l'admission et l'envoi au fournisseur (gel, calendrier,
+capacité) sont rejouées dans la transaction qui marque cet envoi (étape `dispatch`). Emplacements
+réservés, non encore enregistrés : 100 (F11), 115 (F39),
+125 (F34), 130 (F16), 135 (F38), 140 (F10). R095 (F37), R110 (F05) et R120 (F03) sont enregistrées.
 """
 
 
@@ -15,11 +15,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
-from .. import clock, policy
+from .. import clock, ipam, policy
 from ..connectors import circuit
 from ..db import Conn, Jsonb
 from ..identity.authz import Principal, load_bindings
+from ..inventory import capacity as capacity_check
 from ..projects import calendars, freezes
 
 STAGES = ("start", "dispatch")
@@ -264,6 +266,54 @@ def connector_circuit_closed(ctx: Context) -> Verdict:
         return Verdict(True)
     first = opened[0]
     return Verdict(False, circuit.refusal(first), "connector_circuit_open")
+
+
+@rule(110, "R110", "write", stages=("start", "dispatch"))
+def capacity_still_sufficient(ctx: Context) -> Verdict:
+    """Capacité encore suffisante sur le placement ; mesure rejouée, jamais une réservation (F05)."""
+    if ctx.job["kind"] not in ("tf_apply",):
+        return Verdict(True)
+    if ctx.revision is None:
+        return Verdict(False, "révision introuvable pour le contrôle de capacité", "capacity_unknown")
+    report = capacity_check.evaluate_resolution(ctx.conn, ctx.revision["resolved"], now=clock.now())
+    if report["ok"]:
+        return Verdict(True)
+    refusal = report.get("refusal") or {}
+    code = refusal.get("code") or "capacity_below_threshold"
+    reason = refusal.get("reason") or "capacité insuffisante sur le placement"
+    if refusal.get("target"):
+        reason = f"{reason} (ressource : {refusal.get('resource')}, cible : {refusal['target']})"
+    elif refusal.get("resource"):
+        reason = f"{reason} (ressource : {refusal['resource']})"
+    return Verdict(False, reason, code)
+
+
+@rule(120, "R120", "write", stages=("start", "dispatch"))
+def ipam_reservations_ready(ctx: Context) -> Verdict:
+    """Réservations IPAM/DNS réservées pour les instances à créer (F03)."""
+    if ctx.job["kind"] not in ("tf_apply",):
+        return Verdict(True)
+    if ctx.revision is None or ctx.change is None:
+        return Verdict(False, "révision introuvable pour les réservations IPAM", "ipam_missing")
+    instances = list(ctx.revision["resolved"].get("instances") or [])
+    names = [i["name"] for i in instances if not i.get("existing")]
+    if not names:
+        return Verdict(True)
+    try:
+        rows = ipam.ensure_reserved_for_change(
+            ctx.conn,
+            change_id=ctx.change["id"],
+            project_id=ctx.change["project_id"],
+            environment_id=UUID(str(ctx.revision["resolved"]["environment"]["id"])),
+            hostnames=names,
+        )
+    except Exception as exc:  # noqa: BLE001
+        code = getattr(exc, "code", "ipam_missing")
+        return Verdict(False, str(getattr(exc, "message", exc)), code)
+    bad = [r for r in rows if r["state"] not in ("reserved", "confirmed", "held_uncertain")]
+    if bad:
+        return Verdict(False, f"réservation IPAM non prête : {bad[0]['state']}", "ipam_not_reserved")
+    return Verdict(True)
 
 
 @rule(900, "R900", "write")

@@ -258,7 +258,11 @@ const serviceCard = computed(() => deployment.value?.service_card || service.val
           <button type="button" class="primary" :disabled="busy" style="margin-left: 0.5rem" @click="requestRetry">{{ label('request_retry') }}</button>
         </div>
 
-        <PlanDetails v-if="!change.plan && change.revision?.details" :details="change.revision.details" />
+        <!-- F05 : capacité et provenance restent visibles une fois le plan prêt (plan.details). -->
+        <PlanDetails
+          v-if="change.plan?.details || change.revision?.details"
+          :details="change.plan?.details || change.revision.details"
+        />
 
         <section v-if="deployment" class="card" aria-labelledby="hosts-title" data-testid="hosts">
           <div class="field-head">

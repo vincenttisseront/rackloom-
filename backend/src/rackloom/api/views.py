@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from .. import hosts as hosts_mod
@@ -46,6 +46,7 @@ SOURCE_LABELS = {
     "environment_policy": "Politique de l'environnement", "environment_policy_default": "Politique de l'environnement",
     "inventory": "Inventaire", "tie_break": "Départage", "platform": "Plateforme",
     "deployment_pinned": "Version du déploiement", "template_latest_published": "Dernière version publiée",
+    "template_latest_promoted": "Dernière version promue pour l'environnement",
     "project_preference": "Préférence de projet",
 }
 
@@ -105,8 +106,30 @@ def plan_details(resolution: dict[str, Any]) -> dict[str, Any]:
             "source_label": SOURCE_LABELS.get(v["source"], v["source"]), "ref": v.get("ref"),
             "applied": v.get("applied", True), "candidates": v.get("candidates")})
     inv = resolution.get("inventory", {})
+    cap = resolution.get("capacity") or {}
     return {"groups": [{"group": g, "label": GROUP_LABELS[g], "values": vals} for g, vals in groups.items() if vals],
             "inventory": {"observed_at": inv.get("observed_at"), "simulated": inv.get("simulated", True)},
+            "capacity": {
+                "observed_at": cap.get("observed_at"),
+                "age_seconds": (
+                    int((datetime.now(UTC) - datetime.fromisoformat(cap["observed_at"])).total_seconds())
+                    if cap.get("observed_at") else None
+                ),
+                "reservation": False,
+                "notice": cap.get("notice") or "Mesure d'inventaire, pas une réservation.",
+                "simulated": cap.get("simulated", True),
+                "resources": [
+                    {
+                        "resource": r.get("resource"),
+                        "target": r.get("target"),
+                        "free": r.get("free"),
+                        "need": r.get("need"),
+                        "unit": r.get("unit"),
+                        "ok": r.get("ok"),
+                    }
+                    for r in cap.get("resources") or []
+                ],
+            } if cap else None,
             "simulated_steps": [{"key": s, "label": SIMULATED_STEPS.get(s, s)}
                                 for s in resolution.get("simulated_steps", [])],
             "preview_limits": resolution.get("preview_limits", [])}

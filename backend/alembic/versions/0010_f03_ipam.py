@@ -1,21 +1,21 @@
-"""F54 : sollicitations de revue (passer la main).
+"""F03 : réservations IPAM/DNS.
 
-Revision ID: 0009
-Revises: 0008
+Revision ID: 0010
+Revises: 0009
 """
 
 from pathlib import Path
 
 from alembic import op
 
-revision = "0009"
-down_revision = "0008"
+revision = "0010"
+down_revision = "0009"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    sql = (Path(__file__).resolve().parents[1] / "sql" / "0009_f54_reviews.sql").read_text(encoding="utf-8")
+    sql = (Path(__file__).resolve().parents[1] / "sql" / "0010_f03_ipam.sql").read_text(encoding="utf-8")
     op.execute(sql)
 
 

@@ -6,7 +6,7 @@ décision d'admission, chaque résolution et chaque dossier d'exécution : un pl
 une version antérieure est refusé à l'admission (`policy_changed`) et doit être réapprouvé.
 
 Historique : `builtin@1` (lot 1), `builtin@2` (F28 : R080), `builtin@3` (F27 : R090 ;
-R065 AT01), `builtin@4` (F37 : R095 disjoncteur par connecteur).
+R065 AT01), `builtin@4` (F37 : R095), `builtin@5` (F05 : R110), `builtin@6` (F03 : R120 IPAM).
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from typing import Any
 from ..canonical import digest
 from ..db import Conn, Jsonb
 
-BUILTIN_VERSION = "builtin@4"
+BUILTIN_VERSION = "builtin@6"
 
 BUILTIN_RULES: dict[str, Any] = {
     "admission": [
@@ -35,10 +35,14 @@ BUILTIN_RULES: dict[str, Any] = {
          "title": "dans une fenêtre de maintenance, hors gel calendaire"},
         {"id": "R095", "order": 95, "class": "write", "stages": ["start", "dispatch"],
          "title": "disjoncteur du connecteur fermé"},
+        {"id": "R110", "order": 110, "class": "write", "stages": ["start", "dispatch"],
+         "title": "capacité encore suffisante sur le placement (mesure, pas réservation)"},
+        {"id": "R120", "order": 120, "class": "write", "stages": ["start", "dispatch"],
+         "title": "réservations IPAM/DNS confirmées ou réservées pour les cibles"},
         {"id": "R900", "order": 900, "class": "write", "title": "verrou de stack acquis"},
     ],
     # Emplacements réservés au backlog, documentés mais non encore enregistrés.
-    "reserved": {"100": "F11", "110": "F05", "115": "F39", "120": "F03", "125": "F34",
+    "reserved": {"100": "F11", "115": "F39", "125": "F34",
                  "130": "F16", "135": "F38", "140": "F10"},
     "platform": {
         "production_requires_explicit_environment": True,
@@ -46,6 +50,9 @@ BUILTIN_RULES: dict[str, Any] = {
         "never_default_to_production": True,
         "plan_expiry_margin_seconds": 60,
         "inventory_max_age_hours": 24,
+        "capacity_max_age_hours": 24,
+        # Marge minimale restante après allocation, en points de base (500 = 5 %).
+        "capacity_min_free_bps": 500,
         "destructive_actions_blocked": True,
         "connector_circuit_failure_threshold": 3,
     },
