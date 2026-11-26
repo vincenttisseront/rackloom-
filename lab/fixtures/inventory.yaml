@@ -3,8 +3,13 @@ schema: rackloom.fake-inventory/v1
 # entièrement fictifs. Aucune donnée d'infrastructure réelle.
 items:
   - {kind: datacenter, stable_id: datacenter-1, name: dc-demo}
-  - {kind: cluster, stable_id: domain-c10, name: cl-dev, parent: datacenter-1, attributes: {tags: {env: dev}}}
-  - {kind: cluster, stable_id: domain-c20, name: cl-prod, parent: datacenter-1, attributes: {tags: {env: prod}}}
+  # Capacité fictive (F05) : MHz CPU et MiB mémoire ; jamais une réservation.
+  - {kind: cluster, stable_id: domain-c10, name: cl-dev, parent: datacenter-1,
+     attributes: {tags: {env: dev}, cpu_mhz_total: 40000, cpu_mhz_free: 28000,
+                  memory_mb_total: 262144, memory_mb_free: 180000}}
+  - {kind: cluster, stable_id: domain-c20, name: cl-prod, parent: datacenter-1,
+     attributes: {tags: {env: prod}, cpu_mhz_total: 80000, cpu_mhz_free: 50000,
+                  memory_mb_total: 524288, memory_mb_free: 360000}}
   - {kind: folder, stable_id: group-v21, name: vitrine/dev, parent: datacenter-1}
   - {kind: folder, stable_id: group-v22, name: vitrine/prod, parent: datacenter-1}
   - {kind: folder, stable_id: group-v23, name: compta/dev, parent: datacenter-1}

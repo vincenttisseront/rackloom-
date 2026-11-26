@@ -359,6 +359,7 @@ Chaque type de job déclare une classe `read` ou `write`. Les règles d'écritur
 | 80 | gel d'environnement (démarrage et envoi au fournisseur) | write | F28 (`builtin@2`) |
 | 90 | fenêtre ou période de gel du calendrier | write | F27 (`builtin@3`) |
 | 95 | disjoncteur du connecteur fermé | write | F37 (`builtin@4`) |
+| 110 | capacité sur le placement | write | F05 (`builtin@5`) |
 | 100 | droits temporaires encore valides | write | réservé F11 |
 | 110 | capacité sur le placement | write | réservé F05 |
 | 115 | sauvegarde vérifiée pour un changement sensible | write | réservé F39 |
