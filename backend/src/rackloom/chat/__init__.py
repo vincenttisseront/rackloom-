@@ -447,7 +447,7 @@ def post_message(conn: Conn, principal: Principal, conversation_id: UUID,
     except TurnInvalid as exc:
         outcome, code = "rejected", exc.code
         notice = f"Suggestion de l'assistant rejetée ({exc}). Aucune valeur n'a été modifiée."
-        events.emit(conn, type="chat.suggestion_rejected", source="assistant", project_id=project["id"],
+        events.emit(conn, type="chat.suggestion_rejected", source="chat", project_id=project["id"],
                     correlation_id=conv["change_id"], severity="warning",
                     data={"code": exc.code, "message": str(exc), "adapter": cfg["adapter"]})
         audit.record(conn, actor_type="assistant", actor_id=cfg["adapter"], action="chat.suggestion_rejected",

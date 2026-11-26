@@ -239,7 +239,7 @@ def add_window(conn: Conn, principal: Principal, environment_id: UUID, body: dic
                  targets={"environment_id": str(env["id"]), "window_id": str(row["id"])},
                  policy_decision={"weekdays": days, "start": start.isoformat(), "end": end.isoformat()},
                  request_id=request_id)
-    events.emit(conn, type="calendar.window_added", source="rackloom", project_id=env["project_id"],
+    events.emit(conn, type="calendar.window_added", source="system", project_id=env["project_id"],
                 environment_id=env["id"],
                 data={"window_id": str(row["id"]), "weekdays": days, "by": principal.display_name},
                 dedupe_key=f"calendar.window_added:{row['id']}")
@@ -285,7 +285,7 @@ def add_freeze(conn: Conn, principal: Principal, environment_id: UUID, body: dic
                  targets={"environment_id": str(env["id"]), "calendar_freeze_id": str(row["id"])},
                  policy_decision={"reason": reason, "starts_at": starts.isoformat(), "ends_at": ends.isoformat()},
                  request_id=request_id)
-    events.emit(conn, type="calendar.freeze_added", source="rackloom", project_id=env["project_id"],
+    events.emit(conn, type="calendar.freeze_added", source="system", project_id=env["project_id"],
                 environment_id=env["id"],
                 data={"freeze_id": str(row["id"]), "reason": reason, "by": principal.display_name},
                 severity="warning", dedupe_key=f"calendar.freeze_added:{row['id']}")

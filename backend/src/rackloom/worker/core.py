@@ -102,19 +102,40 @@ class JobContext:
 
     # --- Événements -----------------------------------------------------------------------
 
+    def event_source(self, type_: str | None = None) -> str:
+        """Source ADR de la chronologie selon le type de job (F21)."""
+        if type_ == "job.blocked":
+            return "admission"
+        return {
+            "tf_plan": "terraform",
+            "tf_apply": "terraform",
+            "tf_state_read": "terraform",
+            "guest_ready": "vcenter",
+            "ansible_configure": "ansible",
+            "verify": "verification",
+            "reconcile": "system",
+            "inventory_refresh": "vcenter",
+        }.get(self.job["kind"], "job")
+
     def event(self, conn: Conn, type_: str, data: dict[str, Any], severity: str = "info",
-              dedupe: str | None = None) -> None:
-        events.emit(conn, type=type_, source="worker", project_id=self.job["project_id"],
-                    correlation_id=self.job["change_id"], job_id=self.job["id"], data=data, severity=severity,
-                    dedupe_key=dedupe, redactor=self.redactor)
+              dedupe: str | None = None, source: str | None = None) -> None:
+        events.emit(conn, type=type_, source=source or self.event_source(type_),
+                    project_id=self.job["project_id"], correlation_id=self.job["change_id"],
+                    job_id=self.job["id"], data=data, severity=severity, dedupe_key=dedupe,
+                    redactor=self.redactor)
 
     def step(self, conn: Conn, name: str, state: str, *, simulated: bool = False,
-             summary: dict[str, Any] | None = None) -> None:
+             summary: dict[str, Any] | None = None, source: str | None = None) -> None:
+        # Les résumés détaillés restent sur job_steps ; l'événement ne porte que l'essentiel (TB6 / F21).
         queue.add_step(conn, self.job["id"], name, state, simulated=simulated,
                        summary=self.redactor.data(summary or {}))
-        self.event(conn, "job.step", {"kind": self.job["kind"], "step": name, "state": state,
-                                      "simulated": simulated, **({"summary": summary} if summary else {})},
-                   severity="error" if state == "failed" else "info")
+        payload: dict[str, Any] = {
+            "kind": self.job["kind"], "step": name, "state": state, "simulated": simulated,
+        }
+        if summary and isinstance(summary.get("reason"), str):
+            payload["reason"] = summary["reason"]
+        self.event(conn, "job.step", payload, severity="error" if state == "failed" else "info",
+                   source=source)
 
     # --- Espace de travail et runner -------------------------------------------------------
 

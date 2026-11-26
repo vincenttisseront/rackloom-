@@ -61,7 +61,7 @@ def enqueue(conn: Conn, *, kind: str, idempotency_key: str, change: dict[str, An
         (job_id, change["id"] if change else None, pid, execution_id, kind, JOB_CLASS[kind], stack_id,
          Jsonb(payload or {}), idempotency_key, priority, run_after or clock.now(), max_attempts),
     ).fetchone()
-    events.emit(conn, type="job.queued", source="rackloom", project_id=pid,
+    events.emit(conn, type="job.queued", source="job", project_id=pid,
                 correlation_id=change["id"] if change else None, job_id=job_id,
                 data={"kind": kind, "label": JOB_LABELS[kind]}, dedupe_key=f"job.queued:{job_id}")
     return row

@@ -119,21 +119,21 @@ class Worker:
                 if job["dispatched_at"] is None or job["class"] == "read":
                     if job["attempts"] < job["max_attempts"]:
                         queue.retry_later(conn, job, 0)
-                        events.emit(conn, type="job.requeued", source="reaper", project_id=job["project_id"],
+                        events.emit(conn, type="job.requeued", source="system", project_id=job["project_id"],
                                     correlation_id=job["change_id"], job_id=job["id"], severity="warning",
                                     data={"kind": job["kind"],
                                           "message": "Bail expiré avant envoi : job remis en file"})
                         continue
                     conn.execute("UPDATE jobs SET state = 'failed', finished_at = now(), lease_owner = NULL "
                                  "WHERE id = %s", (job["id"],))
-                    events.emit(conn, type="job.failed", source="reaper", project_id=job["project_id"],
+                    events.emit(conn, type="job.failed", source="system", project_id=job["project_id"],
                                 correlation_id=job["change_id"], job_id=job["id"], severity="error",
                                 data={"kind": job["kind"], "message": "Nombre maximal de tentatives atteint"})
                     self._fail_change(conn, job, "nombre maximal de tentatives atteint")
                     continue
                 conn.execute("UPDATE jobs SET state = 'uncertain', lease_owner = NULL, updated_at = now() "
                              "WHERE id = %s", (job["id"],))
-                events.emit(conn, type="job.uncertain", source="reaper", project_id=job["project_id"],
+                events.emit(conn, type="job.uncertain", source="system", project_id=job["project_id"],
                             correlation_id=job["change_id"], job_id=job["id"], severity="warning",
                             data={"kind": job["kind"], "message": "Bail perdu après envoi au runner : résultat "
                                                                   "incertain, réconciliation lancée"})

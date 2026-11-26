@@ -59,7 +59,7 @@ def _created(conn: Conn, principal: Principal, row: dict[str, Any], request_id: 
     conn.execute(
         "INSERT INTO state_transitions (change_id, from_state, to_state, reason_code, actor_type, actor_id) "
         "VALUES (%s, NULL, 'draft', 'created', 'user', %s)", (row["id"], str(principal.user_id)))
-    events.emit(conn, type="change.created", source="rackloom", project_id=row["project_id"],
+    events.emit(conn, type="change.created", source="request", project_id=row["project_id"],
                 correlation_id=row["id"], data={"ref": change_ref(row), "kind": row["kind"], "title": row["title"]},
                 dedupe_key=f"change.created:{row['id']}")
     audit.record(conn, actor_type="user", actor_id=str(principal.user_id), action=f"change.create.{row['kind']}",
@@ -197,7 +197,7 @@ def _supersede(conn: Conn, change: dict[str, Any], version_no: int) -> None:
         RETURNING id
         """, (change["id"],)).fetchall()
     if plans or revoked:
-        events.emit(conn, type="change.superseded", source="rackloom", project_id=change["project_id"],
+        events.emit(conn, type="change.superseded", source="system", project_id=change["project_id"],
                     correlation_id=change["id"], severity="warning",
                     data={"version_no": version_no, "plans_superseded": len(plans),
                           "approvals_revoked": len(revoked),
@@ -341,7 +341,7 @@ def cancel_job(conn: Conn, principal: Principal, job_id: UUID,
     job = conn.execute(
         "UPDATE jobs SET cancel_requested_at = coalesce(cancel_requested_at, now()), cancel_requested_by = %s, "
         "updated_at = now() WHERE id = %s RETURNING *", (principal.user_id, job_id)).fetchone()
-    events.emit(conn, type="job.cancel_requested", source="rackloom", project_id=job["project_id"],
+    events.emit(conn, type="job.cancel_requested", source="system", project_id=job["project_id"],
                 correlation_id=job["change_id"], job_id=job_id, severity="warning",
                 data={"kind": job["kind"], "message": "Annulation demandée : non garantie si le job a démarré"},
                 dedupe_key=f"job.cancel_requested:{job_id}")
