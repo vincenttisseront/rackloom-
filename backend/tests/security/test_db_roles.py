@@ -22,6 +22,8 @@ ALLOWED = {
         "SELECT id, reason FROM calendar_freezes",
         "SELECT id, reviewed FROM catalog_source_pins",
         "SELECT environment_kind FROM template_promotions",
+        "SELECT slug FROM ipam_pools",
+        "SELECT state FROM ipam_reservations",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -34,6 +36,8 @@ ALLOWED = {
         "SELECT id, reason FROM calendar_freezes",
         "SELECT id, reviewed FROM catalog_source_pins",
         "SELECT environment_kind FROM template_promotions",
+        "SELECT slug FROM ipam_pools",
+        "SELECT state FROM ipam_reservations",
     ],
 }
 

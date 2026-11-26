@@ -23,7 +23,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from .. import inventory, policy, projects, registry
+from .. import inventory, ipam, policy, projects, registry
 from ..canonical import digest
 from ..config import get_settings
 from ..db import Conn
@@ -666,7 +666,7 @@ def resolve(
         contract["system_profile"]["network"]["addressing"],
         "template",
         ref="system_profile.network.addressing",
-        label="attribuée par le laboratoire (simulé : nœud de labo associé)",
+        label="attribuée par le laboratoire (prévisualisation IPAM, sans réservation)",
     )
     out["placement"] = {
         "image": {
@@ -794,6 +794,18 @@ def resolve(
     out["preview_limits"] = contract.get("preview_limits", [])
     out["simulated_steps"] = contract.get("simulated_steps", [])
     out["outputs_allowlist"] = contract["outputs_allowlist"]
+    # F03 : prévisualisation IPAM pour les noms résolus — aucune écriture de réservation.
+    new_names = [inst["name"] for inst in out["instances"] if not inst.get("existing")]
+    ipam_previews = ipam.preview_many(conn, hostnames=new_names) if new_names else []
+    out["placement"]["ipam_preview"] = {
+        "reservation": False,
+        "simulated": True,
+        "notice": "Prévisualisation seule : aucune réservation créée.",
+        "candidates": [
+            {"address": p["address"], "dns_name": p["dns_name"], "hostname": p["hostname"]}
+            for p in ipam_previews
+        ],
+    }
     # F05 : mesure de capacité (âge, marge) — jamais présentée comme une réservation.
     cap = capacity_check.evaluate(
         conn,

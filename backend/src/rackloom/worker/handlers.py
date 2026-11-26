@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from .. import admission, artifacts, hosts, registry, secrets
+from .. import admission, artifacts, hosts, ipam, registry, secrets
 from ..canonical import digest, file_tree_digest
 from ..changes.transitions import transition
 from ..db import Conn, Jsonb
@@ -372,6 +372,10 @@ def finish_apply(r: JobContext, run_id: str, status: dict[str, Any], *, job: dic
                                 actor_id=r.worker_id, detail={"outcome": outcome})
         if outcome == "applied":
             conn.execute("UPDATE plans SET status = 'applied' WHERE id = %s", (plan_id,))
+            # F03 : confirmer les réservations IPAM après application réussie.
+            for reservation in ipam.for_change(conn, change["id"]):
+                if reservation["state"] in ("reserved", "held_uncertain"):
+                    ipam.confirm(conn, UUID(reservation["id"]), job_id=target["id"])
             r.event(conn, "execution.applied", {"message": f"Plan appliqué : {len(vms)} ressource(s) de labo présentes",
                                                 "vms": [v["name"] for v in vms]})
             queue.enqueue(conn, kind="guest_ready", change=change, execution_id=target["execution_id"],

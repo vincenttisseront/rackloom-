@@ -96,12 +96,23 @@ class Worker:
                        actor_id=self.worker_id, detail={"message": message}, severity="error")
 
     def _mark_uncertain(self, conn, job: dict[str, Any], reason: str) -> None:
+        from uuid import UUID
+
+        from .. import ipam
+
         change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (job["change_id"],)).fetchone()
         if change["state"] in ("executing", "verifying"):
             transition(conn, change, "uncertain", reason_code="lease_lost_after_dispatch", actor_type="worker",
                        actor_id=self.worker_id, severity="warning",
                        detail={"message": f"Résultat incertain ({reason}) : réconciliation en lecture seule, "
                                           "aucune relance automatique", "job_id": str(job["id"])})
+        # F03 : ne pas libérer une IP potentiellement utilisée avant réconciliation.
+        if job.get("kind") == "tf_apply":
+            for reservation in ipam.for_change(conn, change["id"]):
+                if reservation["state"] in ("reserved", "confirmed", "prepared"):
+                    ipam.hold_uncertain(
+                        conn, UUID(reservation["id"]), reason=reason, job_id=job["id"],
+                    )
         # F37 : une écriture devenue incertaine compte pour le disjoncteur des connecteurs requis.
         for kind in connectors.circuit.required_kinds(job["kind"]):
             connectors.circuit.record_failure_for_kind(

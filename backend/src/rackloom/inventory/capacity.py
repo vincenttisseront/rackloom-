@@ -169,11 +169,12 @@ def evaluate(
             "reason": "les mesures de capacité sont trop anciennes ou absentes",
         }
 
+    # Pas d'`age_seconds` ici : il varie à la seconde et casserait le digest de résolution.
     return {
         "ok": ok,
         "stale": stale,
         "observed_at": observed_at.isoformat() if observed_at else None,
-        "age_seconds": age_seconds,
+        "max_age_hours": cfg["max_age_hours"],
         "simulated": True,
         "reservation": False,
         "notice": "Mesure d'inventaire, pas une réservation.",
