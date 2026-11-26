@@ -176,6 +176,68 @@ def request_retry(change_id: UUID, request: Request, body: dict[str, Any] = Body
         return idempotent(u, request, body, act)
 
 
+@router.get("/changes/{change_id}/estimate")
+def get_estimate(change_id: UUID, request: Request) -> dict[str, Any]:
+    """F56 : estimation de mise à disposition (sans modèle)."""
+    from .. import estimates
+
+    with unit_of_work(request) as u:
+        change = service.get_change(u.conn, u.p, change_id)
+        return estimates.estimate(u.conn, u.p, change)
+
+
+@router.get("/changes/{change_id}/reviews")
+def list_reviews(change_id: UUID, request: Request) -> dict[str, Any]:
+    """F54 : sollicitations et écarts depuis la dernière revue."""
+    from .. import reviews
+
+    with unit_of_work(request) as u:
+        change = service.get_change(u.conn, u.p, change_id)
+        return reviews.list_reviews(u.conn, u.p, change)
+
+
+@router.get("/changes/{change_id}/review-candidates")
+def review_candidates(change_id: UUID, request: Request) -> list[dict[str, Any]]:
+    """F54 : collègues déjà habilités sollicitables."""
+    from .. import reviews
+
+    with unit_of_work(request) as u:
+        change = service.get_change(u.conn, u.p, change_id)
+        return reviews.candidates(u.conn, u.p, change)
+
+
+@router.post("/changes/{change_id}/reviews")
+def create_review(change_id: UUID, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F54 : solliciter un collègue habilité (aucun droit créé)."""
+    from .. import reviews
+
+    _only(body, {"solicited_user_id", "question", "version_no", "revision_no", "plan_id", "focus"})
+    with unit_of_work(request, write=True) as u:
+        change = service.get_change(u.conn, u.p, change_id)
+
+        def act() -> dict[str, Any]:
+            return reviews.solicit(u.conn, u.p, change, body, u.request_id)
+
+        return idempotent(u, request, body, act)
+
+
+@router.post("/changes/{change_id}/reviews/{review_id}/replies")
+def reply_review(
+    change_id: UUID, review_id: UUID, request: Request, body: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    """F54 : répondre sur la version soumise (ne modifie pas le plan)."""
+    from .. import reviews
+
+    _only(body, {"body"})
+    with unit_of_work(request, write=True) as u:
+        change = service.get_change(u.conn, u.p, change_id)
+
+        def act() -> dict[str, Any]:
+            return reviews.reply(u.conn, u.p, change, review_id, body, u.request_id)
+
+        return idempotent(u, request, body, act)
+
+
 @router.post("/deployments/{deployment_id}/changes")
 def modify_deployment(deployment_id: UUID, request: Request,
                       body: dict[str, Any] = Body(default={})) -> dict[str, Any]:

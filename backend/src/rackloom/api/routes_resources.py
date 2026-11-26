@@ -28,6 +28,15 @@ def get_inbox(request: Request) -> dict[str, Any]:
         return inbox.build(u.conn, u.p)
 
 
+@router.get("/examples")
+def get_examples(request: Request) -> dict[str, Any]:
+    """F51 : exemples « qu'est-ce que je peux demander » (tous projets visibles)."""
+    from .. import examples
+
+    with unit_of_work(request) as u:
+        return examples.build(u.conn, u.p)
+
+
 @router.get("/deployments/{deployment_id}")
 def get_deployment(deployment_id: UUID, request: Request) -> dict[str, Any]:
     with unit_of_work(request) as u:

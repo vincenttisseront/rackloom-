@@ -11,6 +11,7 @@ const change = ref<any>(null)
 const jobs = ref<any[]>([])
 const events = ref<RackloomEvent[]>([])
 const deployment = ref<any>(null)
+const estimate = ref<any>(null)
 const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
 const busy = ref(false)
@@ -34,9 +35,14 @@ function scheduleRefresh() {
 
 async function refresh() {
   try {
-    const [c, j] = await Promise.all([api.get(`/changes/${id.value}`), api.get(`/changes/${id.value}/jobs`)])
+    const [c, j, est] = await Promise.all([
+      api.get(`/changes/${id.value}`),
+      api.get(`/changes/${id.value}/jobs`),
+      api.get(`/changes/${id.value}/estimate`).catch(() => null),
+    ])
     change.value = c
     jobs.value = j
+    estimate.value = est
     deployment.value = c.deployment_id ? await api.get(`/deployments/${c.deployment_id}`) : null
   } catch (e) {
     error.value = errorText(e)
@@ -290,6 +296,8 @@ const serviceCard = computed(() => deployment.value?.service_card || service.val
         <JobList :jobs="jobs" :can-cancel="can('cancel_job')" @cancel="cancelJob" />
       </div>
       <div>
+        <DeliveryEstimate :estimate="estimate" />
+        <HandoffPanel :change-id="id" />
         <EventTimeline :events="events" :live="stream.connected.value && !finished" />
         <section v-if="jobs.length" class="card" data-testid="job-explain">
           <h2>Comprendre ce job</h2>

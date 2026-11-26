@@ -5,7 +5,8 @@
 - **Lot 0 (cadrage)** : fusionné dans `main` (PR #1).
 - **Lot 1 (parcours Compose avec résolveur central et modèle template/composant)** : **terminé, testé localement**. Livré en trois PR : #2 et #3 fusionnées en avance, puis la PR de clôture #4 (`cursor/lot-1-cloture-e231`).
 - **Lot A** : **F28** fusionné (PR #6) ; **F27** fusionné (PR #7) ; **F21** fusionné (PR #11). **AT01** fusionné (PR #5) ; **F60** fusionné (PR #8) ; **F57** fusionné (PR #9) ; **F55** fusionné (PR #10).
-- **F31** fusionné (PR #12). **F37** (disjoncteur) : en cours sur `cursor/f37-circuit-breaker-cd8f`.
+- **F31** fusionné (PR #12). **F37** fusionné (PR #13). **F46** fusionné (PR #14). **F47–F50** fusionné (PR #16). **F01** fusionné (PR #17). **F05** fusionné (PR #18). **F03** fusionné (PR #20). **F09** fusionné (PR #21).
+- **F51 à F54 et F56** (simplifier la demande et le suivi) : PR #15 (`cursor/f51-f56-demande-suivi-a149`), rebase Alembic `0012` en cours.
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -62,7 +63,12 @@
 | Contrôle de capacité (F05, règle R110, bundle `builtin@5`) | livré | testé localement | `test_f05_capacity.py` ; chute après approbation → `capacity_below_threshold` ; mesure vieillie → `capacity_stale` ; UI mesure sans réservation ; L2 non fait |
 | Réservations IPAM/DNS (F03, règle R120, bundle `builtin@6`) | livré | testé localement | `test_f03_ipam.py` ; preview sans écriture ; concurrence ; `held_uncertain` ; migration `0010` ; IPAM réel : non |
 | Détection de dérive (F09) | livré | testé localement | `test_f09_drift.py` ; hors Rackloom → dérive datée ; inventaire en erreur → observation_unavailable ; migration `0011` ; aucune correction ; L2 non fait |
-| Fonctions F02 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F37, F46–F50, F55, F57, F60, F01, F05, F03, F09) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances |
+| Exemples « qu'est-ce que je peux demander » (F51) | livré | testé localement | `test_f51_examples.py` ; e2e `91-f51-exemples.spec.ts` ; sans Ollama |
+| Comparateur de choix métier (F52) | livré | testé localement | `test_f52_compare.py` ; e2e `92-f52-comparateur.spec.ts` ; coût/capacité omis (F05/F29/F32) |
+| Demandes similaires (F53) | livré | testé localement | `test_f53_similar.py` ; e2e `93-f53-similaires.spec.ts` ; U1 |
+| Passer la main / revues (F54) | livré | testé localement | `test_f54_reviews.py` ; e2e `94-f54-passer-la-main.spec.ts` ; migration `0012` |
+| Estimation de mise à disposition (F56) | livré (file F36 non livrée → `unavailable`) | testé localement | `test_f56_estimate.py` ; e2e `99-f56-estimation.spec.ts` ; aucun modèle |
+| Fonctions F02 à F45 restantes / F58 à F59 et atelier AT02 à AT04 (hors F01, F03, F05, F09) | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances ; F58/F59 après lot 2 / OIDC |
 
 ## Démonstrations D1 à D6
 
@@ -275,13 +281,13 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F46 banc d'évaluation Ollama (2026-11-26, heure de Paris)
 
-- Branche `cursor/f46-ollama-eval-bench-4c10` depuis `main` (F37 fusionné).
+- Branche `cursor/f46-ollama-eval-bench-4c10` depuis `main` (F37 fusionné) ; fusionnée (#14).
 - Migration `0007` (`chat_eval_reports`, ajout seul) ; prompt versionné `rackloom.chat-prompt/v1` ; `rackloom.chat.eval` rejoue des conversations fictives ; métriques (questions inutiles, résolution du besoin, ciblage, champs verrouillés) ; `defaults_prod` / `asks_vlan` → `verdict=failed` ; API admin + `rackloom chat eval` ; UI Connecteurs.
 - Preuves : `test_f46_eval.py` ; e2e `87-f46-eval.spec.ts`. Qualifier un vrai modèle Ollama : non (D2).
 
 ### F47–F50 chat opérateur (2026-11-26, heure de Paris)
 
-- Branche `cursor/f47-f50-chat-runbooks-routing-d40b` depuis `main` (F46 fusionné).
+- Branche `cursor/f47-f50-chat-runbooks-routing-d40b` depuis `main` (F46 fusionné) ; fusionnée (#16).
 - **F47** : `catalog/runbooks/` + table `runbooks` ; sélection serveur ; `diagnosis` (faits / hypothèses / remédiation `request_draft`) ; aucun job.
 - **F48** : `chat.routing` ; modèle choisi côté serveur ; refus `/model` ; analyse indisponible → motif clair, formulaire intact, pas de cloud.
 - **F49** : `POST …/context-preview` ; retrait d'extraits seulement ; canari filtré (aperçu, envoi, résumé).
@@ -290,7 +296,7 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F01 : catalogue Git avec promotion (2026-11-26, heure de Paris)
 
-- Branche `cursor/f01-catalogue-git-235e` depuis `main` (F47–F50 fusionné).
+- Branche `cursor/f01-catalogue-git-235e` depuis `main` (F47–F50 fusionné) ; fusionnée (#17).
 - Migration `0009` : `catalog_source_pins`, `template_promotions` ; backfill des versions déjà publiées.
 - Import Git local épinglé (`rackloom catalog import-git`), revue (`review-pin` / API), publication refusée si non revue ; promotion explicite pour sources Git (filesystem : promotion initiale auto à la publication).
 - Résolveur : nouvelles demandes → `latest_promoted` pour le kind d'environnement.
@@ -298,23 +304,36 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F05 : contrôle de capacité (2026-11-26, heure de Paris)
 
-- Branche `cursor/f05-capacite-235e` (sur F01). Règle R110 (`start`/`dispatch`), bundle `builtin@5`.
+- Branche `cursor/f05-capacite-235e` (sur F01) ; fusionnée (#18). Règle R110 (`start`/`dispatch`), bundle `builtin@5`.
 - Mesures CPU/mémoire/stockage sur inventaire fictif ; âge ; jamais une réservation ; rejeu à l'admission.
 - Preuves : `test_f05_capacity.py` (2). Cluster réel : non (D2).
 
 ### F03 : IPAM/DNS (2026-11-26, heure de Paris)
 
-- Branche `cursor/f03-ipam-dns-235e` (sur F05). Migration `0010` ; R120 ; `builtin@6` ; adaptateur `ipam-fake` (192.0.2.0/24).
+- Branche `cursor/f03-ipam-dns-235e` (sur F05) ; fusionnée (#20). Migration `0010` ; R120 ; `builtin@6` ; adaptateur `ipam-fake` (192.0.2.0/24).
 - Cycle prepare → reserve → confirm / held_uncertain ; preview sans écriture.
 - Preuves : `test_f03_ipam.py` (4). IPAM réel : non (D2, D11).
 
 ### F09 : détection de dérive (2026-11-26, heure de Paris)
 
-- Branche `cursor/f09-derive-235e` (sur F03). Migration `0011` ; job `drift_scan` (read) ; API `/deployments/{id}/drift`.
+- Branche `cursor/f09-derive-235e` (sur F03) ; fusionnée (#21). Migration `0011` ; job `drift_scan` (read) ; API `/deployments/{id}/drift`.
 - Comparaison state labo vs instances ; panne inventaire → `observation_unavailable` ; aucune correction.
 - Preuves : `test_f09_drift.py` (2). Labo vCenter réel : non (D2).
 
+### F51–F54 et F56 : simplifier la demande et le suivi (2026-11-26, heure de Paris)
+
+- Branche `cursor/f51-f56-demande-suivi-a149` ; rebase sur `main` (Lot B F01/F05/F03/F09, tip `0f1606b`) avant merge.
+- **F51** : `GET /examples`, `GET /projects/{p}/examples` ; UI accueil + nouvelle demande ; `can_submit` ≠ `can_execute` ; aucun exemple prod sans droit.
+- **F52** : `POST /projects/{p}/comparisons` ; services / environnements / niveaux ; critères non vérifiés omis ; mode `auto` si une seule option.
+- **F53** : `POST /projects/{p}/changes/similar` ; dépôt scopé avant similarité (U1) ; aucune fusion.
+- **F54** : migration `0012` (`change_reviews`, après `0011` F09) ; sollicitation / réponse ; events F21 ; aucun `role_binding`.
+- **F56** : `GET /changes/{id}/estimate` ; approbation / créneau F27 / fourchette historique ; file F36 → `unavailable` ; `model_used: false`.
+- **Non démarré** : F58, F59 (attendent lot 2 / OIDC).
+- Preuves : `test_f51_examples.py` … `test_f56_estimate.py` (15) ; e2e `91`–`94`, `99` ; CI. Labo réel : non (D2).
+
 ## Prochain jalon
 
-1. Fusionner la chaîne lot B (**F01** → **F05** → **F03** → **F09**) après CI verte (Vincent).
-2. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
+1. Fusionner **F51–F54 / F56** (#15) sur `main` après CI verte (Vincent).
+2. Ensuite selon le backlog (F02–F45 restantes, AT02–AT04).
+3. F58 / F59 après dépendances (lot 2 / OIDC pour F59).
+4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
