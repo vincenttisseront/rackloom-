@@ -303,7 +303,7 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F03 : IPAM/DNS (2026-11-26, heure de Paris)
 
-- Branche `cursor/f03-ipam-dns-235e` (sur F05). Migration `0009` ; R120 ; `builtin@6` ; adaptateur `ipam-fake` (192.0.2.0/24).
+- Branche `cursor/f03-ipam-dns-235e` (sur F05). Migration `0010` ; R120 ; `builtin@6` ; adaptateur `ipam-fake` (192.0.2.0/24).
 - Cycle prepare → reserve → confirm / held_uncertain ; preview sans écriture.
 - Preuves : `test_f03_ipam.py` (4). IPAM réel : non (D2, D11).
 
