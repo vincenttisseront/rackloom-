@@ -697,6 +697,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ci/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ci Submit
+         * @description Soumet un besoin catégorie A. Rejeu avec la même clé → même demande.
+         */
+        post: operations["ci_submit_api_v1_ci_submissions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ci/submissions/{change_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ci Get */
+        get: operations["ci_get_api_v1_ci_submissions__change_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/connectors": {
         parameters: {
             query?: never;
@@ -907,6 +944,26 @@ export interface paths {
          * @description F09 : enfile un job de lecture `drift_scan` (aucune écriture fournisseur).
          */
         post: operations["trigger_drift_scan_api_v1_deployments__deployment_id__drift_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/deployments/{deployment_id}/outputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Deployment Outputs
+         * @description F33 : sorties typées versionnées (allowlist) ; hors périmètre → 404 ; jamais le state.
+         */
+        get: operations["get_deployment_outputs_api_v1_deployments__deployment_id__outputs_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1743,6 +1800,29 @@ export interface components {
             password: string;
             /** Token */
             token: string;
+        };
+        /** CiSubmitBody */
+        CiSubmitBody: {
+            /** Need */
+            need: {
+                [key: string]: unknown;
+            };
+            /** Project */
+            project: string;
+            /** Provenance */
+            provenance?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Submit
+             * @default false
+             */
+            submit: boolean;
+            /**
+             * Title
+             * @default Demande CI
+             */
+            title: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -3201,6 +3281,74 @@ export interface operations {
             };
         };
     };
+    ci_submit_api_v1_ci_submissions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CiSubmitBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ci_get_api_v1_ci_submissions__change_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_connectors_api_v1_connectors_get: {
         parameters: {
             query?: never;
@@ -3591,6 +3739,39 @@ export interface operations {
         };
     };
     trigger_drift_scan_api_v1_deployments__deployment_id__drift_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_deployment_outputs_api_v1_deployments__deployment_id__outputs_get: {
         parameters: {
             query?: never;
             header?: never;
