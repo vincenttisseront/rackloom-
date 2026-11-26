@@ -1,4 +1,5 @@
 """Gestionnaires par type de job. Enchaînement d'une exécution :
+preflight → tf_plan (F31) ; après approbation :
 tf_apply → guest_ready → ansible_configure → verify, chaque job suivant étant créé dans la
 transaction qui enregistre le succès du précédent. Les paramètres viennent exclusivement de
 la révision approuvée.
@@ -21,7 +22,7 @@ from ..changes.transitions import transition
 from ..db import Conn, Jsonb
 from ..executions import bundle as bundles
 from ..executions import plans as plan_summary
-from ..executions import queue
+from ..executions import preflight, queue
 from ..projects import calendars
 from .core import JobContext, Refused, read_json
 
@@ -128,6 +129,78 @@ def _store_log(r: JobContext, conn: Conn, work: Path, name: str) -> dict[str, An
         return None
     return artifacts.store(conn, project_id=r.job["project_id"], change_id=r.job["change_id"],
                            kind=name.replace(".", "_"), key_class="A", plaintext=r.redactor.bytes(path.read_bytes()))
+
+
+def handle_preflight(r: JobContext) -> None:
+    """F31 : contrôles en lecture seule avant le plan ; aucun changement sur la cible."""
+    with r.tx() as conn:
+        ctx = _load(conn, r.job)
+        _admit(r, conn, ctx)
+        resolution = ctx["resolution"]
+        stack = ctx["stack"]
+        result = preflight.run(conn, resolution=resolution, stack=stack, settings=r.settings)
+        step_names = {
+            "vcenter": "Préflight : accès vCenter",
+            "state": "Préflight : backend de state",
+            "template": "Préflight : prérequis du template",
+            "repos": "Préflight : dépôts et rôles",
+        }
+        for check in result.checks:
+            r.step(
+                conn,
+                step_names.get(check.name, f"Préflight : {check.name}"),
+                "succeeded" if check.ok else "failed",
+                simulated=check.simulated,
+                summary={"code": check.code, "reason": check.message} if not check.ok else {"ok": True},
+            )
+        if not result.ok:
+            code = result.code or "template_prereq_missing"
+            r.fenced(
+                conn,
+                "state = 'failed', finished_at = now(), result = %s",
+                (Jsonb({"code": code, "checks": result.as_dict()["checks"]}),),
+            )
+            r.event(
+                conn,
+                "job.failed",
+                {"kind": "preflight", "code": code, "message": result.message},
+                severity="error",
+            )
+            change = ctx["change"]
+            transition(
+                conn,
+                change,
+                "plan_failed",
+                reason_code=code,
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"message": result.message, "code": code},
+                severity="error",
+            )
+            return
+        # Enfiler tf_plan seulement après un préflight réussi (même révision / payload).
+        payload = dict(r.job["payload"] or {})
+        plan_job = queue.enqueue(
+            conn,
+            kind="tf_plan",
+            change=ctx["change"],
+            stack_id=stack["id"],
+            idempotency_key=(
+                f"tf_plan:{r.job['change_id']}:{payload.get('revision_no')}:"
+                f"{ctx['change']['row_version']}"
+            ),
+            payload=payload,
+        )
+        r.fenced(
+            conn,
+            "state = 'succeeded', finished_at = now(), result = %s",
+            (Jsonb({"ok": True, "tf_plan_job_id": str(plan_job["id"]), "checks": result.as_dict()["checks"]}),),
+        )
+        r.event(
+            conn,
+            "job.succeeded",
+            {"kind": "preflight", "message": result.message, "next": "tf_plan"},
+        )
 
 
 def handle_tf_plan(r: JobContext) -> None:
@@ -1292,6 +1365,7 @@ def _reconcile_other(r: JobContext, target: dict[str, Any], status: dict[str, An
 
 
 HANDLERS = {
+    "preflight": handle_preflight,
     "tf_plan": handle_tf_plan,
     "tf_apply": handle_tf_apply,
     "guest_ready": handle_guest_ready,

@@ -22,6 +22,7 @@ export function isoDay(offsetDays: number): string {
 }
 
 export const JOB_LABELS: Record<string, string> = {
+  preflight: 'Préflight',
   tf_plan: 'Plan Terraform',
   tf_apply: 'Application du plan',
   tf_state_read: 'Lecture du state',

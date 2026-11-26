@@ -30,7 +30,7 @@ API = "/api/v1"
 
 def _approved_and_applied(conn, demo, worker, **need_kw):
     c = flows.create_and_submit(conn, demo, **need_kw)
-    assert worker.drain(kinds=["tf_plan"]) == ["tf_plan"]
+    assert flows.drain_plan(worker) == ["preflight", "tf_plan"]
     flows.approve(conn, demo, c["id"], flows.latest_plan(conn, c["id"]))
     assert worker.drain(kinds=["tf_apply"]) == ["tf_apply"]
     return c

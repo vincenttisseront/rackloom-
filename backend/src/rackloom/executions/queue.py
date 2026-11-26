@@ -17,6 +17,7 @@ from ..ids import uuid7
 
 JOB_CLASS = {
     "inventory_refresh": "read",
+    "preflight": "read",
     "tf_plan": "read",
     "tf_apply": "write",
     "tf_state_read": "read",
@@ -28,6 +29,7 @@ JOB_CLASS = {
 
 JOB_LABELS = {
     "inventory_refresh": "Collecte de l'inventaire",
+    "preflight": "Préflight (accès et prérequis)",
     "tf_plan": "Calcul du plan Terraform",
     "tf_apply": "Application du plan approuvé",
     "tf_state_read": "Lecture du state",

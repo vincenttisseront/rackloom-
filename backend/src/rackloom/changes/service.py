@@ -287,8 +287,9 @@ def submit(conn: Conn, principal: Principal, change_id: UUID, revision_no: int,
                             request_id=request_id)
     change = transition(conn, change, "planning", reason_code="plan_requested", actor_type="user",
                         actor_id=str(principal.user_id), detail={"revision_no": revision_no}, request_id=request_id)
-    job = queue.enqueue(conn, kind="tf_plan", change=change, stack_id=dep["stack_id"],
-                        idempotency_key=f"tf_plan:{change_id}:{revision_no}:{change['row_version']}",
+    # F31 : préflight (lecture seule) avant tf_plan ; tf_plan n'est enfilé qu'après succès.
+    job = queue.enqueue(conn, kind="preflight", change=change, stack_id=dep["stack_id"],
+                        idempotency_key=f"preflight:{change_id}:{revision_no}:{change['row_version']}",
                         payload={"revision_no": revision_no, "version_no": revision["version_no"]})
     return {"change": change, "job_id": job["id"], "deployment_id": dep["id"]}
 
@@ -320,8 +321,8 @@ def replan(conn: Conn, principal: Principal, change_id: UUID,
     dep = conn.execute("SELECT * FROM deployments WHERE id = %s", (change["deployment_id"],)).fetchone()
     change = transition(conn, change, "planning", reason_code="replan_requested", actor_type="user",
                         actor_id=str(principal.user_id), request_id=request_id)
-    job = queue.enqueue(conn, kind="tf_plan", change=change, stack_id=dep["stack_id"],
-                        idempotency_key=f"tf_plan:{change_id}:{change['current_revision_no']}:{change['row_version']}",
+    job = queue.enqueue(conn, kind="preflight", change=change, stack_id=dep["stack_id"],
+                        idempotency_key=f"preflight:{change_id}:{change['current_revision_no']}:{change['row_version']}",
                         payload={"revision_no": change["current_revision_no"],
                                  "version_no": change["current_version_no"], "replan": True})
     return {"change": change, "job_id": job["id"]}

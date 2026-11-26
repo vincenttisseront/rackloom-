@@ -383,7 +383,7 @@ Ils sont présents au lot 1 parce qu'ils coûtent peu et évitent une migration 
 | Statuts `draft`, `lab_tested`, rôle `template_author`, `deployment_policy.waves` | `in_review`, `returned`, rôle auteur et vagues `single` ou `pilot` livrés (AT01) ; `draft` et `lab_tested` restent réservés | F19 (trois nœuds, fenêtres, redémarrage) |
 | `verification_level` des composants calculé depuis les preuves | oui | AT01, F38 |
 | Versions réellement utilisées enregistrées dans le dossier d'exécution | oui | F38 |
-| Insertion d'un job avant `tf_plan` dans la chaîne | oui (aucun job inséré) | F31 |
+| Insertion d'un job avant `tf_plan` dans la chaîne | oui (`preflight`, classe `read`, F31) | F31 |
 | Compteurs d'erreurs par connecteur et par capacité | oui | F37 |
 | `correlation_id` sur événements, jobs, audit, runners et logs ; `events.source` ; `dedupe_key` unique ; reprise SSE | oui | F21, F22, F25, F44 |
 | `policy_bundles` versionnés et politiques d'environnement versionnées dans chaque révision et dossier | oui | F10, F24 |

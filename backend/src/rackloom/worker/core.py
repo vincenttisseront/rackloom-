@@ -36,6 +36,10 @@ STEP_LABELS = {
     "terraform_inspect": "Lecture du state",
     "ansible_play": "Exécution Ansible",
     "http_probe": "Sonde HTTP",
+    "preflight_vcenter": "Préflight : accès vCenter",
+    "preflight_state": "Préflight : backend de state",
+    "preflight_template": "Préflight : prérequis du template",
+    "preflight_repos": "Préflight : dépôts et rôles",
 }
 
 
@@ -107,6 +111,7 @@ class JobContext:
         if type_ == "job.blocked":
             return "admission"
         return {
+            "preflight": "system",
             "tf_plan": "terraform",
             "tf_apply": "terraform",
             "tf_state_read": "terraform",
