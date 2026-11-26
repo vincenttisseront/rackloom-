@@ -310,7 +310,7 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F09 : détection de dérive (2026-11-26, heure de Paris)
 
-- Branche `cursor/f09-derive-235e` (sur F03). Migration `0010` ; job `drift_scan` (read) ; API `/deployments/{id}/drift`.
+- Branche `cursor/f09-derive-235e` (sur F03). Migration `0011` ; job `drift_scan` (read) ; API `/deployments/{id}/drift`.
 - Comparaison state labo vs instances ; panne inventaire → `observation_unavailable` ; aucune correction.
 - Preuves : `test_f09_drift.py` (2). Labo vCenter réel : non (D2).
 
