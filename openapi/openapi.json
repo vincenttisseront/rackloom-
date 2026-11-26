@@ -2438,6 +2438,98 @@
         ]
       }
     },
+    "/api/v1/deployments/{deployment_id}/drift": {
+      "get": {
+        "description": "F09 : dernier scan de dérive (lecture seule, aucune correction).",
+        "operationId": "get_drift_api_v1_deployments__deployment_id__drift_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Drift Api V1 Deployments  Deployment Id  Drift Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Drift",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/deployments/{deployment_id}/drift/scan": {
+      "post": {
+        "description": "F09 : enfile un job de lecture `drift_scan` (aucune écriture fournisseur).",
+        "operationId": "trigger_drift_scan_api_v1_deployments__deployment_id__drift_scan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Trigger Drift Scan Api V1 Deployments  Deployment Id  Drift Scan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trigger Drift Scan",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
     "/api/v1/deployments/{deployment_id}/service-card": {
       "get": {
         "description": "F57 : fiche courte « Votre service est prêt » (périmètre projet, sorties allowlist).",

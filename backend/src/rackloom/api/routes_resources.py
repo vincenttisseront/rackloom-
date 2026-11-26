@@ -43,6 +43,49 @@ def get_service_card(deployment_id: UUID, request: Request) -> dict[str, Any]:
         return service_card.for_principal(u.conn, u.p, deployment_id)
 
 
+@router.get("/deployments/{deployment_id}/drift")
+def get_drift(deployment_id: UUID, request: Request) -> dict[str, Any]:
+    """F09 : dernier scan de dérive (lecture seule, aucune correction)."""
+    from .. import drift
+
+    with unit_of_work(request) as u:
+        dep = service.get_deployment(u.conn, u.p, deployment_id)
+        latest = drift.latest_for_deployment(u.conn, dep["id"])
+        if latest is None:
+            return {"status": "none", "findings": [], "correction": False,
+                    "notice": "Aucun scan de dérive pour ce déploiement."}
+        return latest
+
+
+@router.post("/deployments/{deployment_id}/drift/scan")
+def trigger_drift_scan(deployment_id: UUID, request: Request) -> dict[str, Any]:
+    """F09 : enfile un job de lecture `drift_scan` (aucune écriture fournisseur)."""
+    from .. import drift
+    from ..config import get_settings
+    from ..executions import queue
+
+    with unit_of_work(request, write=True) as u:
+        dep = service.get_deployment(u.conn, u.p, deployment_id)
+        # Scan synchrone pour l'API admin/opérateur (preuve locale) ; job aussi enfilé pour l'audit.
+        result = drift.scan_deployment(
+            u.conn,
+            deployment_id=dep["id"],
+            workspaces_parent=get_settings().data_dir,
+            actor_type="user",
+            actor_id=str(u.p.user_id),
+        )
+        job = queue.enqueue(
+            u.conn,
+            kind="drift_scan",
+            change=None,
+            project_id=dep["project_id"],
+            stack_id=dep.get("stack_id"),
+            idempotency_key=f"drift_scan:{dep['id']}:{result['scan_id']}",
+            payload={"deployment_id": str(dep["id"]), "already_scanned": result["scan_id"]},
+        )
+        return {**result, "job_id": str(job["id"])}
+
+
 def _host(conn, principal, host_id: UUID) -> dict[str, Any]:
     host = conn.execute("SELECT * FROM hosts WHERE id = %s", (host_id,)).fetchone()
     if host is None or not principal.can_see_project(host["project_id"]):

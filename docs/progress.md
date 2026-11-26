@@ -61,7 +61,8 @@
 | Catalogue Git avec promotion (F01) | livré | testé localement | `test_f01_catalogue_git.py` ; migration `0009` ; pins + promotions ; e2e `91-f01-catalogue.spec.ts` ; forge réelle : non |
 | Contrôle de capacité (F05, règle R110, bundle `builtin@5`) | livré | testé localement | `test_f05_capacity.py` ; chute après approbation → `capacity_below_threshold` ; mesure vieillie → `capacity_stale` ; UI mesure sans réservation ; L2 non fait |
 | Réservations IPAM/DNS (F03, règle R120, bundle `builtin@6`) | livré | testé localement | `test_f03_ipam.py` ; preview sans écriture ; concurrence ; `held_uncertain` ; migration `0010` ; IPAM réel : non |
-| Fonctions F02 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F37, F46–F50, F55, F57, F60, F01, F05, F03) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : lot B F09 |
+| Détection de dérive (F09) | livré | testé localement | `test_f09_drift.py` ; hors Rackloom → dérive datée ; inventaire en erreur → observation_unavailable ; migration `0011` ; aucune correction ; L2 non fait |
+| Fonctions F02 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F37, F46–F50, F55, F57, F60, F01, F05, F03, F09) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances |
 
 ## Démonstrations D1 à D6
 
@@ -306,6 +307,12 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Branche `cursor/f03-ipam-dns-235e` (sur F05). Migration `0010` ; R120 ; `builtin@6` ; adaptateur `ipam-fake` (192.0.2.0/24).
 - Cycle prepare → reserve → confirm / held_uncertain ; preview sans écriture.
 - Preuves : `test_f03_ipam.py` (4). IPAM réel : non (D2, D11).
+
+### F09 : détection de dérive (2026-11-26, heure de Paris)
+
+- Branche `cursor/f09-derive-235e` (sur F03). Migration `0011` ; job `drift_scan` (read) ; API `/deployments/{id}/drift`.
+- Comparaison state labo vs instances ; panne inventaire → `observation_unavailable` ; aucune correction.
+- Preuves : `test_f09_drift.py` (2). Labo vCenter réel : non (D2).
 
 ## Prochain jalon
 

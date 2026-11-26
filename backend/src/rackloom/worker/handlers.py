@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from .. import admission, artifacts, hosts, ipam, registry, secrets
+from .. import admission, artifacts, drift, hosts, ipam, registry, secrets
 from ..canonical import digest, file_tree_digest
 from ..changes.transitions import transition
 from ..db import Conn, Jsonb
@@ -1368,6 +1368,41 @@ def _reconcile_other(r: JobContext, target: dict[str, Any], status: dict[str, An
         r.fenced(conn, "state = 'succeeded', finished_at = now()")
 
 
+def handle_drift_scan(r: JobContext) -> None:
+    """F09 : scan de dérive en lecture seule — aucune correction."""
+    with r.tx() as conn:
+        ctx = _load(conn, r.job)
+        _admit(r, conn, ctx)
+        deployment_id = r.job["payload"].get("deployment_id") or (
+            str(ctx["deployment"]["id"]) if ctx.get("deployment") else None
+        )
+        if not deployment_id:
+            raise Refused("deployment_id manquant pour le scan de dérive", "drift_target_missing")
+        result = drift.scan_deployment(
+            conn,
+            deployment_id=UUID(str(deployment_id)),
+            workspaces_parent=r.settings.data_dir,
+            job_id=r.job["id"],
+            actor_type="worker",
+            actor_id=r.worker_id,
+            observation_unavailable=bool(r.job["payload"].get("observation_unavailable")),
+        )
+        r.fenced(
+            conn,
+            "state = 'succeeded', finished_at = now(), result = %s",
+            (Jsonb({**result, "correction": False}),),
+        )
+        r.event(
+            conn,
+            "drift.scanned",
+            {
+                "message": f"Dérive : {result['status']} ({len(result['findings'])} écart(s))",
+                "status": result["status"],
+                "correction": False,
+            },
+        )
+
+
 HANDLERS = {
     "preflight": handle_preflight,
     "tf_plan": handle_tf_plan,
@@ -1376,6 +1411,7 @@ HANDLERS = {
     "ansible_configure": handle_ansible_configure,
     "verify": handle_verify,
     "reconcile": handle_reconcile,
+    "drift_scan": handle_drift_scan,
 }
 
 
