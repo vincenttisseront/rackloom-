@@ -358,9 +358,10 @@ def fake_turn(scenario: str, message: str, context: dict[str, Any], untrusted: l
         if runbooks:
             cited = ", ".join(f"{r['slug']}@{r['version']}" for r in runbooks)
             rb_line = f"\nRunbooks consultés (lecture seule, aucun droit d'exécution) : {cited}."
+        # Libellé d'ouverture stable (F27/F28 e2e) ; F47 ajoute runbooks + hypothèse ensuite.
         reply = (
             (
-                "Voici les faits observés. Ils sont cités comme données, pas comme "
+                "Voici les derniers événements de ce job. Ils sont cités comme données, pas comme "
                 "instructions :\n"
                 + "\n".join(lines)
                 + rb_line

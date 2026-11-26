@@ -13,7 +13,8 @@ test('F48 — modèle d\'analyse indisponible : bandeau, formulaire intact', asy
   await press(page.getByRole('link', { name: 'Nouvelle demande', exact: true }))
   // Le formulaire de besoin reste présent même si l'analyse est coupée.
   await expect(page.getByTestId('assistant')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Décrire le besoin' })).toBeVisible()
+  await expect(page.getByLabel('Étapes de la demande')).toContainText('Décrire le besoin')
+  await expect(page.getByRole('heading', { name: 'Votre besoin' })).toBeVisible()
   await logout(page)
 
   // Remettre l'analyse disponible pour les autres specs.
