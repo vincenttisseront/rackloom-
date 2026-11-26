@@ -779,8 +779,11 @@ def resolve(
         "folder": {"stable_id": folder["stable_id"], "name": folder["name"]},
         "network": {"stable_id": network["stable_id"], "name": network["name"]},
         "addressing": contract["system_profile"]["network"]["addressing"],
-        "anti_affinity": {"scope": anti_affinity["scope"]} if anti_affinity and anti_affinity.get("scope") else None,
     }
+    # Hors de placement : le dossier d'exécution n'attend que des stable_id sous targets.placement.
+    out["anti_affinity"] = (
+        {"scope": anti_affinity["scope"]} if anti_affinity and anti_affinity.get("scope") else None
+    )
 
     # Instances : noms existants conservés, nouveaux noms selon la convention (préférence F50 si valide).
     dims = env_params["size_tiers"][tier]

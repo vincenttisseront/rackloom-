@@ -122,6 +122,7 @@ def build(
             "stack": stack["slug"],
             "instances": [i["name"] for i in resolution["instances"]],
             "waves": resolution.get("waves") or [[i["name"] for i in resolution["instances"]]],
+            # Seulement les références d'inventaire (stable_id) — pas anti_affinity ni autres métadonnées.
             "placement": {
                 k: v["stable_id"]
                 for k, v in resolution["placement"].items()

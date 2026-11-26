@@ -13,10 +13,34 @@ import pytest
 from flows import need
 from rackloom import resolver
 from rackloom.changes import service
+from rackloom.db import Jsonb
 from rackloom.errors import ApiError
 
 
+def _enable_anti_affinity(conn) -> None:
+    """Active anti_affinity sur la version publiée pour la durée du test (déclencheur désactivé)."""
+    conn.execute("ALTER TABLE template_versions DISABLE TRIGGER template_versions_content")
+    try:
+        row = conn.execute(
+            "SELECT id, contract FROM template_versions WHERE slug = 'ubuntu-web' AND version = '1.0.0'"
+        ).fetchone()
+        contract = dict(row["contract"])
+        policy = dict(contract["deployment_policy"])
+        policy["anti_affinity"] = {"scope": "cluster"}
+        contract["deployment_policy"] = policy
+        # digest inchangé volontairement : le contenu est muté uniquement pour le test local.
+        conn.execute(
+            "UPDATE template_versions SET contract = %s WHERE id = %s",
+            (Jsonb(contract), row["id"]),
+        )
+        conn.commit()
+    finally:
+        conn.execute("ALTER TABLE template_versions ENABLE TRIGGER template_versions_content")
+        conn.commit()
+
+
 def test_f32_replicas_separes_deterministes(conn, demo):
+    _enable_anti_affinity(conn)
     p = demo.principal("alice")
     project = demo.project("vitrine")
     n = resolver.validate_need(need(quantity=2))
@@ -28,15 +52,18 @@ def test_f32_replicas_separes_deterministes(conn, demo):
     clusters = [i["cluster"]["stable_id"] for i in a["instances"]]
     assert clusters == ["domain-c10", "domain-c11"]
     assert clusters[0] != clusters[1]
-    assert a["placement"]["anti_affinity"] == {"scope": "cluster"}
+    assert a["anti_affinity"] == {"scope": "cluster"}
     assert a["values"]["/placement/instances/0/cluster"]["label"] == "cl-dev-a"
     assert a["values"]["/placement/instances/1/cluster"]["label"] == "cl-dev-b"
-    # Datastores alignés sur le site du cluster.
     assert [i["datastore"]["stable_id"] for i in a["instances"]] == ["datastore-201", "datastore-202"]
+    # placement ne contient que des refs inventaire (stable_id) — le bundle d'exécution les lit.
+    for key, val in a["placement"].items():
+        if isinstance(val, dict):
+            assert "stable_id" in val, key
 
 
 def test_f32_anti_affinity_unsatisfiable(conn, demo):
-    # Un seul cluster octroyé à vitrine/dev → quantité 2 impossible.
+    _enable_anti_affinity(conn)
     env = demo.env("vitrine", "dev")
     conn.execute(
         "UPDATE resource_grants SET revoked_at = now() WHERE environment_id = %s AND kind = 'cluster' "
@@ -52,6 +79,18 @@ def test_f32_anti_affinity_unsatisfiable(conn, demo):
     assert res["outcome"] == "blocked"
     assert res["blocks"][0]["code"] == "anti_affinity_unsatisfiable"
     assert "sépare les réplicas" in res["blocks"][0]["message"]
+
+
+def test_f32_sans_anti_affinity_un_seul_cluster(conn, demo):
+    """Parcours nominal : sans anti_affinity, quantité 2 reste sur le premier cluster classé."""
+    p = demo.principal("alice")
+    project = demo.project("vitrine")
+    n = resolver.validate_need(need(quantity=2))
+    prov = resolver.validate_provenance({}, n)
+    res = resolver.resolve(conn, principal=p, project=project, need=n, provenance=prov)
+    assert res["outcome"] == "resolved"
+    assert res["anti_affinity"] is None
+    assert [i["cluster"]["stable_id"] for i in res["instances"]] == ["domain-c10", "domain-c10"]
 
 
 def test_f32_cluster_refuse_dans_le_besoin(conn, demo):

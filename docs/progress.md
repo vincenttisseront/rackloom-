@@ -339,7 +339,7 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 ### F32–F35 placement, sorties, licences, CI (2026-11-26, heure de Paris)
 
 - Branche `cursor/f32-f35-placement-outputs-licenses-ci-5bfe` ; rebase sur #15 (`f25d7a5`, F54 `0012`).
-- **F32** : inventaire démo à deux clusters/sites ; placement par réplica + datastore de même site ; anti-affinité seulement quand exigée ; blocage `anti_affinity_unsatisfiable` ; R055 vérifie tous les clusters/datastores.
+- **F32** : inventaire démo à deux clusters/sites ; placement par réplica + datastore de même site ; `anti_affinity` hors de `placement` (bundle n'attend que des `stable_id`) ; activé seulement quand le profil l'exige ; blocage `anti_affinity_unsatisfiable` ; R055 vérifie tous les clusters/datastores.
 - **F33** : table `deployment_outputs` ; publication à l'apply (allowlist) ; `GET /deployments/{id}/outputs` scopé ; jamais le state ; GRANT worker pour Compose.
 - **F34** : module `licenses` (source fictive) ; règle R125 ; bundle `builtin@7` ; `license_unverified_policy=block`.
 - **F35** : utilisateurs `kind=service` + `service_tokens` ; Bearer sans CSRF ; `POST /ci/submissions` idempotent ; approbation refusée (`service_identity_forbidden`).
