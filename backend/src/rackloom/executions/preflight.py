@@ -148,14 +148,22 @@ def _probe_https(url: str, timeout: float = 3.0) -> Check:
 
 
 def check_state(stack: dict[str, Any], settings: Settings) -> Check:
-    """Accès au backend de state sans modifier le state."""
+    """Accès au backend de state sans modifier le state Terraform.
+
+    En `local_demo`, le state vit dans le volume du runner (monté par le launcher), pas
+    dans le worker (`read_only`, sans volume tfstate). On vérifie seulement la déclaration
+    et que l'espace de travail du worker est utilisable — aucun toucher à terraform.tfstate.
+    """
     kind = stack.get("backend_kind") or "local_demo"
     ref = stack.get("backend_ref") or ""
     if kind == "local_demo" or ref.startswith("local://"):
-        path = settings.data_dir / "tfstate" / stack["slug"]
+        if not stack.get("slug"):
+            return Check(name="state", ok=False, code="state_unreachable", message=_msg("state_unreachable"))
         try:
-            path.mkdir(parents=True, exist_ok=True)
-            probe = path / ".rackloom-preflight"
+            # Sonde hors du volume de state : prouve que le worker peut préparer un job.
+            work = settings.workspaces_dir
+            work.mkdir(parents=True, exist_ok=True)
+            probe = work / ".rackloom-preflight-state"
             probe.write_text("ok", encoding="utf-8")
             probe.unlink(missing_ok=True)
         except OSError:
@@ -164,7 +172,7 @@ def check_state(stack: dict[str, Any], settings: Settings) -> Check:
             name="state",
             ok=True,
             simulated=True,
-            message="State de démo accessible (dossier local, aucun changement)",
+            message="State de démo déclaré (volume runner) : aucun changement sur le state",
         )
     if kind in ("http", "https", "remote_http") or ref.startswith(("http://", "https://")):
         return _probe_https(ref)

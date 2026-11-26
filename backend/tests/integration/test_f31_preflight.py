@@ -132,16 +132,18 @@ def test_f31_state_local_inchange_apres_succes(conn, demo, worker, worker_env):
     c = flows.create_and_submit(conn, demo)
     dep = flows.deployment(conn, c["deployment_id"])
     stack = conn.execute("SELECT * FROM stacks WHERE id = %s", (dep["stack_id"],)).fetchone()
+    # State du runner (ProcessBackend) : le préflight ne doit jamais l'écrire.
     state_dir = Path(worker.settings.data_dir) / "tfstate" / stack["slug"]
     state_dir.mkdir(parents=True, exist_ok=True)
     state_file = state_dir / "terraform.tfstate"
     payload = b'{"version":4,"serial":1,"lineage":"f31-demo","resources":[]}'
     state_file.write_bytes(payload)
     before = preflight.state_fingerprint(worker.settings, stack["slug"])
+    mtime_before = state_file.stat().st_mtime_ns
 
-    # Le préflight seul ne doit pas toucher le state ; tf_plan peut ensuite l'utiliser.
     assert worker.drain(kinds=["preflight"]) == ["preflight"]
     assert state_file.read_bytes() == payload
+    assert state_file.stat().st_mtime_ns == mtime_before
     assert preflight.state_fingerprint(worker.settings, stack["slug"]) == before
     assert flows.job(conn, c["job_id"])["state"] == "succeeded"
     assert flows.change(conn, c["id"])["state"] == "planning"
