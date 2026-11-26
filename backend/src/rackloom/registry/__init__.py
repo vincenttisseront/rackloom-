@@ -15,6 +15,10 @@ La publication est une action d'administration distincte, auditée, avec motif ;
 aucun job et ne modifie ni plan ni déploiement. Une version soumise par un auteur n'est pas
 publiée par lui-même.
 
+F01 : une source Git doit être épinglée (commit ou empreinte) et revue avant publication.
+La promotion vers un kind d'environnement (`dev` / `test` / `preprod` / `prod`) est un acte
+distinct : elle ne touche ni plan approuvé ni déploiement existant.
+
 Le niveau de vérification d'un composant est calculé à partir des preuves enregistrées
 (`component_evidence`), jamais déclaré dans le catalogue.
 """
@@ -36,6 +40,7 @@ from ..db import Conn, Jsonb
 from ..errors import ApiError, forbidden
 from ..identity.authz import Principal, require_publisher
 from ..ids import uuid7
+from . import git_source
 
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
@@ -440,7 +445,7 @@ def check_template_references(m: dict[str, Any], component_lookup, artifact_look
                 raise CatalogError(f"template {m['slug']} : {comp['slug']}.{name} exige le composant {needed}")
 
 
-def load(conn: Conn, catalog_dir: Path) -> dict[str, int]:
+def load(conn: Conn, catalog_dir: Path, *, source_pin_id: UUID | None = None) -> dict[str, int]:
     """Valide et enregistre `catalog/` au statut `validated`. Ne publie rien."""
     found = scan(catalog_dir)
     counts = {"artifacts": 0, "components": 0, "templates": 0}
@@ -452,10 +457,10 @@ def load(conn: Conn, catalog_dir: Path) -> dict[str, int]:
                                    "publiez une nouvelle version")
             continue
         conn.execute(
-            "INSERT INTO catalog_artifacts (id, kind, slug, version, digest, lockfile_sha256, manifest, source_ref) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO catalog_artifacts (id, kind, slug, version, digest, lockfile_sha256, manifest, "
+            "source_ref, source_pin_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (uuid7(), a["kind"], a["slug"], a["version"], a["digest"], a["lockfile_sha256"], Jsonb(a["manifest"]),
-             a["source_ref"]))
+             a["source_ref"], source_pin_id))
         counts["artifacts"] += 1
     for c in found["components"]:
         row = component(conn, c["slug"], c["version"])
@@ -465,10 +470,10 @@ def load(conn: Conn, catalog_dir: Path) -> dict[str, int]:
                                    "publiez une nouvelle version")
             continue
         conn.execute(
-            "INSERT INTO component_versions (id, slug, version, contract, implementation, digest, source_ref) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO component_versions (id, slug, version, contract, implementation, digest, "
+            "source_ref, source_pin_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (uuid7(), c["slug"], c["version"], Jsonb(c["contract"]), Jsonb(c["implementation"]), c["digest"],
-             c["source_ref"]))
+             c["source_ref"], source_pin_id))
         counts["components"] += 1
     for t in found["templates"]:
         row = template(conn, t["slug"], t["version"])
@@ -479,13 +484,53 @@ def load(conn: Conn, catalog_dir: Path) -> dict[str, int]:
             continue
         tid = uuid7()
         conn.execute(
-            "INSERT INTO template_versions (id, slug, version, contract, digest, source_ref) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
-            (tid, t["slug"], t["version"], Jsonb(t["contract"]), t["digest"], t["source_ref"]))
+            "INSERT INTO template_versions (id, slug, version, contract, digest, source_ref, source_pin_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (tid, t["slug"], t["version"], Jsonb(t["contract"]), t["digest"], t["source_ref"], source_pin_id))
+        reason = "chargement de catalog/" if source_pin_id is None else "chargement depuis source épinglée"
         conn.execute("INSERT INTO template_events (template_version_id, action, reason) "
-                     "VALUES (%s, 'loaded', 'chargement de catalog/')", (tid,))
+                     "VALUES (%s, 'loaded', %s)", (tid, reason))
         counts["templates"] += 1
     return counts
+
+
+def load_from_git(
+    conn: Conn,
+    repo_path: Path,
+    commit: str,
+    *,
+    actor_id: UUID | None = None,
+    catalog_subdir: str = "",
+) -> dict[str, Any]:
+    """Importe un catalogue depuis un dépôt Git local épinglé à un commit (non publié)."""
+    import tempfile
+
+    repo = git_source.resolve_local_repo(repo_path)
+    sha = git_source.resolve_commit(repo, commit)
+    pin = git_source.create_pin(
+        conn,
+        source_kind="git_commit",
+        repo_label=str(repo),
+        commit_sha=sha,
+        actor_id=actor_id,
+    )
+    with tempfile.TemporaryDirectory(prefix="rackloom-catalog-") as tmp:
+        root = Path(tmp)
+        git_source.checkout_tree(repo, sha, root)
+        catalog_dir = root / catalog_subdir if catalog_subdir else root
+        if not (catalog_dir / "templates").is_dir() and (catalog_dir / "catalog" / "templates").is_dir():
+            catalog_dir = catalog_dir / "catalog"
+        counts = load(conn, catalog_dir, source_pin_id=pin["id"])
+    audit.record(
+        conn,
+        actor_type="user" if actor_id else "system",
+        actor_id=str(actor_id) if actor_id else "catalog-git",
+        action="registry.catalog.git_import",
+        outcome="ok",
+        targets={"pin_id": str(pin["id"])},
+        versions={"commit_sha": sha, **{k: str(v) for k, v in counts.items()}},
+    )
+    return {"pin": {"id": str(pin["id"]), "commit_sha": sha, "reviewed": False}, "counts": counts}
 
 
 def artifact(conn: Conn, kind: str, slug: str, version: str) -> dict[str, Any] | None:
@@ -511,6 +556,108 @@ def latest_published(conn: Conn, slug: str) -> dict[str, Any] | None:
     rows = conn.execute("SELECT * FROM template_versions WHERE slug = %s AND status = 'published'",
                         (slug,)).fetchall()
     return max(rows, key=lambda r: semver_key(r["version"])) if rows else None
+
+
+def latest_promoted(conn: Conn, slug: str, environment_kind: str) -> dict[str, Any] | None:
+    """Dernière version publiée et promue pour un kind d'environnement (F01)."""
+    if environment_kind not in ENV_KINDS:
+        return None
+    rows = conn.execute(
+        """
+        SELECT t.* FROM template_versions t
+        JOIN template_promotions p ON p.template_version_id = t.id
+        WHERE t.slug = %s AND t.status = 'published' AND p.environment_kind = %s
+        """,
+        (slug, environment_kind),
+    ).fetchall()
+    return max(rows, key=lambda r: semver_key(r["version"])) if rows else None
+
+
+def promoted_kinds(conn: Conn, slug: str) -> set[str]:
+    rows = conn.execute(
+        """
+        SELECT DISTINCT p.environment_kind FROM template_promotions p
+        JOIN template_versions t ON t.id = p.template_version_id
+        WHERE t.slug = %s AND t.status = 'published'
+        """,
+        (slug,),
+    ).fetchall()
+    return {r["environment_kind"] for r in rows}
+
+
+def list_promotions(conn: Conn, template_version_id: UUID) -> list[dict[str, Any]]:
+    return list(
+        conn.execute(
+            "SELECT environment_kind, promoted_at, reason, promoted_by FROM template_promotions "
+            "WHERE template_version_id = %s ORDER BY environment_kind",
+            (template_version_id,),
+        ).fetchall()
+    )
+
+
+def promote(
+    conn: Conn,
+    principal: Principal,
+    slug: str,
+    version: str,
+    environment_kind: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Promeut une version publiée vers un kind d'environnement. Ne crée aucun job."""
+    require_publisher(principal)
+    if environment_kind not in ENV_KINDS:
+        raise ApiError(422, "invalid_environment_kind", f"kind attendu : {', '.join(ENV_KINDS)}")
+    if not reason or not reason.strip():
+        raise ApiError(422, "reason_required", "un motif est obligatoire", field="/reason")
+    row = conn.execute(
+        "SELECT * FROM template_versions WHERE slug = %s AND version = %s FOR UPDATE", (slug, version)
+    ).fetchone()
+    if row is None:
+        raise ApiError(404, "not_found", "version de template introuvable")
+    if row["status"] != "published":
+        raise ApiError(409, "not_published", "seule une version publiée peut être promue")
+    admissible = set(row["contract"]["deployment_policy"].get("admissible_environment_kinds", []))
+    if environment_kind not in admissible:
+        raise ApiError(
+            422,
+            "environment_not_admissible",
+            f"le template n'admet pas l'environnement « {environment_kind} »",
+        )
+    existing = conn.execute(
+        "SELECT 1 FROM template_promotions WHERE template_version_id = %s AND environment_kind = %s",
+        (row["id"], environment_kind),
+    ).fetchone()
+    if existing:
+        raise ApiError(409, "already_promoted", f"déjà promue vers {environment_kind}")
+    effect = impact(conn, slug, version)
+    conn.execute(
+        "INSERT INTO template_promotions (id, template_version_id, environment_kind, promoted_by, reason) "
+        "VALUES (%s, %s, %s, %s, %s)",
+        (uuid7(), row["id"], environment_kind, principal.user_id, reason.strip()),
+    )
+    conn.execute(
+        "INSERT INTO template_events (template_version_id, action, actor_id, reason, impact) "
+        "VALUES (%s, 'promoted', %s, %s, %s)",
+        (row["id"], principal.user_id, f"{environment_kind}: {reason.strip()}", Jsonb(effect)),
+    )
+    audit.record(
+        conn,
+        actor_type="user",
+        actor_id=str(principal.user_id),
+        action="registry.template.promote",
+        outcome="ok",
+        targets={"template": slug, "environment_kind": environment_kind, "projects": effect["projects"]},
+        versions={"template": version, "digest": row["digest"]},
+        policy_decision={"reason": reason.strip()},
+    )
+    return {
+        "template": slug,
+        "version": version,
+        "environment_kind": environment_kind,
+        "status": "published",
+        "impact": effect,
+        "note": "La promotion ne modifie ni plan approuvé ni déploiement existant.",
+    }
 
 
 def granted_services(conn: Conn, project_id: UUID,
@@ -562,8 +709,9 @@ def impact(conn: Conn, slug: str, version: str) -> dict[str, Any]:
             "deployments": [{"id": str(d["id"]), "project": d["project"], "environment": d["environment"],
                              "pinned_version": d["version"]} for d in deployments],
             "plans_pending_on_version": pending,
-            "note": "Publier ne modifie ni les plans approuvés ni les déploiements existants ; "
-                    "les nouvelles demandes utiliseront la dernière version publiée."}
+            "note": "Publier ou promouvoir ne modifie ni les plans approuvés ni les déploiements "
+                    "existants ; les nouvelles demandes utilisent la dernière version promue "
+                    "pour l'environnement."}
 
 
 TRANSITIONS = {
@@ -576,6 +724,8 @@ TRANSITIONS = {
 
 EVENT_ACTIONS = {"publish": "published", "return": "returned", "deprecate": "deprecated", "withdraw": "withdrawn"}
 
+ENV_KINDS = ("dev", "test", "preprod", "prod")
+
 
 def change_status(
     conn: Conn, actor_id: UUID, slug: str, version: str, action: str, reason: str, digest_seen: str | None = None
@@ -583,7 +733,7 @@ def change_status(
     """Publier, renvoyer, déprécier ou retirer une version. Le droit est vérifié par l'appelant.
 
     Une version soumise depuis l'atelier se publie sur l'empreinte affichée au relecteur, par une
-    autre personne que l'auteur qui l'a soumise.
+    autre personne que l'auteur qui l'a soumise. Publier ne promeut pas (F01).
     """
     if action not in TRANSITIONS:
         raise ApiError(422, "invalid_action", "action attendue : publish, return, deprecate ou withdraw")
@@ -610,6 +760,8 @@ def change_status(
                 "l'empreinte affichée ne correspond pas à la version soumise : recharger avant de décider",
                 field="/digest",
             )
+    if action == "publish":
+        git_source.require_publishable_pin(conn, row.get("source_pin_id"))
     effect = impact(conn, slug, version)
     if action == "return":
         conn.execute("UPDATE template_versions SET status = 'returned' WHERE id = %s", (row["id"],))
@@ -639,6 +791,28 @@ def change_status(
                 "row_version = row_version + 1 WHERE id = %s",
                 (row["draft_id"],),
             )
+        # F01 : catalogue filesystem (appliance) → promotion initiale automatique vers les kinds
+        # admissibles. Une source Git/artefact exige une promotion explicite après publication.
+        pin = None
+        if row.get("source_pin_id"):
+            pin = conn.execute(
+                "SELECT source_kind FROM catalog_source_pins WHERE id = %s", (row["source_pin_id"],)
+            ).fetchone()
+        if pin is None or pin["source_kind"] == "filesystem":
+            for kind in row["contract"]["deployment_policy"].get("admissible_environment_kinds", []):
+                if kind not in ENV_KINDS:
+                    continue
+                conn.execute(
+                    "INSERT INTO template_promotions (id, template_version_id, environment_kind, promoted_by, reason) "
+                    "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                    (
+                        uuid7(),
+                        row["id"],
+                        kind,
+                        actor_id,
+                        "promotion initiale à la publication (catalogue appliance)",
+                    ),
+                )
     else:
         conn.execute("UPDATE template_versions SET status = %s WHERE id = %s", (target, row["id"]))
     conn.execute(

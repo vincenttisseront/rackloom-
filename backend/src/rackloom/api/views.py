@@ -46,6 +46,7 @@ SOURCE_LABELS = {
     "environment_policy": "Politique de l'environnement", "environment_policy_default": "Politique de l'environnement",
     "inventory": "Inventaire", "tie_break": "Départage", "platform": "Plateforme",
     "deployment_pinned": "Version du déploiement", "template_latest_published": "Dernière version publiée",
+    "template_latest_promoted": "Dernière version promue pour l'environnement",
     "project_preference": "Préférence de projet",
 }
 

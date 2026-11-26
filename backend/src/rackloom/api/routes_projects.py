@@ -46,31 +46,46 @@ def services_for(conn, principal: Principal, project: dict[str, Any]) -> list[di
     envs = projects.environments(conn, project["id"])
     out = []
     for slug in registry.granted_services(conn, project["id"]):
-        tpl = registry.latest_published(conn, slug)
-        if tpl is None:
+        guide = registry.latest_published(conn, slug)
+        if guide is None:
             continue
-        contract = tpl["contract"]
-        admissible = set(contract["deployment_policy"]["admissible_environment_kinds"]) & set(contract["environments"])
-        spec = contract["inputs"]
+        promoted = registry.promoted_kinds(conn, slug)
+        guide_contract = guide["contract"]
+        admissible = (
+            set(guide_contract["deployment_policy"]["admissible_environment_kinds"])
+            & set(guide_contract["environments"])
+            & promoted
+        )
         targets = []
+        display_version = None
         for env in envs:
             if env["kind"] not in admissible or not principal.has_role("operator", project["id"], env["id"]):
                 continue
             if slug not in registry.granted_services(conn, project["id"], env["id"]):
                 continue
+            tpl = registry.latest_promoted(conn, slug, env["kind"])
+            if tpl is None:
+                continue
+            if display_version is None or registry.semver_key(tpl["version"]) > registry.semver_key(display_version):
+                display_version = tpl["version"]
+            contract = tpl["contract"]
+            spec = contract["inputs"]
             params = contract["environments"][env["kind"]]
             rules = (projects.current_policy(conn, env["id"]) or {}).get("rules", {})
             lifetime = rules.get("lifetime", {})
             labels = spec["size_tier"].get("value_labels", {})
             targets.append({**_env_view(env), "freeze": freeze_view(freezes.active(conn, env["id"])),
+                            "template_version": tpl["version"],
                             "size_tiers": [{"value": t, "label": labels.get(t, t)} for t in params["size_tiers"]],
                             "default_size_tier": params["default_size_tier"],
                             "lifetime": {"required": bool(lifetime.get("required")),
                                          "max_days": lifetime.get("max_days")}})
         if not targets:
             continue
+        contract = registry.latest_promoted(conn, slug, targets[0]["kind"])["contract"]
+        spec = contract["inputs"]
         out.append({
-            "slug": slug, "version": contract["version"], "title": contract["title"],
+            "slug": slug, "version": display_version or contract["version"], "title": contract["title"],
             "description": contract["description"],
             "inputs": {"quantity": {k: spec["quantity"][k] for k in ("min", "max", "default", "label")},
                        "size_tier": {"label": spec["size_tier"]["label"]},

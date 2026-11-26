@@ -97,6 +97,29 @@ def get_template(slug: str, version: str, request: Request) -> dict[str, Any]:
         ]
         if row["status"] != "in_review":
             actions = [a for a in actions if a != "return"]
+        promotions = registry.list_promotions(u.conn, row["id"])
+        promoted_kinds = {p["environment_kind"] for p in promotions}
+        pin = None
+        if row.get("source_pin_id"):
+            pin_row = u.conn.execute(
+                "SELECT * FROM catalog_source_pins WHERE id = %s", (row["source_pin_id"],)
+            ).fetchone()
+            if pin_row:
+                pin = {
+                    "id": str(pin_row["id"]),
+                    "source_kind": pin_row["source_kind"],
+                    "commit_sha": pin_row["commit_sha"],
+                    "artifact_digest": pin_row["artifact_digest"],
+                    "reviewed": pin_row["reviewed"],
+                }
+        if (
+            row["status"] == "published"
+            and u.p.has_role("template_publisher")
+        ):
+            for kind in registry.ENV_KINDS:
+                if kind in row["contract"]["deployment_policy"].get("admissible_environment_kinds", []) \
+                        and kind not in promoted_kinds:
+                    actions.append(f"promote:{kind}")
         return {
             "slug": slug,
             "version": version,
@@ -104,6 +127,15 @@ def get_template(slug: str, version: str, request: Request) -> dict[str, Any]:
             "digest": row["digest"],
             "contract": row["contract"],
             "published_at": iso(row["published_at"]),
+            "source_pin": pin,
+            "promotions": [
+                {
+                    "environment_kind": p["environment_kind"],
+                    "promoted_at": iso(p["promoted_at"]),
+                    "reason": p["reason"],
+                }
+                for p in promotions
+            ],
             "components": [
                 {
                     "slug": c["slug"],
@@ -178,6 +210,42 @@ def deprecate(slug: str, version: str, request: Request, body: dict[str, Any] = 
 @router.post("/admin/templates/{slug}/versions/{version}/withdraw")
 def withdraw(slug: str, version: str, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return _publication(slug, version, "withdraw", request, body)
+
+
+@router.post("/admin/templates/{slug}/versions/{version}/promote")
+def promote(slug: str, version: str, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F01 : promotion vers un kind d'environnement — distincte de la publication, aucun job."""
+    _only(body, {"reason", "environment_kind"})
+    with unit_of_work(request, write=True) as u:
+        return registry.promote(
+            u.conn,
+            u.p,
+            slug,
+            version,
+            str(body.get("environment_kind") or ""),
+            str(body.get("reason") or ""),
+        )
+
+
+@router.post("/admin/catalog/pins/{pin_id}/review")
+def review_catalog_pin(pin_id: UUID, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F01 : marque une épingle Git/artefact comme revue (préalable à la publication)."""
+    from ..registry import git_source
+
+    _only(body, {"reason"})
+    with unit_of_work(request, write=True) as u:
+        if not u.p.has_role("template_publisher"):
+            raise forbidden("rôle template_publisher requis")
+        pin = git_source.review_pin(u.conn, pin_id, u.p.user_id, str(body.get("reason") or ""))
+        return {
+            "id": str(pin["id"]),
+            "source_kind": pin["source_kind"],
+            "commit_sha": pin["commit_sha"],
+            "artifact_digest": pin["artifact_digest"],
+            "reviewed": pin["reviewed"],
+            "review_reason": pin["review_reason"],
+            "reviewed_at": iso(pin["reviewed_at"]),
+        }
 
 
 @router.get("/admin/environments/{environment_id}/policies")

@@ -14,7 +14,13 @@ const STATUS: Record<string, string> = {
   deprecated: 'Dépréciée', withdrawn: 'Retirée', draft: 'Brouillon', lab_tested: 'Testée en labo',
 }
 const ACTIONS: Record<string, string> = { publish: 'Publier', return: 'Renvoyer à l\'auteur', deprecate: 'Déprécier', withdraw: 'Retirer' }
+const KIND_LABEL: Record<string, string> = { dev: 'dev', test: 'test', preprod: 'préprod', prod: 'prod' }
 const VERIF: Record<string, string> = { not_tested: 'non testé', tested_locally: 'testé localement', lab_validated: 'validé en laboratoire' }
+
+function actionLabel(a: string) {
+  if (a.startsWith('promote:')) return `Promouvoir → ${KIND_LABEL[a.slice(8)] || a.slice(8)}`
+  return ACTIONS[a] || a
+}
 
 async function load() {
   try {
@@ -39,13 +45,19 @@ async function act(action: string) {
   busy.value = true
   error.value = null
   try {
-    await api.post(`/admin/templates/${selected.value.slug}/versions/${selected.value.version}/${action}`, {
-      reason: reason.value, digest: selected.value.digest,
-    })
-    notice.value = `${ACTIONS[action]} : fait. Aucun job créé, aucun déploiement modifié.`
+    if (action.startsWith('promote:')) {
+      await api.post(`/admin/templates/${selected.value.slug}/versions/${selected.value.version}/promote`, {
+        reason: reason.value, environment_kind: action.slice(8),
+      })
+    } else {
+      await api.post(`/admin/templates/${selected.value.slug}/versions/${selected.value.version}/${action}`, {
+        reason: reason.value, digest: selected.value.digest,
+      })
+    }
+    notice.value = `${actionLabel(action)} : fait. Aucun job créé, aucun déploiement modifié.`
     await load()
     await open(selected.value.slug, selected.value.version)
-    notice.value = `${ACTIONS[action]} : fait. Aucun job créé, aucun déploiement modifié.`
+    notice.value = `${actionLabel(action)} : fait. Aucun job créé, aucun déploiement modifié.`
   } catch (e) {
     error.value = errorText(e)
   } finally {
@@ -59,7 +71,7 @@ async function act(action: string) {
     <div class="page-head">
       <div>
         <h1>Administration › Templates</h1>
-        <p class="muted small">Versions immuables du catalogue. Publier rend une version disponible pour les nouvelles demandes ; cela ne déploie rien.</p>
+        <p class="muted small">Versions immuables. Publier enregistre ; promouvoir rend disponible pour un environnement (dev / préprod / prod). Ni l'un ni l'autre ne déploie.</p>
       </div>
     </div>
     <div v-if="error" class="banner bad" role="alert" data-testid="error">{{ error }}</div>
@@ -113,6 +125,21 @@ async function act(action: string) {
           <ul class="small"><li v-for="(h, i) in selected.contract.health_checks" :key="i">{{ h.type }} <span class="muted mono">{{ h.package || h.unit || `:${h.port}${h.path}` }}</span></li></ul>
           <h3>Environnements</h3>
           <p class="small">{{ Object.keys(selected.contract.environments).join(', ') }}</p>
+          <template v-if="selected.source_pin">
+            <h3>Source</h3>
+            <p class="small mono" data-testid="source-pin">
+              {{ selected.source_pin.source_kind }}
+              <template v-if="selected.source_pin.commit_sha"> · {{ selected.source_pin.commit_sha.slice(0, 12) }}…</template>
+              · {{ selected.source_pin.reviewed ? 'revue' : 'non revue' }}
+            </p>
+          </template>
+          <h3>Promotions</h3>
+          <ul v-if="selected.promotions?.length" class="small" data-testid="promotions">
+            <li v-for="p in selected.promotions" :key="p.environment_kind">
+              {{ KIND_LABEL[p.environment_kind] || p.environment_kind }} — {{ p.reason }}
+            </li>
+          </ul>
+          <p v-else class="small muted" data-testid="promotions-empty">Aucune promotion (publication seule).</p>
           <h3>Historique</h3>
           <ul class="small">
             <li v-for="(h, i) in selected.history" :key="i">{{ dateTime(h.at) }} · {{ h.version }} · {{ h.action }} — {{ h.reason }}</li>
@@ -127,8 +154,16 @@ async function act(action: string) {
             <label for="pub-reason">Motif (obligatoire)</label>
             <input id="pub-reason" v-model="reason" type="text" maxlength="500" />
             <div class="actions" style="margin-top: 0.5rem">
-              <button v-for="a in selected.allowed_actions" :key="a" type="button" :class="a === 'publish' ? 'primary' : 'danger'" :disabled="busy || !reason.trim()" :data-testid="`action-${a}`" @click="act(a)">
-                {{ ACTIONS[a] || a }}
+              <button
+                v-for="a in selected.allowed_actions"
+                :key="a"
+                type="button"
+                :class="a === 'publish' || a.startsWith('promote:') ? 'primary' : 'danger'"
+                :disabled="busy || !reason.trim()"
+                :data-testid="`action-${a}`"
+                @click="act(a)"
+              >
+                {{ actionLabel(a) }}
               </button>
             </div>
           </div>
