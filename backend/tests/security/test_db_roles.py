@@ -24,6 +24,8 @@ ALLOWED = {
         "SELECT environment_kind FROM template_promotions",
         "SELECT slug FROM ipam_pools",
         "SELECT state FROM ipam_reservations",
+        "SELECT status FROM drift_scans",
+        "SELECT kind FROM drift_findings",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -38,6 +40,8 @@ ALLOWED = {
         "SELECT environment_kind FROM template_promotions",
         "SELECT slug FROM ipam_pools",
         "SELECT state FROM ipam_reservations",
+        "SELECT status FROM drift_scans",
+        "SELECT kind FROM drift_findings",
     ],
 }
 

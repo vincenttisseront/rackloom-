@@ -39,3 +39,20 @@ CREATE TRIGGER drift_scans_append_only
 CREATE TRIGGER drift_findings_append_only
     BEFORE UPDATE OR DELETE ON drift_findings
     FOR EACH ROW EXECUTE FUNCTION rackloom_refuse_mutation();
+
+DO $$
+DECLARE
+    t text;
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rackloom_api') THEN
+        FOREACH t IN ARRAY ARRAY['drift_scans', 'drift_findings'] LOOP
+            EXECUTE format('GRANT SELECT, INSERT ON %I TO rackloom_api', t);
+        END LOOP;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rackloom_worker') THEN
+        FOREACH t IN ARRAY ARRAY['drift_scans', 'drift_findings'] LOOP
+            EXECUTE format('GRANT SELECT, INSERT ON %I TO rackloom_worker', t);
+        END LOOP;
+    END IF;
+END;
+$$;
