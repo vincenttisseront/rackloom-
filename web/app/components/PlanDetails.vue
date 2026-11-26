@@ -21,6 +21,37 @@ function show(v: any): string {
         Inventaire observé le {{ dateTime(props.details.inventory?.observed_at) }}
         <SimBadge v-if="props.details.inventory?.simulated" title="Inventaire vCenter simulé (connecteur fictif)" />
       </p>
+      <section v-if="props.details.capacity" data-testid="capacity-panel" aria-labelledby="cap-title">
+        <h3 id="cap-title">Capacité du placement</h3>
+        <p class="small muted">{{ props.details.capacity.notice }}</p>
+        <p class="small">
+          Mesures observées le {{ dateTime(props.details.capacity.observed_at) }}
+          <span v-if="props.details.capacity.age_seconds != null" class="muted">
+            (âge {{ Math.round(props.details.capacity.age_seconds / 60) }} min)
+          </span>
+          <SimBadge v-if="props.details.capacity.simulated" title="Mesures de capacité simulées" />
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Ressource</th>
+              <th scope="col">Cible</th>
+              <th scope="col">Libre</th>
+              <th scope="col">Besoin</th>
+              <th scope="col">Unité</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in props.details.capacity.resources" :key="r.resource">
+              <td>{{ r.resource }}</td>
+              <td>{{ r.target || '—' }}</td>
+              <td>{{ r.free ?? '—' }}</td>
+              <td>{{ r.need ?? '—' }}</td>
+              <td>{{ r.unit }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
       <section v-for="g in props.details.groups" :key="g.group">
         <h3>{{ g.label }}</h3>
         <table>

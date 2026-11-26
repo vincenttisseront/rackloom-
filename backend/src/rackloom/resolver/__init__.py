@@ -29,6 +29,7 @@ from ..config import get_settings
 from ..db import Conn
 from ..errors import ApiError
 from ..identity.authz import Principal
+from ..inventory import capacity as capacity_check
 from ..projects import preferences as project_preferences
 
 NEED_SCHEMA = "rackloom.need/v1"
@@ -173,6 +174,9 @@ BLOCK_MESSAGES = {
     "no_authorized_placement": "Aucun emplacement autorisé ne correspond à ce profil.",
     "inventory_stale": "Les données d'inventaire sont trop anciennes ; elles doivent être actualisées.",
     "name_unavailable": "Aucun nom conforme à la convention n'est disponible.",
+    "capacity_below_threshold": "La capacité libre est sous le seuil sur le placement proposé.",
+    "capacity_stale": "Les mesures de capacité sont trop anciennes.",
+    "capacity_unknown": "Les mesures de capacité sont indisponibles sur le placement proposé.",
 }
 
 
@@ -790,6 +794,19 @@ def resolve(
     out["preview_limits"] = contract.get("preview_limits", [])
     out["simulated_steps"] = contract.get("simulated_steps", [])
     out["outputs_allowlist"] = contract["outputs_allowlist"]
+    # F05 : mesure de capacité (âge, marge) — jamais présentée comme une réservation.
+    cap = capacity_check.evaluate(
+        conn,
+        cluster_id=cluster["stable_id"],
+        datastore_id=datastore["stable_id"],
+        demand=capacity_check.demand_from_instances(out["instances"]),
+        now=now,
+    )
+    out["capacity"] = cap
+    if not cap["ok"]:
+        code = (cap.get("refusal") or {}).get("code", "capacity_below_threshold")
+        out["blocks"].append(_block(code, referent, "/placement/cluster"))
+        return finish("blocked")
     return finish("incomplete" if out["missing"] else "resolved")
 
 

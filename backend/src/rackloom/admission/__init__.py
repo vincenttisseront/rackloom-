@@ -2,10 +2,10 @@
 
 Chaque job est réévalué au moment où un worker le réclame, quelle que soit sa date de mise en
 file (étape `start`). R065 (AT01) borne la configuration aux cibles approuvées. Les règles qui
-dépendent d'un état pouvant changer entre l'admission et l'envoi au fournisseur (gel, calendrier)
-sont rejouées dans la transaction qui marque cet envoi (étape `dispatch`). Emplacements
-réservés, non encore enregistrés : 100 (F11), 110 (F05), 115 (F39), 120 (F03),
-125 (F34), 130 (F16), 135 (F38), 140 (F10). R095 (F37) est enregistrée.
+dépendent d'un état pouvant changer entre l'admission et l'envoi au fournisseur (gel, calendrier,
+capacité) sont rejouées dans la transaction qui marque cet envoi (étape `dispatch`). Emplacements
+réservés, non encore enregistrés : 100 (F11), 115 (F39), 120 (F03),
+125 (F34), 130 (F16), 135 (F38), 140 (F10). R095 (F37) et R110 (F05) sont enregistrées.
 """
 
 
@@ -20,6 +20,7 @@ from .. import clock, policy
 from ..connectors import circuit
 from ..db import Conn, Jsonb
 from ..identity.authz import Principal, load_bindings
+from ..inventory import capacity as capacity_check
 from ..projects import calendars, freezes
 
 STAGES = ("start", "dispatch")
@@ -264,6 +265,26 @@ def connector_circuit_closed(ctx: Context) -> Verdict:
         return Verdict(True)
     first = opened[0]
     return Verdict(False, circuit.refusal(first), "connector_circuit_open")
+
+
+@rule(110, "R110", "write", stages=("start", "dispatch"))
+def capacity_still_sufficient(ctx: Context) -> Verdict:
+    """Capacité encore suffisante sur le placement ; mesure rejouée, jamais une réservation (F05)."""
+    if ctx.job["kind"] not in ("tf_apply",):
+        return Verdict(True)
+    if ctx.revision is None:
+        return Verdict(False, "révision introuvable pour le contrôle de capacité", "capacity_unknown")
+    report = capacity_check.evaluate_resolution(ctx.conn, ctx.revision["resolved"], now=clock.now())
+    if report["ok"]:
+        return Verdict(True)
+    refusal = report.get("refusal") or {}
+    code = refusal.get("code") or "capacity_below_threshold"
+    reason = refusal.get("reason") or "capacité insuffisante sur le placement"
+    if refusal.get("target"):
+        reason = f"{reason} (ressource : {refusal.get('resource')}, cible : {refusal['target']})"
+    elif refusal.get("resource"):
+        reason = f"{reason} (ressource : {refusal['resource']})"
+    return Verdict(False, reason, code)
 
 
 @rule(900, "R900", "write")

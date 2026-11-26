@@ -106,8 +106,27 @@ def plan_details(resolution: dict[str, Any]) -> dict[str, Any]:
             "source_label": SOURCE_LABELS.get(v["source"], v["source"]), "ref": v.get("ref"),
             "applied": v.get("applied", True), "candidates": v.get("candidates")})
     inv = resolution.get("inventory", {})
+    cap = resolution.get("capacity") or {}
     return {"groups": [{"group": g, "label": GROUP_LABELS[g], "values": vals} for g, vals in groups.items() if vals],
             "inventory": {"observed_at": inv.get("observed_at"), "simulated": inv.get("simulated", True)},
+            "capacity": {
+                "observed_at": cap.get("observed_at"),
+                "age_seconds": cap.get("age_seconds"),
+                "reservation": False,
+                "notice": cap.get("notice") or "Mesure d'inventaire, pas une réservation.",
+                "simulated": cap.get("simulated", True),
+                "resources": [
+                    {
+                        "resource": r.get("resource"),
+                        "target": r.get("target"),
+                        "free": r.get("free"),
+                        "need": r.get("need"),
+                        "unit": r.get("unit"),
+                        "ok": r.get("ok"),
+                    }
+                    for r in cap.get("resources") or []
+                ],
+            } if cap else None,
             "simulated_steps": [{"key": s, "label": SIMULATED_STEPS.get(s, s)}
                                 for s in resolution.get("simulated_steps", [])],
             "preview_limits": resolution.get("preview_limits", [])}

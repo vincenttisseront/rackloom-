@@ -59,7 +59,8 @@
 | Banc d'évaluation Ollama (F46) | livré | testé localement | `test_f46_eval.py` ; e2e `87-f46-eval.spec.ts` ; `defaults_prod` / `asks_vlan` → échec ; rapport versionné (`model` + `prompt_id`) ; aucun job ; Ollama réel non qualifié (D2) |
 | Chat F47–F50 (runbooks, routage, aperçu, préférences) | livré | testé localement | `test_f47_f50_chat.py` ; e2e `88-f47-f50-chat.spec.ts` ; migration `0008` ; fake Ollama OK ; aucun secret réel ; Ollama réel non (D2) |
 | Catalogue Git avec promotion (F01) | livré | testé localement | `test_f01_catalogue_git.py` ; migration `0009` ; pins + promotions ; e2e `91-f01-catalogue.spec.ts` ; forge réelle : non |
-| Fonctions F02 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F37, F46–F50, F55, F57, F60, F01) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : lot B F05 → F03 → F09 |
+| Contrôle de capacité (F05, règle R110, bundle `builtin@5`) | livré | testé localement | `test_f05_capacity.py` ; chute après approbation → `capacity_below_threshold` ; mesure vieillie → `capacity_stale` ; UI mesure sans réservation ; L2 non fait |
+| Fonctions F02 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F37, F46–F50, F55, F57, F60, F01, F05) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : lot B F03 → F09 |
 
 ## Démonstrations D1 à D6
 
@@ -293,8 +294,14 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Résolveur : nouvelles demandes → `latest_promoted` pour le kind d'environnement.
 - Preuves : `test_f01_catalogue_git.py` (2) ; T35 / résolveur verts. Forge réelle : non (D2).
 
+### F05 : contrôle de capacité (2026-11-26, heure de Paris)
+
+- Branche `cursor/f05-capacite-235e` (sur F01). Règle R110 (`start`/`dispatch`), bundle `builtin@5`.
+- Mesures CPU/mémoire/stockage sur inventaire fictif ; âge ; jamais une réservation ; rejeu à l'admission.
+- Preuves : `test_f05_capacity.py` (2). Cluster réel : non (D2).
+
 ## Prochain jalon
 
-1. Fusionner **F01** sur `main` après CI verte (Vincent).
-2. Lot B suite : **F05** → **F03** → **F09**.
+1. Fusionner **F01** puis **F05** sur `main` après CI verte (Vincent).
+2. Lot B suite : **F03** → **F09**.
 3. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
