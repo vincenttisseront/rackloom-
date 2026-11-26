@@ -10,12 +10,11 @@ entrées. Ordre (docs/lot-1-plan.md §7.4) :
 2. environnement demandé, sinon l'unique environnement hors production admissible ;
    jamais de repli, jamais la production par défaut ;
 3. version de template : dernière publiée (création) ou version épinglée (modification) ;
-4. préférence de projet (F50) : vide au lot 1 ;
+4. préférence de projet approuvée (F50), si applicable et dans les octrois ;
 5. défaut du template ;
 6. départage : rang, puis identifiant stable croissant ;
 7. blocage expliqué si une dimension n'a aucun candidat.
 """
-
 
 from __future__ import annotations
 
@@ -30,6 +29,7 @@ from ..config import get_settings
 from ..db import Conn
 from ..errors import ApiError
 from ..identity.authz import Principal
+from ..projects import preferences as project_preferences
 
 NEED_SCHEMA = "rackloom.need/v1"
 
@@ -40,8 +40,14 @@ RESOLUTION_SCHEMA = "rackloom.resolution/v1"
 NEED_KEYS = {"schema", "project_id", "service", "environment", "confirm_production", "inputs"}
 
 
-POINTERS = ("/service/template", "/environment", "/inputs/quantity", "/inputs/size_tier", "/inputs/usage",
-            "/inputs/lifetime_until")
+POINTERS = (
+    "/service/template",
+    "/environment",
+    "/inputs/quantity",
+    "/inputs/size_tier",
+    "/inputs/usage",
+    "/inputs/lifetime_until",
+)
 
 
 LOCKED_MESSAGE = "Ce réglage est déterminé par le profil de service."
@@ -122,9 +128,34 @@ TECH_TOKENS = {
 
 
 TECH_KEYS = {
-    "template_ref", "template_version", "version", "name", "names", "naming", "zone", "state", "state_backend",
-    "module", "components", "component", "config", "backup", "quota", "approval", "approver", "policy",
-    "health_checks", "verification", "outputs", "host", "hosts", "instances", "vm", "vms", "size", "tier_spec",
+    "template_ref",
+    "template_version",
+    "version",
+    "name",
+    "names",
+    "naming",
+    "zone",
+    "state",
+    "state_backend",
+    "module",
+    "components",
+    "component",
+    "config",
+    "backup",
+    "quota",
+    "approval",
+    "approver",
+    "policy",
+    "health_checks",
+    "verification",
+    "outputs",
+    "host",
+    "hosts",
+    "instances",
+    "vm",
+    "vms",
+    "size",
+    "tier_spec",
 }
 
 
@@ -145,10 +176,17 @@ BLOCK_MESSAGES = {
 
 
 GROUPS = {
-    "/service": "service", "/components": "service", "/placement/image": "placement",
-    "/placement/cluster": "placement", "/placement/datastore": "placement", "/placement/folder": "placement",
-    "/placement/network": "reseau", "/placement/addressing": "reseau", "/instances": "dimensionnement",
-    "/execution": "execution", "/governance": "gouvernance",
+    "/service": "service",
+    "/components": "service",
+    "/placement/image": "placement",
+    "/placement/cluster": "placement",
+    "/placement/datastore": "placement",
+    "/placement/folder": "placement",
+    "/placement/network": "reseau",
+    "/placement/addressing": "reseau",
+    "/instances": "dimensionnement",
+    "/execution": "execution",
+    "/governance": "gouvernance",
 }
 
 
@@ -172,8 +210,11 @@ def _scan_locked(value: Any, path: str = "") -> None:
             pointer = f"{path}/{key}"
             if not isinstance(key, str):
                 raise ApiError(422, "field_not_allowed", "clé non textuelle", field=path or "/")
-            allowed_need_key = (path == "" and key in NEED_KEYS) or (path == "/service" and key == "template") \
+            allowed_need_key = (
+                (path == "" and key in NEED_KEYS)
+                or (path == "/service" and key == "template")
                 or (path == "/inputs" and key in ("quantity", "size_tier", "usage", "lifetime_until"))
+            )
             if not allowed_need_key and _is_technical(key):
                 raise ApiError(422, "locked_field", LOCKED_MESSAGE, field=pointer)
             _scan_locked(item, pointer)
@@ -201,8 +242,12 @@ def validate_need(raw: Any, partial: bool = False) -> dict[str, Any]:
     service = raw.get("service")
     if not isinstance(service, dict) or set(service) != {"template"}:
         extra = sorted(set(service) - {"template"}) if isinstance(service, dict) else []
-        raise ApiError(422, "field_not_allowed", "service : seul « template » est attendu",
-                       field=f"/service/{extra[0]}" if extra else "/service")
+        raise ApiError(
+            422,
+            "field_not_allowed",
+            "service : seul « template » est attendu",
+            field=f"/service/{extra[0]}" if extra else "/service",
+        )
     if partial and service["template"] is None:
         pass
     elif not isinstance(service["template"], str) or not re.match(r"^[a-z][a-z0-9-]{1,40}$", service["template"]):
@@ -222,8 +267,13 @@ def validate_need(raw: Any, partial: bool = False) -> dict[str, Any]:
             project_id = str(UUID(str(project_id)))
         except ValueError as exc:
             raise _bad("/project_id", "identifiant de projet invalide") from exc
-    need = {"schema": NEED_SCHEMA, "service": {"template": service["template"]}, "environment": env,
-            "confirm_production": confirm, "inputs": dict(inputs)}
+    need = {
+        "schema": NEED_SCHEMA,
+        "service": {"template": service["template"]},
+        "environment": env,
+        "confirm_production": confirm,
+        "inputs": dict(inputs),
+    }
     if project_id:
         need["project_id"] = project_id
     return need
@@ -269,12 +319,16 @@ def _tags_match(item: dict[str, Any], wanted: dict[str, Any]) -> bool:
     return isinstance(tags, dict) and all(tags.get(k) == v for k, v in wanted.items())
 
 
-def _used_names(conn: Conn, project_id: UUID, environment_id: UUID,
-                change_id: UUID | None) -> set[str]:
+def _used_names(conn: Conn, project_id: UUID, environment_id: UUID, change_id: UUID | None) -> set[str]:
     names = {r["name"] for r in conn.execute("SELECT name FROM hosts WHERE project_id = %s", (project_id,))}
-    names |= {r["name"] for r in conn.execute(
-        "SELECT name FROM name_reservations WHERE project_id = %s AND environment_id = %s AND released_at IS NULL "
-        "AND change_id IS DISTINCT FROM %s", (project_id, environment_id, change_id))}
+    names |= {
+        r["name"]
+        for r in conn.execute(
+            "SELECT name FROM name_reservations WHERE project_id = %s AND environment_id = %s AND released_at IS NULL "
+            "AND change_id IS DISTINCT FROM %s",
+            (project_id, environment_id, change_id),
+        )
+    }
     return names
 
 
@@ -282,14 +336,21 @@ def _input(field: str, message: str) -> ApiError:
     return _bad(f"/inputs/{field}", message)
 
 
-def _validate_inputs(contract: dict[str, Any], inputs: dict[str, Any], env_params: dict[str, Any] | None,
-                     rules: dict[str, Any] | None, deployment: dict[str, Any] | None, today: date) -> None:
+def _validate_inputs(
+    contract: dict[str, Any],
+    inputs: dict[str, Any],
+    env_params: dict[str, Any] | None,
+    rules: dict[str, Any] | None,
+    deployment: dict[str, Any] | None,
+    today: date,
+) -> None:
     """V05, V08, V09, V10 sur les entrées fournies."""
     spec = contract["inputs"]
     for key in inputs:
         if key not in spec:
-            raise ApiError(422, "field_not_allowed", f"entrée « {key} » non déclarée par ce service",
-                           field=f"/inputs/{key}")
+            raise ApiError(
+                422, "field_not_allowed", f"entrée « {key} » non déclarée par ce service", field=f"/inputs/{key}"
+            )
         if deployment is not None and key in ("quantity", "size_tier") and not spec[key].get("modifiable"):
             raise ApiError(422, "field_not_allowed", f"entrée « {key} » non modifiable", field=f"/inputs/{key}")
     if "quantity" in inputs:
@@ -304,8 +365,7 @@ def _validate_inputs(contract: dict[str, Any], inputs: dict[str, Any], env_param
             raise _input("size_tier", "ce niveau n'est pas proposé dans cet environnement")
     if "usage" in inputs:
         u = inputs["usage"]
-        if not isinstance(u, str) or len(u) > spec["usage"].get("max_length", 80) \
-                or re.search(r"[\x00-\x1f\x7f<>]", u):
+        if not isinstance(u, str) or len(u) > spec["usage"].get("max_length", 80) or re.search(r"[\x00-\x1f\x7f<>]", u):
             raise _input("usage", "texte brut de 80 caractères au plus attendu")
     if "lifetime_until" in inputs:
         raw = inputs["lifetime_until"]
@@ -339,6 +399,14 @@ def resolve(
     referent_user = projects.referent_name(conn, project)
     referent = project["name"] + (f" ({referent_user})" if referent_user != "désigné du projet" else "")
     slug = need["service"]["template"]
+    pref_row_early = project_preferences.current(conn, project["id"])
+    pref_early = (pref_row_early["preferences"] if pref_row_early else {}) or {}
+    template_from_preference = False
+    if not slug and deployment is None:
+        candidate = pref_early.get("default_service_template")
+        if candidate and candidate in registry.granted_services(conn, project["id"]):
+            slug = candidate
+            template_from_preference = True
     if need.get("project_id") and need["project_id"] != str(project["id"]):
         raise _bad("/project_id", "le besoin désigne un autre projet")
     out: dict[str, Any] = {
@@ -371,7 +439,7 @@ def resolve(
             return finish("blocked")
         version_source = "deployment_pinned"
     else:
-        if slug not in registry.granted_services(conn, project["id"]):
+        if not slug or slug not in registry.granted_services(conn, project["id"]):
             out["blocks"].append(_block("service_not_available", referent, "/service/template"))
             return finish("blocked")
         tpl_row = registry.latest_published(conn, slug)
@@ -388,12 +456,12 @@ def resolve(
         "description": contract["description"],
         "template_version_id": str(tpl_row["id"]),
     }
-    val(
-        "/service/template",
-        slug,
-        provenance.get("/service/template", {"source": "user"})["source"],
-        label=contract["title"],
+    template_source = (
+        "project_preference"
+        if template_from_preference
+        else provenance.get("/service/template", {"source": "user"})["source"]
     )
+    val("/service/template", slug, template_source, label=contract["title"])
     val("/service/version", contract["version"], version_source)
 
     # 2. Environnement : demandé, sinon unique hors production ; jamais de repli.
@@ -472,14 +540,32 @@ def resolve(
     )
     val("/governance/policy_bundle", out["policy_bundle"]["version"], "platform")
 
-    # Entrées : validation, défauts du template et de la politique.
+    # 4. Préférence de projet approuvée (F50) : seulement si encore dans les octrois.
+    pref_row = project_preferences.current(conn, project["id"])
+    pref = (pref_row["preferences"] if pref_row else {}) or {}
+    # Préférence de service hors octrois de cet environnement : ignorée (pas d'erreur).
+    if pref.get("default_service_template") and pref["default_service_template"] not in registry.granted_services(
+        conn, project["id"], env["id"]
+    ):
+        pref = {k: v for k, v in pref.items() if k != "default_service_template"}
+    out["project_preference"] = (
+        {"version": pref_row["version"], "digest": pref_row["digest"], "preferences": pref} if pref_row else None
+    )
+
+    # Entrées : validation, défauts du template et de la politique (après préférence).
     inputs = need["inputs"]
     _validate_inputs(contract, inputs, env_params, rules, deployment, today)
     spec = contract["inputs"]
     previous = {i["name"]: i for i in (deployment or {}).get("instances", [])}
     default_tier = env_params["default_size_tier"]
+    tier_source_default = "template_default"
+    pref_tier = pref.get("default_size_tier")
+    if pref_tier and pref_tier in env_params["size_tiers"] and "size_tier" not in inputs and deployment is None:
+        default_tier = pref_tier
+        tier_source_default = "project_preference"
     if deployment is not None and previous:
         default_tier = next(iter(previous.values()))["size_tier"]
+        tier_source_default = "deployment_pinned"
     quantity = inputs.get("quantity", len(previous) if previous else spec["quantity"]["default"])
     tier = inputs.get("size_tier", default_tier)
 
@@ -496,7 +582,7 @@ def resolve(
     }
     out["input_sources"] = {
         "quantity": src("quantity", "template_default"),
-        "size_tier": src("size_tier", "template_default"),
+        "size_tier": src("size_tier", tier_source_default),
         "usage": src("usage", "template_default"),
         "lifetime_until": src("lifetime_until", "environment_policy_default"),
     }
@@ -574,8 +660,15 @@ def resolve(
         "addressing": contract["system_profile"]["network"]["addressing"],
     }
 
-    # Instances : noms existants conservés, nouveaux noms selon la convention.
+    # Instances : noms existants conservés, nouveaux noms selon la convention (préférence F50 si valide).
     dims = env_params["size_tiers"][tier]
+    naming_pattern = env_params["naming"]
+    naming_source = "template"
+    naming_ref = f"environments.{env['kind']}.naming"
+    if pref.get("naming") and deployment is None:
+        naming_pattern = pref["naming"]
+        naming_source = "project_preference"
+        naming_ref = f"project_preference@{pref_row['version']}" if pref_row else "project_preference"
     used = _used_names(conn, project["id"], env["id"], change_id) - set(previous)
     names = list(previous)[:quantity]
     nn = 1
@@ -583,7 +676,12 @@ def resolve(
         if nn > 99:
             out["blocks"].append(_block("name_unavailable", referent))
             return finish("blocked")
-        candidate = env_params["naming"].format(project_code=project["code"], nn=f"{nn:02d}")
+        candidate = naming_pattern.format(
+            project_code=project["code"],
+            nn=f"{nn:02d}",
+            environment=env["slug"],
+            project=project["slug"],
+        )
         nn += 1
         if candidate not in used and candidate not in names:
             names.append(candidate)
@@ -591,7 +689,7 @@ def resolve(
     out["instances"] = []
     for index, name in enumerate(names):
         out["instances"].append({"name": name, "size_tier": tier, **dims, "existing": name in previous})
-        val(f"/instances/{index}/name", name, "template", ref=f"environments.{env['kind']}.naming")
+        val(f"/instances/{index}/name", name, naming_source, ref=naming_ref)
         for key in ("vcpu", "memory_mb", "disk_gb"):
             val(f"/instances/{index}/{key}", dims[key], "template", ref=tier_ref)
     waves_spec = contract["deployment_policy"]["waves"]

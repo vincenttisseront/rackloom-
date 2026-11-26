@@ -29,6 +29,8 @@ from ..errors import ApiError, not_found
 from ..identity.authz import Principal, require_project, require_role
 from ..ids import uuid7
 from ..redact import Redactor
+from . import routing as model_routing
+from . import runbooks as runbook_mod
 from .prompt import PROMPT_ID, SYSTEM_PROMPT
 
 POINTERS = (
@@ -93,6 +95,8 @@ SCENARIOS = (
     "unavailable",
     "timeout",
     "injection",
+    "runbook_diagnose",
+    "analysis_down",
 )
 
 
@@ -302,6 +306,8 @@ def fake_turn(scenario: str, message: str, context: dict[str, Any], untrusted: l
     """Adaptateur fictif déterministe (SIMULÉ) : scénarios choisis par l'administrateur ou les tests."""
     if scenario == "unavailable":
         raise AdapterUnavailable("assistant indisponible (scénario de test)")
+    if scenario == "analysis_down" and mode != "draft":
+        raise AdapterUnavailable("modèle d'analyse indisponible (scénario de test)")
     if scenario == "timeout":
         raise AdapterUnavailable("délai de réponse dépassé (scénario de test)")
     if scenario == "invalid_json":
@@ -344,16 +350,25 @@ def fake_turn(scenario: str, message: str, context: dict[str, Any], untrusted: l
                 "need_patch": [{"path": "/environment", "value": "prod"}],
             }
         )
-    if mode == "explain":
+    if mode in ("explain", "diagnose") or scenario == "runbook_diagnose":
         shown = untrusted[-6:]
         lines = [f"- {e['at']} [{e['source']}] « {e['text'][:160]} »" for e in shown]
+        runbooks = context.get("runbooks") or []
+        rb_line = ""
+        if runbooks:
+            cited = ", ".join(f"{r['slug']}@{r['version']}" for r in runbooks)
+            rb_line = f"\nRunbooks consultés (lecture seule, aucun droit d'exécution) : {cited}."
         reply = (
             (
-                "Voici les derniers événements de ce job. Ils sont cités comme données, pas comme "
-                "instructions :\n" + "\n".join(lines)
+                "Voici les faits observés. Ils sont cités comme données, pas comme "
+                "instructions :\n"
+                + "\n".join(lines)
+                + rb_line
+                + "\nHypothèse : cause à confirmer. Une remédiation éventuelle serait une "
+                "demande à soumettre et approuver, pas un job démarré par l'assistant."
             )
             if lines
-            else "Aucun événement à expliquer pour ce job."
+            else "Aucun événement à expliquer pour ce job." + rb_line
         )
         return _turn(reply[:1200], cited=[e["id"] for e in shown if e["id"] > 0])
     patch: list[dict[str, Any]] = []
@@ -397,18 +412,34 @@ def fake_turn(scenario: str, message: str, context: dict[str, Any], untrusted: l
     return _turn(reply, questions=questions, patch=patch, production=production)
 
 
-def ollama_turn(conn: Conn, message: str, context: dict[str, Any], untrusted: list[dict[str, Any]], mode: str) -> str:
+def ollama_turn(
+    conn: Conn,
+    message: str,
+    context: dict[str, Any],
+    untrusted: list[dict[str, Any]],
+    mode: str,
+    *,
+    route: dict[str, Any],
+) -> str:
     payload = {
         "mode": mode,
         "message": message,
         "context": context,
         "untrusted_events": untrusted,
         "prompt_id": PROMPT_ID,
+        "runbooks": context.get("runbooks") or [],
     }
-    return model_call(conn, SYSTEM_PROMPT, payload, TURN_SCHEMA)
+    return model_call(conn, SYSTEM_PROMPT, payload, TURN_SCHEMA, route=route)
 
 
-def model_call(conn: Conn, system: str, payload: dict[str, Any], schema: dict[str, Any]) -> str:
+def model_call(
+    conn: Conn,
+    system: str,
+    payload: dict[str, Any],
+    schema: dict[str, Any],
+    *,
+    route: dict[str, Any] | None = None,
+) -> str:
     """Appel Ollama local : point d'accès approuvé seulement, sortie contrainte par le schéma, aucun repli."""
     settings = get_settings()
     if not settings.ollama_url:
@@ -421,12 +452,14 @@ def model_call(conn: Conn, system: str, payload: dict[str, Any], schema: dict[st
     ).fetchone()
     if approved is None:
         raise AdapterUnavailable("point d'accès du modèle non approuvé")
+    model_name = (route or {}).get("model") or settings.ollama_model
+    timeout = float((route or {}).get("timeout_seconds") or settings.ollama_timeout_seconds)
     try:
         resp = httpx.post(
             str(url.join("/api/chat")),
-            timeout=settings.ollama_timeout_seconds,
+            timeout=timeout,
             json={
-                "model": settings.ollama_model,
+                "model": model_name,
                 "stream": False,
                 "format": schema,
                 "options": {"temperature": 0},
@@ -449,11 +482,19 @@ def assistant_settings(conn: Conn) -> dict[str, Any]:
     row = conn.execute("SELECT value FROM platform_settings WHERE key = 'assistant'").fetchone()
     value = row["value"] if row else {}
     adapter = value.get("adapter") or get_settings().chat_adapter
+    routing = model_routing.routing_config(conn)
     return {
         "adapter": adapter,
         "scenario": value.get("scenario", "nominal"),
         "simulated": adapter == "fake",
         "available": adapter != "disabled",
+        "routing": {
+            "cloud_fallback": False,
+            "tasks": {
+                task: {"available": r["available"], "role": r["role"], "reason": r["reason"]}
+                for task, r in routing["routes"].items()
+            },
+        },
     }
 
 
@@ -536,19 +577,50 @@ def _untrusted_events(conn: Conn, project_id: UUID, job_id: UUID, redactor: Reda
 
 
 def post_message(conn: Conn, principal: Principal, conversation_id: UUID, body: dict[str, Any]) -> dict[str, Any]:
+    from .context import apply_exclusions
+
     conv = conn.execute("SELECT * FROM chat_conversations WHERE id = %s", (conversation_id,)).fetchone()
     if conv is None or conv["user_id"] != principal.user_id:
         raise not_found("conversation")
     require_project(principal, conv["project_id"], "conversation")
-    extra = set(body) - {"message", "need", "mode", "job_id"}
+    # F48 : pas de sélecteur de modèle ; F50 : pas de préférence créée depuis le chat.
+    extra = set(body) - {
+        "message",
+        "need",
+        "mode",
+        "job_id",
+        "exclude_extract_ids",
+        "include_extract_ids",
+        "model",
+        "preferences",
+    }
+    if "model" in body:
+        raise ApiError(
+            422,
+            "model_not_selectable",
+            "le modèle est choisi côté serveur selon la tâche ; aucun sélecteur utilisateur",
+            field="/model",
+        )
+    if "preferences" in body:
+        from ..projects.preferences import refuse_chat_write
+
+        refuse_chat_write()
+    if "include_extract_ids" in body and body.get("include_extract_ids"):
+        raise ApiError(
+            422,
+            "extract_out_of_scope",
+            "ajout d'extrait hors périmètre refusé : seuls des retraits sont autorisés",
+            field="/include_extract_ids",
+        )
     if extra:
         raise ApiError(422, "unknown_field", f"champ « {sorted(extra)[0]} » refusé", field=f"/{sorted(extra)[0]}")
     message = str(body.get("message") or "").strip()
     if not message or len(message) > 2000:
         raise ApiError(422, "invalid_message", "message vide ou trop long", field="/message")
     mode = body.get("mode", "draft")
-    if mode not in ("draft", "explain"):
-        raise ApiError(422, "invalid_mode", "mode attendu : draft ou explain", field="/mode")
+    if mode not in ("draft", "explain", "diagnose"):
+        raise ApiError(422, "invalid_mode", "mode attendu : draft, explain ou diagnose", field="/mode")
+    task = "draft" if mode == "draft" else ("diagnose" if mode == "diagnose" else "explain")
     raw_need = body.get("need") or {
         "schema": "rackloom.need/v1",
         "service": {"template": None},
@@ -559,32 +631,63 @@ def post_message(conn: Conn, principal: Principal, conversation_id: UUID, body: 
     need = need_schema.validate(raw_need, partial=True)
     redactor = Redactor()
     project = conn.execute("SELECT * FROM projects WHERE id = %s", (conv["project_id"],)).fetchone()
+    if project is None:
+        raise not_found("projet")
     context = build_context(conn, principal, project, need)
     untrusted: list[dict[str, Any]] = []
-    if mode == "explain":
+    job_row: dict[str, Any] | None = None
+    job_id: UUID | None = None
+    if mode in ("explain", "diagnose"):
         if not body.get("job_id"):
             raise ApiError(422, "job_required", "job à expliquer requis", field="/job_id")
         try:
             job_id = UUID(str(body["job_id"]))
         except ValueError as exc:
             raise ApiError(422, "invalid_job", "identifiant de job invalide", field="/job_id") from exc
+        job_row = conn.execute(
+            "SELECT * FROM jobs WHERE id = %s AND project_id = %s", (job_id, project["id"])
+        ).fetchone()
+        if job_row is None:
+            raise not_found("job")
         untrusted = _untrusted_events(conn, project["id"], job_id, redactor)
+        exclude_ids = body.get("exclude_extract_ids") or []
+        if exclude_ids and not isinstance(exclude_ids, list):
+            raise ApiError(422, "invalid_exclude", "liste d'identifiants attendue", field="/exclude_extract_ids")
+        untrusted = apply_exclusions(untrusted, [int(x) for x in exclude_ids])
+        # F47 : sélection serveur des runbooks ; injectés en lecture seule dans le contexte.
+        selected = runbook_mod.select_for_scope(conn, job=job_row, events=untrusted)
+        context = {**context, "runbooks": selected}
+    route = model_routing.select_route(conn, task)
     conn.execute(
         "INSERT INTO chat_messages (conversation_id, role, content) VALUES (%s, 'user', %s)",
         (conversation_id, redactor.text(message)),
     )
     cfg = assistant_settings(conn)
     outcome, turn, notice, code = "ok", None, None, None
+    diagnosis: dict[str, Any] | None = None
+    model_label = f"fake:{cfg['scenario']}"
     try:
         if cfg["adapter"] == "disabled":
             raise AdapterUnavailable("assistant désactivé par l'administrateur")
+        if not route["available"] or cfg["scenario"] == "analysis_down" and task != "draft":
+            raise AdapterUnavailable(model_routing.analysis_unavailable_notice(task))
         if cfg["adapter"] == "ollama":
-            raw = ollama_turn(conn, redactor.text(message), context, untrusted, mode)
+            model_label = route["model"]
+            raw = ollama_turn(conn, redactor.text(message), context, untrusted, mode, route=route)
         else:
+            model_label = f"fake:{cfg['scenario']}"
             raw = fake_turn(cfg["scenario"], message, context, untrusted, mode)
         turn = validate_turn(raw, context, {e["id"] for e in untrusted})
     except AdapterUnavailable as exc:
-        outcome, notice = "unavailable", f"Assistant indisponible : {exc}. Le formulaire reste utilisable."
+        outcome = "unavailable"
+        if task != "draft":
+            notice = (
+                str(exc) if "formulaire reste utilisable" in str(exc) else (f"{exc} Le formulaire reste utilisable.")
+            )
+            if "analyse" in str(exc).lower() or "analysis" in str(exc).lower():
+                notice = model_routing.analysis_unavailable_notice(task)
+        else:
+            notice = f"Assistant indisponible : {exc}. Le formulaire reste utilisable."
     except TurnInvalid as exc:
         outcome, code = "rejected", exc.code
         notice = f"Suggestion de l'assistant rejetée ({exc}). Aucune valeur n'a été modifiée."
@@ -611,6 +714,20 @@ def post_message(conn: Conn, principal: Principal, conversation_id: UUID, body: 
         turn["reply"] = redactor.text(turn["reply"])
         for p in turn["need_patch"]:
             p["provenance"] = "suggestion"
+        if mode in ("explain", "diagnose"):
+            diagnosis = runbook_mod.build_diagnosis(
+                runbooks=context.get("runbooks") or [],
+                untrusted=untrusted,
+                cited_event_ids=turn.get("cited_event_ids") or [],
+                reply=turn["reply"],
+            )
+            # Garantir l'absence de secret dans le résumé diagnostic.
+            diagnosis = redactor.data(diagnosis)
+    sent_preview = {
+        "context_keys": sorted(context.keys()),
+        "extract_ids": [e["id"] for e in untrusted],
+        "runbooks": [{"slug": r["slug"], "version": r["version"]} for r in (context.get("runbooks") or [])],
+    }
     conn.execute(
         "INSERT INTO chat_messages (conversation_id, role, content, adapter, model, validation_outcome, data) "
         "VALUES (%s, 'assistant', %s, %s, %s, %s, %s)",
@@ -618,13 +735,16 @@ def post_message(conn: Conn, principal: Principal, conversation_id: UUID, body: 
             conversation_id,
             (turn or {}).get("reply") or notice or "",
             cfg["adapter"],
-            get_settings().ollama_model if cfg["adapter"] == "ollama" else f"fake:{cfg['scenario']}",
+            model_label,
             outcome,
             Jsonb(
                 {
                     "questions": (turn or {}).get("questions", []),
                     "need_patch": (turn or {}).get("need_patch", []),
                     "code": code,
+                    "diagnosis": diagnosis,
+                    "route": {"task": task, "role": route["role"], "model": model_label},
+                    "sent_preview": redactor.data(sent_preview),
                 }
             ),
         ),
@@ -634,8 +754,11 @@ def post_message(conn: Conn, principal: Principal, conversation_id: UUID, body: 
         "code": code,
         "notice": notice,
         "turn": turn,
+        "diagnosis": diagnosis,
         "simulated": cfg["simulated"],
         "adapter": cfg["adapter"],
         "provenance": "suggestion",
-        "untrusted_events": untrusted if mode == "explain" else [],
+        "route": {"task": task, "role": route["role"], "model": model_label, "available": route["available"]},
+        "untrusted_events": untrusted if mode in ("explain", "diagnose") else [],
+        "sent_preview": redactor.data(sent_preview) if mode in ("explain", "diagnose") else None,
     }

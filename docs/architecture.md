@@ -376,7 +376,7 @@ Ils sont présents au lot 1 parce qu'ils coûtent peu et évitent une migration 
 | Point | Présent au lot 1 | Servira à |
 |---|---|---|
 | Registre d'admission ordonné, classes `read`/`write`, décisions enregistrées (étape `start` et, pour les règles sensibles au temps, `dispatch`) | oui (`builtin@4` : R010–R095, R900) | F27, F37, F11, F05, F39, F03, F34, F16, F38, F10 |
-| Étape « préférence de projet » dans l'ordre de résolution | oui, toujours vide | F50 |
+| Étape « préférence de projet » dans l'ordre de résolution | oui (`project_preference_versions`, provenance `project_preference`) | F50 |
 | Départage du résolveur isolé dans une fonction remplaçable | oui (rang, puis identifiant) | F32 |
 | Source `ci` acceptée par le même schéma et le même résolveur | oui (client simulé) | F35 |
 | `outputs_allowlist` dans le contrat de template | déclarée, non publiée | F33 |
@@ -393,7 +393,7 @@ Ils sont présents au lot 1 parce qu'ils coûtent peu et évitent une migration 
 | Champ `zone` dans la spécification du launcher | oui (`local`) | F16 |
 | Secrets en écriture seule côté API, références dans les contrats | oui | F13, F43 |
 | Contrat de connecteur à capacités et suite de contrat | oui (connecteurs du lot 1) | F30 |
-| Adaptateurs de modèle interchangeables, constructeur de contexte filtré, scénarios fictifs rejouables, banc d'évaluation (`chat_eval_reports`, prompt `rackloom.chat-prompt/v1`) | oui | F46, F48, F49 |
+| Adaptateurs de modèle interchangeables, constructeur de contexte filtré, scénarios fictifs rejouables, banc d'évaluation (`chat_eval_reports`, prompt `rackloom.chat-prompt/v1`), routage des modèles, aperçu de contexte, runbooks | oui | F46, F47, F48, F49 |
 | Date de fin capturée | capturée, non appliquée | F06 |
 | Interrupteur global de suspension des envois (`dispatch_paused`) | non | F26, maintenance |
 | État du service distinct de l'état des jobs, preuves et heure par contrôle de santé (§8) | oui | F57, F58 |

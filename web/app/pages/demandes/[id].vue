@@ -16,6 +16,9 @@ const notice = ref<string | null>(null)
 const busy = ref(false)
 const comment = ref('')
 const explain = ref<string | null>(null)
+const diagnosis = ref<any | null>(null)
+const contextPreview = ref<any | null>(null)
+const excludedExtracts = ref<number[]>([])
 
 const actions = computed<string[]>(() => (change.value?.allowed_actions || []).map((a: any) => a.action))
 const label = (a: string) => change.value?.allowed_actions?.find((x: any) => x.action === a)?.label || a
@@ -100,15 +103,54 @@ async function modify() {
   if (res?.change) await navigateTo(`/projets/${res.change.project.slug}/nouvelle?change=${res.change.id}`)
 }
 
-async function explainJob() {
-  explain.value = 'Analyse en cours…'
+const explainConvId = ref<string | null>(null)
+
+async function loadContextPreview() {
+  diagnosis.value = null
+  explain.value = null
   try {
-    const conv = await api.post(`/projects/${change.value.project.slug}/conversations`, {})
+    if (!explainConvId.value) {
+      const conv = await api.post(`/projects/${change.value.project.slug}/conversations`, {})
+      explainConvId.value = conv.id
+    }
     const lastJob = jobs.value[jobs.value.length - 1]
-    const res = await api.post(`/conversations/${conv.id}/messages`, { message: 'Explique-moi ce job', mode: 'explain', job_id: lastJob?.id })
-    explain.value = res.turn?.reply || res.notice || "L'assistant n'a pas pu répondre."
+    contextPreview.value = await api.post(`/conversations/${explainConvId.value}/context-preview`, {
+      mode: 'explain',
+      job_id: lastJob?.id,
+      exclude_extract_ids: excludedExtracts.value,
+    })
   } catch (e) {
     explain.value = errorText(e)
+  }
+}
+
+async function explainJob() {
+  explain.value = 'Analyse en cours…'
+  diagnosis.value = null
+  try {
+    if (!explainConvId.value) await loadContextPreview()
+    const lastJob = jobs.value[jobs.value.length - 1]
+    const res = await api.post(`/conversations/${explainConvId.value}/messages`, {
+      message: 'Explique-moi ce job',
+      mode: 'explain',
+      job_id: lastJob?.id,
+      exclude_extract_ids: excludedExtracts.value,
+    })
+    explain.value = res.turn?.reply || res.notice || "L'assistant n'a pas pu répondre."
+    diagnosis.value = res.diagnosis || null
+    if (res.status === 'unavailable') {
+      explain.value = res.notice || explain.value
+    }
+  } catch (e) {
+    explain.value = errorText(e)
+  }
+}
+
+function toggleExtract(id: number) {
+  if (excludedExtracts.value.includes(id)) {
+    excludedExtracts.value = excludedExtracts.value.filter(x => x !== id)
+  } else {
+    excludedExtracts.value = [...excludedExtracts.value, id]
   }
 }
 
@@ -245,11 +287,43 @@ const serviceCard = computed(() => deployment.value?.service_card || service.val
       </div>
       <div>
         <EventTimeline :events="events" :live="stream.connected.value && !finished" />
-        <section v-if="jobs.length" class="card">
+        <section v-if="jobs.length" class="card" data-testid="job-explain">
           <h2>Comprendre ce job</h2>
-          <p class="small muted">L'assistant explique à partir des événements, cités comme données non fiables. Il ne relance rien.</p>
-          <button type="button" @click="explainJob">Expliquer avec l'assistant</button>
-          <p v-if="explain" class="small" style="white-space: pre-wrap">{{ explain }}</p>
+          <p class="small muted">L'assistant explique à partir des événements et des runbooks approuvés. Il ne relance ni n'approuve rien.</p>
+          <div class="actions" style="margin-bottom: 0.75rem">
+            <button type="button" data-testid="preview-context" @click="loadContextPreview">Aperçu du contexte</button>
+            <button type="button" class="primary" data-testid="explain-job" @click="explainJob">Expliquer avec l'assistant</button>
+          </div>
+          <div v-if="contextPreview" class="small" data-testid="context-preview" style="margin-bottom: 0.75rem">
+            <strong>Aperçu du contexte (filtré)</strong>
+            <p class="muted">{{ contextPreview.note }}</p>
+            <ul>
+              <li v-for="ex in contextPreview.extracts" :key="ex.id">
+                <label>
+                  <input type="checkbox" :checked="!excludedExtracts.includes(ex.id)" @change="toggleExtract(ex.id)" />
+                  [{{ ex.source }}] {{ ex.text }}
+                </label>
+              </li>
+            </ul>
+          </div>
+          <p v-if="explain" class="small" style="white-space: pre-wrap" data-testid="explain-reply">{{ explain }}</p>
+          <div v-if="diagnosis" class="small" data-testid="diagnosis" style="margin-top: 0.75rem">
+            <p v-if="diagnosis.runbooks?.length">
+              Runbooks :
+              <span v-for="rb in diagnosis.runbooks" :key="`${rb.slug}@${rb.version}`" class="badge">{{ rb.slug }}@{{ rb.version }}</span>
+            </p>
+            <p><strong>Faits observés</strong></p>
+            <ul>
+              <li v-for="f in diagnosis.facts" :key="f.event_id">{{ f.at }} — {{ f.text }}</li>
+            </ul>
+            <p><strong>Hypothèses</strong> (non exécutables)</p>
+            <ul>
+              <li v-for="(h, i) in diagnosis.hypotheses" :key="i">{{ h.text }}</li>
+            </ul>
+            <p v-if="diagnosis.remediation" data-testid="remediation-draft">
+              {{ diagnosis.remediation.note }}
+            </p>
+          </div>
         </section>
       </div>
     </div>
