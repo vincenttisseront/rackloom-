@@ -167,6 +167,7 @@ BLOCK_MESSAGES = {
     "no_non_production_environment": "Aucun environnement hors production n'est disponible pour ce service.",
     "production_not_confirmed": "La production doit être demandée explicitement.",
     "no_published_version": "Aucune version publiée de ce service n'est utilisable.",
+    "no_promoted_version": "Aucune version de ce service n'est promue pour cet environnement.",
     "no_authorized_image": "Aucune image compatible n'est disponible pour ce profil.",
     "no_authorized_network": "Aucun réseau n'est disponible pour ce profil.",
     "no_authorized_placement": "Aucun emplacement autorisé ne correspond à ce profil.",
@@ -429,7 +430,9 @@ def resolve(
     fresh = inventory.freshness(conn, settings.inventory_max_age_hours)
     out["inventory"] = {"snapshot_id": fresh["snapshot_id"], "observed_at": fresh["observed_at"], "simulated": True}
 
-    # 1. Service octroyé et version de template.
+    # 1. Service octroyé ; version figée pour une modification, sinon choisie après l'environnement (F01).
+    envs = projects.environments(conn, project["id"])
+    version_source: str
     if deployment is not None:
         if slug != deployment["template_slug"]:
             raise _bad("/service/template", "une modification garde le service du déploiement", "field_not_allowed")
@@ -438,16 +441,84 @@ def resolve(
             out["blocks"].append(_block("no_published_version", referent, "/service/template"))
             return finish("blocked")
         version_source = "deployment_pinned"
+        contract = tpl_row["contract"]
+        admissible = set(contract["deployment_policy"]["admissible_environment_kinds"]) & set(contract["environments"])
+        env = next(e for e in envs if e["id"] == deployment["environment_id"])
+        if need["environment"] not in (None, env["slug"]):
+            raise _bad(
+                "/environment", "une modification reste dans l'environnement du déploiement", "field_not_allowed"
+            )
+        env_source = "deployment_pinned"
     else:
         if not slug or slug not in registry.granted_services(conn, project["id"]):
             out["blocks"].append(_block("service_not_available", referent, "/service/template"))
             return finish("blocked")
-        tpl_row = registry.latest_published(conn, slug)
-        if tpl_row is None:
+        guide = registry.latest_published(conn, slug)
+        if guide is None:
             out["blocks"].append(_block("no_published_version", referent, "/service/template"))
             return finish("blocked")
-        version_source = "template_latest_published"
-    contract = tpl_row["contract"]
+        guide_contract = guide["contract"]
+        admissible = (
+            set(guide_contract["deployment_policy"]["admissible_environment_kinds"])
+            & set(guide_contract["environments"])
+            & registry.promoted_kinds(conn, slug)
+        )
+        # 2. Environnement : demandé, sinon unique hors production ; jamais de repli.
+        env = None
+        if need["environment"] is not None:
+            env = next((e for e in envs if e["slug"] == need["environment"]), None)
+            if env is None:
+                raise _bad("/environment", "environnement inconnu pour ce projet")
+            if not principal.has_role("operator", project["id"], env["id"]):
+                raise _bad(
+                    "/environment",
+                    "vous n'êtes pas autorisé à déployer dans cet environnement",
+                    "environment_not_allowed",
+                )
+            if env["kind"] not in admissible:
+                raise _bad(
+                    "/environment",
+                    "ce service n'est pas admissible dans cet environnement",
+                    "environment_not_allowed",
+                )
+            if env["is_production"] and not need["confirm_production"]:
+                raise _bad("/environment", BLOCK_MESSAGES["production_not_confirmed"], "production_not_confirmed")
+            if slug not in registry.granted_services(conn, project["id"], env["id"]):
+                out["blocks"].append(_block("service_not_available", referent, "/service/template"))
+                return finish("blocked")
+            env_source = provenance.get("/environment", {"source": "user"})["source"]
+        else:
+            if need["confirm_production"]:
+                raise _bad("/environment", "indiquez l'environnement de production demandé")
+            candidates = [
+                e
+                for e in envs
+                if not e["is_production"]
+                and e["kind"] in admissible
+                and principal.has_role("operator", project["id"], e["id"])
+                and slug in registry.granted_services(conn, project["id"], e["id"])
+            ]
+            if not candidates:
+                out["blocks"].append(_block("no_non_production_environment", referent, "/environment"))
+                return finish("blocked")
+            if len(candidates) > 1:
+                out["missing"].append(
+                    {
+                        "field": "/environment",
+                        "text": "Dans quel environnement déployer ?",
+                        "options": [e["slug"] for e in candidates],
+                    }
+                )
+                return finish("incomplete")
+            env = candidates[0]
+            env_source = "environment_default"
+        tpl_row = registry.latest_promoted(conn, slug, env["kind"])
+        if tpl_row is None:
+            out["blocks"].append(_block("no_promoted_version", referent, "/service/template"))
+            return finish("blocked")
+        version_source = "template_latest_promoted"
+        contract = tpl_row["contract"]
+
     out["template"] = {
         "slug": slug,
         "version": contract["version"],
@@ -464,60 +535,6 @@ def resolve(
     val("/service/template", slug, template_source, label=contract["title"])
     val("/service/version", contract["version"], version_source)
 
-    # 2. Environnement : demandé, sinon unique hors production ; jamais de repli.
-    envs = projects.environments(conn, project["id"])
-    admissible = set(contract["deployment_policy"]["admissible_environment_kinds"]) & set(contract["environments"])
-    env = None
-    if deployment is not None:
-        env = next(e for e in envs if e["id"] == deployment["environment_id"])
-        if need["environment"] not in (None, env["slug"]):
-            raise _bad(
-                "/environment", "une modification reste dans l'environnement du déploiement", "field_not_allowed"
-            )
-        env_source = "deployment_pinned"
-    elif need["environment"] is not None:
-        env = next((e for e in envs if e["slug"] == need["environment"]), None)
-        if env is None:
-            raise _bad("/environment", "environnement inconnu pour ce projet")
-        if not principal.has_role("operator", project["id"], env["id"]):
-            raise _bad(
-                "/environment", "vous n'êtes pas autorisé à déployer dans cet environnement", "environment_not_allowed"
-            )
-        if env["kind"] not in admissible:
-            raise _bad(
-                "/environment", "ce service n'est pas admissible dans cet environnement", "environment_not_allowed"
-            )
-        if env["is_production"] and not need["confirm_production"]:
-            raise _bad("/environment", BLOCK_MESSAGES["production_not_confirmed"], "production_not_confirmed")
-        if slug not in registry.granted_services(conn, project["id"], env["id"]):
-            out["blocks"].append(_block("service_not_available", referent, "/service/template"))
-            return finish("blocked")
-        env_source = provenance.get("/environment", {"source": "user"})["source"]
-    else:
-        if need["confirm_production"]:
-            raise _bad("/environment", "indiquez l'environnement de production demandé")
-        candidates = [
-            e
-            for e in envs
-            if not e["is_production"]
-            and e["kind"] in admissible
-            and principal.has_role("operator", project["id"], e["id"])
-            and slug in registry.granted_services(conn, project["id"], e["id"])
-        ]
-        if not candidates:
-            out["blocks"].append(_block("no_non_production_environment", referent, "/environment"))
-            return finish("blocked")
-        if len(candidates) > 1:
-            out["missing"].append(
-                {
-                    "field": "/environment",
-                    "text": "Dans quel environnement déployer ?",
-                    "options": [e["slug"] for e in candidates],
-                }
-            )
-            return finish("incomplete")
-        env = candidates[0]
-        env_source = "environment_default"
     pol = projects.current_policy(conn, env["id"])
     rules = pol["rules"] if pol else {}
     env_params = contract["environments"][env["kind"]]

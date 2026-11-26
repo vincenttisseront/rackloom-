@@ -294,6 +294,64 @@
         ]
       }
     },
+    "/api/v1/admin/catalog/pins/{pin_id}/review": {
+      "post": {
+        "description": "F01 : marque une épingle Git/artefact comme revue (préalable à la publication).",
+        "operationId": "review_catalog_pin_api_v1_admin_catalog_pins__pin_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pin_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pin Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Review Catalog Pin Api V1 Admin Catalog Pins  Pin Id  Review Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Catalog Pin",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
     "/api/v1/admin/components": {
       "get": {
         "operationId": "list_components_api_v1_admin_components_get",
@@ -587,6 +645,72 @@
           }
         },
         "summary": "Template Impact",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/templates/{slug}/versions/{version}/promote": {
+      "post": {
+        "description": "F01 : promotion vers un kind d'environnement — distincte de la publication, aucun job.",
+        "operationId": "promote_api_v1_admin_templates__slug__versions__version__promote_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Promote Api V1 Admin Templates  Slug  Versions  Version  Promote Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Promote",
         "tags": [
           "administration"
         ]

@@ -86,6 +86,37 @@ def cmd_catalog_load(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_catalog_import_git(args: argparse.Namespace) -> int:
+    """F01 : importe un catalogue depuis un dépôt Git local épinglé (non publié)."""
+    from . import registry
+
+    with _conn() as conn:
+        result = registry.load_from_git(
+            conn,
+            Path(args.repo),
+            args.commit,
+            catalog_subdir=args.subdir or "",
+        )
+        conn.commit()
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def cmd_catalog_review_pin(args: argparse.Namespace) -> int:
+    from uuid import UUID
+
+    from .registry import git_source
+
+    with _conn() as conn:
+        user = conn.execute("SELECT * FROM users WHERE email = %s", (args.as_user,)).fetchone()
+        if user is None:
+            raise SystemExit(f"utilisateur inconnu : {args.as_user}")
+        pin = git_source.review_pin(conn, UUID(args.pin_id), user["id"], args.reason)
+        conn.commit()
+    print(json.dumps({"id": str(pin["id"]), "reviewed": pin["reviewed"], "commit_sha": pin["commit_sha"]}))
+    return 0
+
+
 def cmd_jobs_list(args: argparse.Namespace) -> int:
     with _conn() as conn:
         query = "SELECT id, kind, state, attempts, lease_expires_at, blocked_reason, created_at FROM jobs"
@@ -299,6 +330,16 @@ def build_parser() -> argparse.ArgumentParser:
     c = catalog.add_parser("load")
     c.add_argument("--dir")
     c.set_defaults(func=cmd_catalog_load)
+    cg = catalog.add_parser("import-git", help="F01 : charge un catalogue depuis un dépôt Git local épinglé")
+    cg.add_argument("--repo", required=True, help="chemin local du dépôt (pas d'URL)")
+    cg.add_argument("--commit", required=True, help="SHA-1 complet (40 hex)")
+    cg.add_argument("--subdir", default="", help="sous-répertoire du catalogue dans le dépôt")
+    cg.set_defaults(func=cmd_catalog_import_git)
+    cr = catalog.add_parser("review-pin", help="F01 : marque une épingle Git comme revue")
+    cr.add_argument("--pin-id", required=True)
+    cr.add_argument("--reason", required=True)
+    cr.add_argument("--as-user", required=True, help="email du relecteur (template_publisher)")
+    cr.set_defaults(func=cmd_catalog_review_pin)
     jobs = sub.add_parser("jobs").add_subparsers(dest="jobs_command", required=True)
     j = jobs.add_parser("list")
     j.add_argument("--stuck", action="store_true")

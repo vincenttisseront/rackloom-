@@ -58,7 +58,8 @@
 | Disjoncteur par connecteur (F37, règle R095, bundle `builtin@4`) | livré | testé localement | `test_f37_circuit.py` ; ouverture → `connector_circuit_open` sur `write` ; `read` admis ; fermeture bloquée si `uncertain` ; L2 (coupure vCenter réelle) non fait |
 | Banc d'évaluation Ollama (F46) | livré | testé localement | `test_f46_eval.py` ; e2e `87-f46-eval.spec.ts` ; `defaults_prod` / `asks_vlan` → échec ; rapport versionné (`model` + `prompt_id`) ; aucun job ; Ollama réel non qualifié (D2) |
 | Chat F47–F50 (runbooks, routage, aperçu, préférences) | livré | testé localement | `test_f47_f50_chat.py` ; e2e `88-f47-f50-chat.spec.ts` ; migration `0008` ; fake Ollama OK ; aucun secret réel ; Ollama réel non (D2) |
-| Fonctions F01 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F37, F46–F50, F55, F57, F60) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances |
+| Catalogue Git avec promotion (F01) | livré | testé localement | `test_f01_catalogue_git.py` ; migration `0009` ; pins + promotions ; e2e `91-f01-catalogue.spec.ts` ; forge réelle : non |
+| Fonctions F02 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F37, F46–F50, F55, F57, F60, F01) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : lot B F05 → F03 → F09 |
 
 ## Démonstrations D1 à D6
 
@@ -284,8 +285,16 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - **F50** : `project_preference_versions` ; publication référent ; résolveur provenance `project_preference` ; plan existant inchangé ; chat → `preference_not_from_chat`.
 - Preuves : `test_f47_f50_chat.py` ; e2e `88-f47-f50-chat.spec.ts`. Ollama réel : non (D2).
 
+### F01 : catalogue Git avec promotion (2026-11-26, heure de Paris)
+
+- Branche `cursor/f01-catalogue-git-235e` depuis `main` (F47–F50 fusionné).
+- Migration `0009` : `catalog_source_pins`, `template_promotions` ; backfill des versions déjà publiées.
+- Import Git local épinglé (`rackloom catalog import-git`), revue (`review-pin` / API), publication refusée si non revue ; promotion explicite pour sources Git (filesystem : promotion initiale auto à la publication).
+- Résolveur : nouvelles demandes → `latest_promoted` pour le kind d'environnement.
+- Preuves : `test_f01_catalogue_git.py` (2) ; T35 / résolveur verts. Forge réelle : non (D2).
+
 ## Prochain jalon
 
-1. Fusionner **F47–F50** sur `main` après CI verte (Vincent).
-2. Ensuite selon le backlog (F01–F45 restantes, F51+, AT02–AT04).
+1. Fusionner **F01** sur `main` après CI verte (Vincent).
+2. Lot B suite : **F05** → **F03** → **F09**.
 3. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
