@@ -16,6 +16,9 @@ const error = ref<string | null>(null)
 const fieldErrors = ref<Record<string, string>>({})
 const usedChat = ref(false)
 const prodDialog = ref<HTMLDialogElement | null>(null)
+const projectExamples = ref<any>(null)
+const comparison = ref<any>(null)
+const similar = ref<any>(null)
 
 const form = reactive({
   template: { value: null, source: null } as Field<string | null>,
@@ -88,6 +91,18 @@ function applySuggestion(p: { path: string; value: any }) {
   if (f) { f.value = p.value; f.source = 'suggestion' }
 }
 
+function applyChoice(p: { path: string; value: any }) {
+  const map: Record<string, Field<any>> = {
+    '/service/template': form.template, '/environment': form.environment, '/inputs/quantity': form.quantity,
+    '/inputs/size_tier': form.size_tier, '/inputs/usage': form.usage, '/inputs/lifetime_until': form.lifetime_until,
+  }
+  const f = map[p.path]
+  if (f) set(f, p.value)
+  if (p.path === '/environment' && service.value?.production?.some((e: any) => e.slug === p.value)) {
+    form.confirm_production = true
+  }
+}
+
 function confirmSuggestion(f: Field<any>) {
   f.source = 'user'
 }
@@ -110,17 +125,63 @@ function cancelProduction() {
   }
 }
 
+async function applyExample(exampleId: string) {
+  const ex = (projectExamples.value?.examples || []).find((e: any) => e.id === exampleId)
+  if (!ex?.need) return
+  fromNeed(ex.need, {
+    '/service/template': { source: 'user' },
+    '/environment': { source: 'user' },
+    ...Object.fromEntries(
+      Object.keys(ex.need.inputs || {}).map(k => [`/inputs/${k}`, { source: 'user' }]),
+    ),
+  })
+}
+
+async function refreshCompareAndSimilar() {
+  const need = buildNeed(true)
+  try {
+    comparison.value = await api.post(`/projects/${slug.value}/comparisons`, { need })
+  } catch {
+    comparison.value = null
+  }
+  if (!form.template.value) {
+    similar.value = null
+    return
+  }
+  try {
+    similar.value = await api.post(`/projects/${slug.value}/changes/similar`, {
+      need,
+      exclude_change_id: change.value?.id,
+    })
+  } catch {
+    similar.value = null
+  }
+}
+
+watch(
+  () => [form.template.value, form.environment.value, form.size_tier.value, form.confirm_production],
+  () => { if (step.value === 1) void refreshCompareAndSimilar() },
+)
+
 async function load() {
   loading.value = true
   try {
-    const [svc, projects] = await Promise.all([api.get(`/projects/${slug.value}/services`), api.get('/projects')])
+    const [svc, projects, ex] = await Promise.all([
+      api.get(`/projects/${slug.value}/services`),
+      api.get('/projects'),
+      api.get(`/projects/${slug.value}/examples`),
+    ])
     services.value = svc
     project.value = projects.find((p: any) => p.slug === slug.value) || null
+    projectExamples.value = ex
     if (route.query.change) {
       change.value = await api.get(`/changes/${route.query.change}`)
       if (change.value.need) fromNeed(change.value.need, change.value.need_provenance || {})
       if (route.query.etape === '2' && change.value.revision) step.value = 2
+    } else if (route.query.example) {
+      await applyExample(String(route.query.example))
     }
+    await refreshCompareAndSimilar()
   } catch (e) {
     error.value = errorText(e)
   } finally {
@@ -186,11 +247,20 @@ const inputs = computed(() => service.value?.inputs || {})
 
     <!-- Étape 1 -->
     <div v-else-if="step === 1" class="grid-2">
-      <AssistantPanel :project="slug" :need="() => buildNeed(true)" @apply="applySuggestion" @used="usedChat = true" />
+      <div>
+        <AssistantPanel :project="slug" :need="() => buildNeed(true)" @apply="applySuggestion" @used="usedChat = true" />
+        <RequestExamples
+          :examples="projectExamples?.examples || []"
+          :notice="projectExamples?.notice"
+          :project-slug="slug"
+        />
+        <ChoiceComparator :comparison="comparison" @pick="applyChoice" />
+      </div>
 
       <form class="card" aria-labelledby="need-title" data-testid="need-form" novalidate @submit.prevent="save">
         <h2 id="need-title">Votre besoin</h2>
         <p class="small muted">Décrivez le résultat attendu. Rackloom choisit l'emplacement, le réseau, l'image et le dimensionnement.</p>
+        <SimilarChanges :payload="similar" />
 
         <fieldset class="field" :disabled="isModify" style="border: none; padding: 0; margin: 0 0 1rem">
           <legend><strong>Service</strong></legend>

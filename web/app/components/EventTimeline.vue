@@ -47,6 +47,8 @@ function text(e: RackloomEvent): string {
     case 'deployment.service_status': return `État du service : ${d.label || d.status}${d.reason ? ` — ${d.reason}` : ''}`
     case 'retry.requested': return 'Reprise de la configuration demandée'
     case 'change.superseded': return 'Nouvelle version du besoin : approbation précédente révoquée'
+    case 'review.solicited': return `Revue sollicitée sur la version ${d.version_no}${d.focus ? ` (${d.focus})` : ''}`
+    case 'review.replied': return `Réponse de revue reçue (version ${d.version_no})`
     default: return d.label || d.message || e.type
   }
 }

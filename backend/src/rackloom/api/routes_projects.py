@@ -90,6 +90,55 @@ def list_services(project: str, request: Request) -> list[dict[str, Any]]:
         return services_for(u.conn, u.p, p)
 
 
+@router.get("/projects/{project}/examples")
+def list_examples(project: str, request: Request) -> dict[str, Any]:
+    """F51 : exemples adaptés au projet, aux templates publiés et aux droits."""
+    from .. import examples
+
+    with unit_of_work(request) as u:
+        projects.get_project(u.conn, u.p, project)  # 404 hors périmètre
+        return examples.build(u.conn, u.p, project_ref=project)
+
+
+@router.post("/projects/{project}/comparisons")
+def compare_choices(project: str, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F52 : comparateur de choix métier (lecture seule)."""
+    from ..resolver import compare as compare_mod
+
+    extra = set(body) - {"need"}
+    if extra:
+        raise ApiError(422, "unknown_field", f"champ « {sorted(extra)[0]} » refusé",
+                       field=f"/{sorted(extra)[0]}")
+    with unit_of_work(request) as u:
+        p = projects.get_project(u.conn, u.p, project)
+        return compare_mod.compare(u.conn, u.p, p, body.get("need"))
+
+
+@router.post("/projects/{project}/changes/similar")
+def similar_changes(project: str, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F53 : demandes actives similaires dans le périmètre consultable (pas de fusion)."""
+    from uuid import UUID
+
+    from ..changes import similarity
+
+    extra = set(body) - {"need", "exclude_change_id"}
+    if extra:
+        raise ApiError(422, "unknown_field", f"champ « {sorted(extra)[0]} » refusé",
+                       field=f"/{sorted(extra)[0]}")
+    with unit_of_work(request) as u:
+        p = projects.get_project(u.conn, u.p, project)
+        exclude = None
+        if body.get("exclude_change_id"):
+            try:
+                exclude = UUID(str(body["exclude_change_id"]))
+            except ValueError as exc:
+                raise ApiError(422, "invalid_id", "identifiant invalide",
+                               field="/exclude_change_id") from exc
+        return similarity.find_similar(
+            u.conn, u.p, p, body.get("need"), exclude_change_id=exclude
+        )
+
+
 @router.get("/projects/{project}/changes")
 def list_changes(project: str, request: Request) -> list[dict[str, Any]]:
     with unit_of_work(request) as u:

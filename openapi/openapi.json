@@ -1255,6 +1255,52 @@
         ]
       }
     },
+    "/api/v1/changes/{change_id}/estimate": {
+      "get": {
+        "description": "F56 : estimation de mise à disposition (sans modèle).",
+        "operationId": "get_estimate_api_v1_changes__change_id__estimate_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Estimate Api V1 Changes  Change Id  Estimate Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Estimate",
+        "tags": [
+          "demandes"
+        ]
+      }
+    },
     "/api/v1/changes/{change_id}/events": {
       "get": {
         "operationId": "change_events_api_v1_changes__change_id__events_get",
@@ -1627,6 +1673,225 @@
           }
         },
         "summary": "Request Retry",
+        "tags": [
+          "demandes"
+        ]
+      }
+    },
+    "/api/v1/changes/{change_id}/review-candidates": {
+      "get": {
+        "description": "F54 : collègues déjà habilités sollicitables.",
+        "operationId": "review_candidates_api_v1_changes__change_id__review_candidates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Review Candidates Api V1 Changes  Change Id  Review Candidates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Candidates",
+        "tags": [
+          "demandes"
+        ]
+      }
+    },
+    "/api/v1/changes/{change_id}/reviews": {
+      "get": {
+        "description": "F54 : sollicitations et écarts depuis la dernière revue.",
+        "operationId": "list_reviews_api_v1_changes__change_id__reviews_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Reviews Api V1 Changes  Change Id  Reviews Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Reviews",
+        "tags": [
+          "demandes"
+        ]
+      },
+      "post": {
+        "description": "F54 : solliciter un collègue habilité (aucun droit créé).",
+        "operationId": "create_review_api_v1_changes__change_id__reviews_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Review Api V1 Changes  Change Id  Reviews Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Review",
+        "tags": [
+          "demandes"
+        ]
+      }
+    },
+    "/api/v1/changes/{change_id}/reviews/{review_id}/replies": {
+      "post": {
+        "description": "F54 : répondre sur la version soumise (ne modifie pas le plan).",
+        "operationId": "reply_review_api_v1_changes__change_id__reviews__review_id__replies_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Change Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "review_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Review Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reply Review Api V1 Changes  Change Id  Reviews  Review Id  Replies Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reply Review",
         "tags": [
           "demandes"
         ]
@@ -2817,6 +3082,30 @@
         ]
       }
     },
+    "/api/v1/examples": {
+      "get": {
+        "description": "F51 : exemples « qu'est-ce que je peux demander » (tous projets visibles).",
+        "operationId": "get_examples_api_v1_examples_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Examples Api V1 Examples Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Examples",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
     "/api/v1/health/live": {
       "get": {
         "operationId": "live_api_v1_health_live_get",
@@ -3238,6 +3527,120 @@
         ]
       }
     },
+    "/api/v1/projects/{project}/changes/similar": {
+      "post": {
+        "description": "F53 : demandes actives similaires dans le périmètre consultable (pas de fusion).",
+        "operationId": "similar_changes_api_v1_projects__project__changes_similar_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Similar Changes Api V1 Projects  Project  Changes Similar Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Similar Changes",
+        "tags": [
+          "projets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/comparisons": {
+      "post": {
+        "description": "F52 : comparateur de choix métier (lecture seule).",
+        "operationId": "compare_choices_api_v1_projects__project__comparisons_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Compare Choices Api V1 Projects  Project  Comparisons Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compare Choices",
+        "tags": [
+          "projets"
+        ]
+      }
+    },
     "/api/v1/projects/{project}/conversations": {
       "post": {
         "operationId": "create_conversation_api_v1_projects__project__conversations_post",
@@ -3441,6 +3844,51 @@
         "summary": "Project Stream",
         "tags": [
           "suivi"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/examples": {
+      "get": {
+        "description": "F51 : exemples adaptés au projet, aux templates publiés et aux droits.",
+        "operationId": "list_examples_api_v1_projects__project__examples_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Examples Api V1 Projects  Project  Examples Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Examples",
+        "tags": [
+          "projets"
         ]
       }
     },

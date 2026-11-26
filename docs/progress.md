@@ -5,7 +5,8 @@
 - **Lot 0 (cadrage)** : fusionné dans `main` (PR #1).
 - **Lot 1 (parcours Compose avec résolveur central et modèle template/composant)** : **terminé, testé localement**. Livré en trois PR : #2 et #3 fusionnées en avance, puis la PR de clôture #4 (`cursor/lot-1-cloture-e231`).
 - **Lot A** : **F28** fusionné (PR #6) ; **F27** fusionné (PR #7) ; **F21** fusionné (PR #11). **AT01** fusionné (PR #5) ; **F60** fusionné (PR #8) ; **F57** fusionné (PR #9) ; **F55** fusionné (PR #10).
-- **F31** fusionné (PR #12). **F37** (disjoncteur) : en cours sur `cursor/f37-circuit-breaker-cd8f`.
+- **F31** fusionné (PR #12). **F37** fusionné (PR #13). **F46** fusionné (PR #14).
+- **F51 à F54 et F56** (simplifier la demande et le suivi) : en cours sur `cursor/f51-f56-demande-suivi-a149`.
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -57,7 +58,12 @@
 | Préflight de bout en bout (F31) | livré | testé localement | `test_f31_preflight.py` ; job `preflight` avant `tf_plan` ; TLS jetable → `tls_untrusted` ; state HTTP fermé → `state_unreachable` ; canari absent ; state inchangé ; L2 (vCenter/state réels) non fait |
 | Disjoncteur par connecteur (F37, règle R095, bundle `builtin@4`) | livré | testé localement | `test_f37_circuit.py` ; ouverture → `connector_circuit_open` sur `write` ; `read` admis ; fermeture bloquée si `uncertain` ; L2 (coupure vCenter réelle) non fait |
 | Banc d'évaluation Ollama (F46) | livré | testé localement | `test_f46_eval.py` ; e2e `87-f46-eval.spec.ts` ; `defaults_prod` / `asks_vlan` → échec ; rapport versionné (`model` + `prompt_id`) ; aucun job ; Ollama réel non qualifié (D2) |
-| Fonctions F01 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F37, F46, F55, F57, F60) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances (F48 après F46) |
+| Exemples « qu'est-ce que je peux demander » (F51) | livré | testé localement | `test_f51_examples.py` ; e2e `91-f51-exemples.spec.ts` ; sans Ollama |
+| Comparateur de choix métier (F52) | livré | testé localement | `test_f52_compare.py` ; e2e `92-f52-comparateur.spec.ts` ; coût/capacité omis (F05/F29/F32) |
+| Demandes similaires (F53) | livré | testé localement | `test_f53_similar.py` ; e2e `93-f53-similaires.spec.ts` ; U1 |
+| Passer la main / revues (F54) | livré | testé localement | `test_f54_reviews.py` ; e2e `94-f54-passer-la-main.spec.ts` ; migration `0008` |
+| Estimation de mise à disposition (F56) | livré (file F36 non livrée → `unavailable`) | testé localement | `test_f56_estimate.py` ; e2e `99-f56-estimation.spec.ts` ; aucun modèle |
+| Fonctions F01 à F50 restantes / F58 à F59 et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances (F48 après F46) ; F58/F59 après lot 2 / OIDC |
 
 ## Démonstrations D1 à D6
 
@@ -270,12 +276,25 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F46 banc d'évaluation Ollama (2026-11-26, heure de Paris)
 
-- Branche `cursor/f46-ollama-eval-bench-4c10` depuis `main` (F37 fusionné).
+- Branche `cursor/f46-ollama-eval-bench-4c10` depuis `main` (F37 fusionné) ; fusionnée (#14).
 - Migration `0007` (`chat_eval_reports`, ajout seul) ; prompt versionné `rackloom.chat-prompt/v1` ; `rackloom.chat.eval` rejoue des conversations fictives ; métriques (questions inutiles, résolution du besoin, ciblage, champs verrouillés) ; `defaults_prod` / `asks_vlan` → `verdict=failed` ; API admin + `rackloom chat eval` ; UI Connecteurs.
 - Preuves : `test_f46_eval.py` ; e2e `87-f46-eval.spec.ts`. Qualifier un vrai modèle Ollama : non (D2).
 
+### F51–F54 et F56 : simplifier la demande et le suivi (2026-11-26, heure de Paris)
+
+- Branche `cursor/f51-f56-demande-suivi-a149` depuis `main` (F31/F37/F46 et atelier F55/F57/F60 déjà fusionnés).
+- **F51** : `GET /examples`, `GET /projects/{p}/examples` ; UI accueil + nouvelle demande ; `can_submit` ≠ `can_execute` ; aucun exemple prod sans droit.
+- **F52** : `POST /projects/{p}/comparisons` ; services / environnements / niveaux ; critères non vérifiés omis ; mode `auto` si une seule option.
+- **F53** : `POST /projects/{p}/changes/similar` ; dépôt scopé avant similarité (U1) ; aucune fusion.
+- **F54** : migration `0008` (`change_reviews`) ; sollicitation / réponse ; events F21 ; aucun `role_binding`.
+- **F56** : `GET /changes/{id}/estimate` ; approbation / créneau F27 / fourchette historique ; file F36 → `unavailable` ; `model_used: false`.
+- **Non démarré** : F58, F59 (attendent lot 2 / OIDC).
+- Commandes : `uv run pytest tests/integration/test_f51_*.py test_f52_*.py test_f53_*.py test_f54_*.py test_f56_*.py` → **15 passed** ; `ruff` / `lint-imports` / `nuxi typecheck` / `check-openapi-drift` OK. Docker / Terraform / e2e pile absents sur cet agent : e2e Playwright non exécutés localement (CI).
+- Preuves : tests d'intégration ci-dessus ; e2e écrits (`91`–`94`, `99`). Labo réel : non (D2).
+
 ## Prochain jalon
 
-1. Fusionner **F46** sur `main` après CI verte (Vincent).
+1. Fusionner **F51–F54 / F56** sur `main` après CI verte (Vincent).
 2. Ensuite selon le backlog (ex. F48 après F46).
-3. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
+3. F58 / F59 après dépendances (F57 déjà là ; lot 2 / OIDC pour F59).
+4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
