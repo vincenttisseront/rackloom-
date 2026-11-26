@@ -32,10 +32,16 @@ class Principal:
     auth_time: datetime
     bindings: list[Binding] = field(default_factory=list)
     csrf_token: str = ""
+    kind: str = "human"  # human | service (F35)
+    service_project_id: UUID | None = None
 
     @property
     def is_platform_admin(self) -> bool:
         return any(b.role == "platform_admin" for b in self.bindings)
+
+    @property
+    def is_service(self) -> bool:
+        return self.kind == "service" or self.auth_method == "service_token"
 
     @property
     def is_global_auditor(self) -> bool:

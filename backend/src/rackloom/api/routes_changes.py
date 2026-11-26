@@ -145,6 +145,10 @@ def get_plan(change_id: UUID, plan_id: UUID, request: Request) -> dict[str, Any]
 @router.post("/changes/{change_id}/approvals")
 def decide(change_id: UUID, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     with unit_of_work(request, write=True) as u:
+        from ..identity import service_accounts
+
+        # F35 : refuser avant l'évaluation des actions (sinon 403 générique « rôle approver »).
+        service_accounts.refuse_approval(u.p)
         change = service.get_change(u.conn, u.p, change_id)
         approve = body.get("decision") == "approved"
         if body.get("retry_id"):

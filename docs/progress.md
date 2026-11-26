@@ -6,7 +6,8 @@
 - **Lot 1 (parcours Compose avec résolveur central et modèle template/composant)** : **terminé, testé localement**. Livré en trois PR : #2 et #3 fusionnées en avance, puis la PR de clôture #4 (`cursor/lot-1-cloture-e231`).
 - **Lot A** : **F28** fusionné (PR #6) ; **F27** fusionné (PR #7) ; **F21** fusionné (PR #11). **AT01** fusionné (PR #5) ; **F60** fusionné (PR #8) ; **F57** fusionné (PR #9) ; **F55** fusionné (PR #10).
 - **F31** fusionné (PR #12). **F37** fusionné (PR #13). **F46** fusionné (PR #14). **F47–F50** fusionné (PR #16). **F01** fusionné (PR #17). **F05** fusionné (PR #18). **F03** fusionné (PR #20). **F09** fusionné (PR #21).
-- **F51 à F54 et F56** (simplifier la demande et le suivi) : PR #15 (`cursor/f51-f56-demande-suivi-a149`), rebase Alembic `0012` en cours.
+- **F51 à F54 et F56** (simplifier la demande et le suivi) : PR #15 (`cursor/f51-f56-demande-suivi-a149`), migration Alembic `0012`.
+- **F32–F35** : PR #22 (`cursor/f32-f35-placement-outputs-licenses-ci-5bfe`), migration Alembic `0013` (après #15).
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -68,7 +69,11 @@
 | Demandes similaires (F53) | livré | testé localement | `test_f53_similar.py` ; e2e `93-f53-similaires.spec.ts` ; U1 |
 | Passer la main / revues (F54) | livré | testé localement | `test_f54_reviews.py` ; e2e `94-f54-passer-la-main.spec.ts` ; migration `0012` |
 | Estimation de mise à disposition (F56) | livré (file F36 non livrée → `unavailable`) | testé localement | `test_f56_estimate.py` ; e2e `99-f56-estimation.spec.ts` ; aucun modèle |
-| Fonctions F02 à F45 restantes / F58 à F59 et atelier AT02 à AT04 (hors F01, F03, F05, F09) | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances ; F58/F59 après lot 2 / OIDC |
+| Placement multi-cluster et anti-affinité (F32) | livré | testé localement | `test_f32_placement.py` ; deux clusters → réplicas séparés, digest stable ; un cluster → `anti_affinity_unsatisfiable` ; cluster refusé dans le besoin ; L2 non fait |
+| Sorties de déploiement réutilisables (F33) | livré | testé localement | `test_f33_outputs.py` ; `GET /deployments/{id}/outputs` ; allowlist ; hors projet → 404 ; jamais le state |
+| Contrôle des licences (F34, règle R125, bundle `builtin@7`) | livré | testé localement | `test_f34_licenses.py` ; source fictive ; `license_unavailable` / `license_unverified` ; pas de clé dans le besoin ; source réelle non faite (D11) |
+| Demandes depuis la CI/CD (F35) | livré | testé localement | `test_f35_ci.py` ; Bearer + `POST /ci/submissions` ; rejeu idempotent ; `locked_field` ; approbation refusée |
+| Fonctions F02 à F45 restantes / F58 à F59 et atelier AT02 à AT04 (hors F01, F03, F05, F09, F32–F35) | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances ; F58/F59 après lot 2 / OIDC |
 
 ## Démonstrations D1 à D6
 
@@ -331,9 +336,18 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - **Non démarré** : F58, F59 (attendent lot 2 / OIDC).
 - Preuves : `test_f51_examples.py` … `test_f56_estimate.py` (15) ; e2e `91`–`94`, `99` ; CI. Labo réel : non (D2).
 
+### F32–F35 placement, sorties, licences, CI (2026-11-26, heure de Paris)
+
+- Branche `cursor/f32-f35-placement-outputs-licenses-ci-5bfe` ; rebase sur #15 (`f25d7a5`, F54 `0012`).
+- **F32** : inventaire démo à deux clusters/sites ; placement par réplica + datastore de même site ; anti-affinité seulement quand exigée ; blocage `anti_affinity_unsatisfiable` ; R055 vérifie tous les clusters/datastores.
+- **F33** : table `deployment_outputs` ; publication à l'apply (allowlist) ; `GET /deployments/{id}/outputs` scopé ; jamais le state ; GRANT worker pour Compose.
+- **F34** : module `licenses` (source fictive) ; règle R125 ; bundle `builtin@7` ; `license_unverified_policy=block`.
+- **F35** : utilisateurs `kind=service` + `service_tokens` ; Bearer sans CSRF ; `POST /ci/submissions` idempotent ; approbation refusée (`service_identity_forbidden`).
+- Migration `0013` (après F54 `0012`). Preuves : `test_f32_placement.py`, `test_f33_outputs.py`, `test_f34_licenses.py`, `test_f35_ci.py`. Labo réel / source licences réelle : non (D2, D11).
+
 ## Prochain jalon
 
-1. Fusionner **F51–F54 / F56** (#15) sur `main` après CI verte (Vincent).
+1. Fusionner **#15 (F51–F56, `0012`)** puis **#22 (F32–F35, `0013`)** après CI verte (Vincent).
 2. Ensuite selon le backlog (F02–F45 restantes, AT02–AT04).
 3. F58 / F59 après dépendances (lot 2 / OIDC pour F59).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

@@ -116,18 +116,44 @@ def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
     conn.execute(
         "INSERT INTO platform_settings (key, value) VALUES ('assistant', %s) ON CONFLICT (key) DO NOTHING",
         (Jsonb({"adapter": "fake", "scenario": "nominal"}),))
+    # F35 : identité de service limitée au projet vitrine (jeton Bearer, jamais de mot de passe).
+    from .identity import service_accounts
+
+    service_tokens: dict[str, str] = {}
+    if "vitrine" in projs:
+        existing_sa = conn.execute(
+            "SELECT id FROM users WHERE email = %s", ("ci-vitrine@demo.invalid",)
+        ).fetchone()
+        if existing_sa is None:
+            minted = service_accounts.mint(
+                conn,
+                email="ci-vitrine@demo.invalid",
+                display_name="CI Vitrine (démo)",
+                project_id=projs["vitrine"]["id"],
+                label="pipeline-demo",
+                is_demo=True,
+                actor_id=users["admin"]["id"],
+            )
+            service_tokens["ci-vitrine@demo.invalid"] = minted["token"]
+            users["ci_vitrine"] = conn.execute(
+                "SELECT * FROM users WHERE id = %s", (minted["user_id"],)
+            ).fetchone()
+
     audit.record(conn, actor_type="system", actor_id="demo-seed", action="demo.seed", outcome="ok",
                  targets={"projects": sorted(projs), "users": len(users)},
                  versions={"inventory_snapshot": str(snapshot)})
 
-    if generated and credentials_file is not None:
+    if (generated or service_tokens) and credentials_file is not None:
         credentials_file.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(credentials_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write("# Identités de démonstration (fictives). Fichier local, ignoré par git.\n")
             for email, password in generated.items():
                 fh.write(f"{email} {password}\n")
+            for email, token in service_tokens.items():
+                fh.write(f"# service token (F35)\n{email} bearer:{token}\n")
     return {"projects": {k: v["id"] for k, v in projs.items()},
             "environments": {k: v["id"] for k, v in envs.items()},
             "users": {k: v["id"] for k, v in users.items()}, "snapshot_id": snapshot,
-            "generated_passwords": sorted(generated)}
+            "generated_passwords": sorted(generated),
+            "service_tokens": service_tokens}

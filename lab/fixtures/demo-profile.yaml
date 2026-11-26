@@ -41,8 +41,8 @@ grants:
   vitrine/dev:
     service_template: [ubuntu-web, ubuntu-web-durci]
     image: [vm-500]
-    cluster: [domain-c10]
-    datastore: [datastore-201]
+    cluster: [domain-c10, domain-c11]
+    datastore: [datastore-201, datastore-202]
     folder: [group-v21]
     network: [network-101, network-102]
   vitrine/prod:

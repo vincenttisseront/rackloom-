@@ -39,9 +39,13 @@ def test_t31_besoin_d1_resolu_sans_choix_technique(conn, demo):
     assert resolved["environment"]["source"] == "environment_default"
     assert resolved["template"]["version"] == "1.0.0"
     assert [i["name"] for i in resolved["instances"]] == ["vit-dev-web-01"]
-    assert resolved["instances"][0] | {"existing": False} == {
-        "name": "vit-dev-web-01", "size_tier": "test_leger", "vcpu": 2, "memory_mb": 2048, "disk_gb": 20,
-        "existing": False}
+    inst0 = resolved["instances"][0]
+    assert inst0["name"] == "vit-dev-web-01"
+    assert inst0["size_tier"] == "test_leger"
+    assert (inst0["vcpu"], inst0["memory_mb"], inst0["disk_gb"], inst0["existing"]) == (2, 2048, 20, False)
+    # F32 : placement par instance (cluster/datastore), sans choix utilisateur.
+    assert inst0["cluster"]["stable_id"] == "domain-c10"
+    assert inst0["datastore"]["stable_id"] == "datastore-201"
     assert [c["slug"] for c in resolved["components"]] == ["nginx"]
     assert resolved["components"][0]["config"]["listen_port"] == 80
     # Choix utilisateur : la date de fin (D14) ; tout le reste est résolu côté serveur.

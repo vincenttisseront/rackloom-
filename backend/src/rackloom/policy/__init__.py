@@ -6,7 +6,8 @@ décision d'admission, chaque résolution et chaque dossier d'exécution : un pl
 une version antérieure est refusé à l'admission (`policy_changed`) et doit être réapprouvé.
 
 Historique : `builtin@1` (lot 1), `builtin@2` (F28 : R080), `builtin@3` (F27 : R090 ;
-R065 AT01), `builtin@4` (F37 : R095), `builtin@5` (F05 : R110), `builtin@6` (F03 : R120 IPAM).
+R065 AT01), `builtin@4` (F37 : R095), `builtin@5` (F05 : R110), `builtin@6` (F03 : R120 IPAM),
+`builtin@7` (F34 : R125 licences).
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from typing import Any
 from ..canonical import digest
 from ..db import Conn, Jsonb
 
-BUILTIN_VERSION = "builtin@6"
+BUILTIN_VERSION = "builtin@7"
 
 BUILTIN_RULES: dict[str, Any] = {
     "admission": [
@@ -39,10 +40,12 @@ BUILTIN_RULES: dict[str, Any] = {
          "title": "capacité encore suffisante sur le placement (mesure, pas réservation)"},
         {"id": "R120", "order": 120, "class": "write", "stages": ["start", "dispatch"],
          "title": "réservations IPAM/DNS confirmées ou réservées pour les cibles"},
+        {"id": "R125", "order": 125, "class": "write", "stages": ["start", "dispatch"],
+         "title": "licences disponibles selon la politique"},
         {"id": "R900", "order": 900, "class": "write", "title": "verrou de stack acquis"},
     ],
     # Emplacements réservés au backlog, documentés mais non encore enregistrés.
-    "reserved": {"100": "F11", "115": "F39", "125": "F34",
+    "reserved": {"100": "F11", "115": "F39",
                  "130": "F16", "135": "F38", "140": "F10"},
     "platform": {
         "production_requires_explicit_environment": True,
@@ -55,6 +58,7 @@ BUILTIN_RULES: dict[str, Any] = {
         "capacity_min_free_bps": 500,
         "destructive_actions_blocked": True,
         "connector_circuit_failure_threshold": 3,
+        "license_unverified_policy": "block",
     },
 }
 
