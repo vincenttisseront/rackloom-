@@ -43,3 +43,20 @@ VALUES (
     'lab.demo.invalid',
     'ipam-fake'
 );
+
+DO $$
+DECLARE
+    t text;
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rackloom_api') THEN
+        FOREACH t IN ARRAY ARRAY['ipam_pools', 'ipam_reservations'] LOOP
+            EXECUTE format('GRANT SELECT, INSERT, UPDATE ON %I TO rackloom_api', t);
+        END LOOP;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rackloom_worker') THEN
+        FOREACH t IN ARRAY ARRAY['ipam_pools', 'ipam_reservations'] LOOP
+            EXECUTE format('GRANT SELECT, INSERT, UPDATE ON %I TO rackloom_worker', t);
+        END LOOP;
+    END IF;
+END;
+$$;
