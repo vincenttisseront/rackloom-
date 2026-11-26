@@ -26,8 +26,10 @@ test('F31 préflight réussi puis plan prêt', async ({ page }) => {
 
   await login(page, 'alice')
   await page.goto(`/demandes/${change.id}`)
-  await expect(page.getByRole('heading', { level: 3, name: 'Préflight' })).toBeVisible()
-  await expect(page.getByText('Préflight : accès vCenter')).toBeVisible()
+  // Un seul bloc job « Préflight » (la chronologie répète le même libellé d'étape).
+  const preflightJob = page.getByTestId('job').filter({ has: page.getByRole('heading', { level: 3, name: 'Préflight' }) })
+  await expect(preflightJob).toHaveCount(1)
+  await expect(preflightJob.getByText('Préflight : accès vCenter')).toBeVisible()
   await logout(page)
   await alice.dispose()
 })
