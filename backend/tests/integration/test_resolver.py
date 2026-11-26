@@ -20,7 +20,7 @@ from rackloom.errors import ApiError
 ROOT = Path(__file__).resolve().parents[3]
 SOURCES = {"user", "suggestion", "template", "template_default", "environment_default", "environment_policy",
            "environment_policy_default", "inventory", "tie_break", "platform", "deployment_pinned",
-           "template_latest_published"}
+           "template_latest_published", "project_preference"}
 
 
 def _version(conn, demo, *, who="alice", project="vitrine", body=None, **need_kw):

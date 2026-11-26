@@ -57,7 +57,8 @@
 | Préflight de bout en bout (F31) | livré | testé localement | `test_f31_preflight.py` ; job `preflight` avant `tf_plan` ; TLS jetable → `tls_untrusted` ; state HTTP fermé → `state_unreachable` ; canari absent ; state inchangé ; L2 (vCenter/state réels) non fait |
 | Disjoncteur par connecteur (F37, règle R095, bundle `builtin@4`) | livré | testé localement | `test_f37_circuit.py` ; ouverture → `connector_circuit_open` sur `write` ; `read` admis ; fermeture bloquée si `uncertain` ; L2 (coupure vCenter réelle) non fait |
 | Banc d'évaluation Ollama (F46) | livré | testé localement | `test_f46_eval.py` ; e2e `87-f46-eval.spec.ts` ; `defaults_prod` / `asks_vlan` → échec ; rapport versionné (`model` + `prompt_id`) ; aucun job ; Ollama réel non qualifié (D2) |
-| Fonctions F01 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F37, F46, F55, F57, F60) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances (F48 après F46) |
+| Chat F47–F50 (runbooks, routage, aperçu, préférences) | livré | testé localement | `test_f47_f50_chat.py` ; e2e `88-f47-f50-chat.spec.ts` ; migration `0008` ; fake Ollama OK ; aucun secret réel ; Ollama réel non (D2) |
+| Fonctions F01 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F37, F46–F50, F55, F57, F60) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances |
 
 ## Démonstrations D1 à D6
 
@@ -274,8 +275,17 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Migration `0007` (`chat_eval_reports`, ajout seul) ; prompt versionné `rackloom.chat-prompt/v1` ; `rackloom.chat.eval` rejoue des conversations fictives ; métriques (questions inutiles, résolution du besoin, ciblage, champs verrouillés) ; `defaults_prod` / `asks_vlan` → `verdict=failed` ; API admin + `rackloom chat eval` ; UI Connecteurs.
 - Preuves : `test_f46_eval.py` ; e2e `87-f46-eval.spec.ts`. Qualifier un vrai modèle Ollama : non (D2).
 
+### F47–F50 chat opérateur (2026-11-26, heure de Paris)
+
+- Branche `cursor/f47-f50-chat-runbooks-routing-d40b` depuis `main` (F46 fusionné).
+- **F47** : `catalog/runbooks/` + table `runbooks` ; sélection serveur ; `diagnosis` (faits / hypothèses / remédiation `request_draft`) ; aucun job.
+- **F48** : `chat.routing` ; modèle choisi côté serveur ; refus `/model` ; analyse indisponible → motif clair, formulaire intact, pas de cloud.
+- **F49** : `POST …/context-preview` ; retrait d'extraits seulement ; canari filtré (aperçu, envoi, résumé).
+- **F50** : `project_preference_versions` ; publication référent ; résolveur provenance `project_preference` ; plan existant inchangé ; chat → `preference_not_from_chat`.
+- Preuves : `test_f47_f50_chat.py` ; e2e `88-f47-f50-chat.spec.ts`. Ollama réel : non (D2).
+
 ## Prochain jalon
 
-1. Fusionner **F46** sur `main` après CI verte (Vincent).
-2. Ensuite selon le backlog (ex. F48 après F46).
+1. Fusionner **F47–F50** sur `main` après CI verte (Vincent).
+2. Ensuite selon le backlog (F01–F45 restantes, F51+, AT02–AT04).
 3. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

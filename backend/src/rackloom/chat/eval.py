@@ -273,7 +273,11 @@ def _score_case(
 def _invoke(conn: Conn, adapter: str, scenario: str, message: str, context: dict[str, Any], mode: str) -> str:
     if adapter == "fake":
         return fake_turn(scenario, message, context, [], mode)
-    return ollama_turn(conn, message, context, [], mode)
+    from . import routing as model_routing
+
+    task = "draft" if mode == "draft" else "explain"
+    route = model_routing.select_route(conn, task)
+    return ollama_turn(conn, message, context, [], mode, route=route)
 
 
 def run_bench(

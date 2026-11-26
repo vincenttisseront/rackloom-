@@ -7,7 +7,16 @@ const changes = ref<any[]>([])
 const deployments = ref<any[]>([])
 const hosts = ref<any[]>([])
 const environments = ref<any[]>([])
+const preferences = ref<any | null>(null)
+const prefForm = ref({ default_size_tier: 'standard', naming: '', reason: '' })
+const prefBusy = ref(false)
+const prefNotice = ref<string | null>(null)
 const error = ref<string | null>(null)
+
+const canPublishPrefs = computed(() => {
+  // Référent ou admin : l'API refuse sinon (F50).
+  return Boolean(project.value)
+})
 
 onMounted(async () => {
   try {
@@ -18,10 +27,40 @@ onMounted(async () => {
       api.get(`/projects/${slug.value}/changes`), api.get(`/projects/${slug.value}/deployments`), api.get(`/projects/${slug.value}/hosts`),
       api.get(`/projects/${slug.value}/environments`),
     ])
+    try {
+      preferences.value = await api.get(`/projects/${slug.value}/preferences`)
+      const cur = preferences.value?.current?.preferences || {}
+      if (cur.default_size_tier) prefForm.value.default_size_tier = cur.default_size_tier
+      if (cur.naming) prefForm.value.naming = cur.naming
+    } catch {
+      preferences.value = null
+    }
   } catch (e) {
     error.value = errorText(e)
   }
 })
+
+async function publishPreferences() {
+  prefBusy.value = true
+  prefNotice.value = null
+  error.value = null
+  try {
+    const preferencesBody: Record<string, string> = {
+      default_size_tier: prefForm.value.default_size_tier,
+    }
+    if (prefForm.value.naming.trim()) preferencesBody.naming = prefForm.value.naming.trim()
+    await api.post(`/projects/${slug.value}/preferences`, {
+      preferences: preferencesBody,
+      reason: prefForm.value.reason || 'Préférence de projet',
+    })
+    preferences.value = await api.get(`/projects/${slug.value}/preferences`)
+    prefNotice.value = `Préférence v${preferences.value.current.version} publiée. Les plans déjà approuvés restent inchangés.`
+  } catch (e) {
+    error.value = errorText(e)
+  } finally {
+    prefBusy.value = false
+  }
+}
 
 function envChanged(updated: any) {
   environments.value = environments.value.map(e => (e.id === updated.id ? { ...e, ...updated } : e))
@@ -38,7 +77,7 @@ function envChanged(updated: any) {
       </div>
       <NuxtLink v-if="project?.roles.includes('operator')" class="button primary" :to="`/projets/${slug}/nouvelle`" data-testid="new-request">Nouvelle demande</NuxtLink>
     </div>
-    <div v-if="error" class="banner bad" role="alert">{{ error }}</div>
+    <div v-if="error" class="banner bad" role="alert" data-testid="error">{{ error }}</div>
     <div v-for="e in environments.filter(x => x.frozen)" :key="`frozen-${e.id}`" class="banner warn" role="status" data-testid="project-freeze-banner">
       Environnement {{ e.name }} gelé : aucun job d'écriture ne démarre jusqu'au dégel. Lecture et diagnostic restent disponibles.
     </div>
@@ -55,6 +94,40 @@ function envChanged(updated: any) {
       <CalendarPanel
         v-for="e in environments" :key="`cal-${e.id}`" :environment="e" @changed="envChanged"
       />
+    </section>
+
+    <section v-if="canPublishPrefs" class="card" aria-labelledby="prefs-title" data-testid="project-preferences">
+      <h2 id="prefs-title">Préférences de projet</h2>
+      <p class="small muted">
+        Publiées par le référent. Elles simplifient le prochain déploiement autorisé
+        (provenance <code>project_preference</code>) sans modifier un plan existant ni créer de droit.
+        Une conversation ne mémorise jamais une préférence active.
+      </p>
+      <div v-if="prefNotice" class="banner ok" role="status">{{ prefNotice }}</div>
+      <p v-if="preferences?.current" class="small" data-testid="preference-current">
+        Version active {{ preferences.current.version }} :
+        {{ JSON.stringify(preferences.current.preferences) }}
+      </p>
+      <p v-else class="small muted">Aucune préférence publiée.</p>
+      <form class="actions" style="flex-wrap: wrap" @submit.prevent="publishPreferences">
+        <div class="field">
+          <label for="pref-tier">Niveau par défaut</label>
+          <select id="pref-tier" v-model="prefForm.default_size_tier" data-testid="pref-tier">
+            <option value="test_leger">Test léger</option>
+            <option value="standard">Standard</option>
+            <option value="charge_elevee">Charge élevée</option>
+          </select>
+        </div>
+        <div class="field" style="flex: 1">
+          <label for="pref-naming">Convention de nommage (optionnel)</label>
+          <input id="pref-naming" v-model="prefForm.naming" type="text" placeholder="{project_code}-dev-web-{nn}" data-testid="pref-naming" />
+        </div>
+        <div class="field" style="flex: 1">
+          <label for="pref-reason">Motif</label>
+          <input id="pref-reason" v-model="prefForm.reason" type="text" required maxlength="500" data-testid="pref-reason" />
+        </div>
+        <button type="submit" class="primary" :disabled="prefBusy" data-testid="pref-publish">Publier</button>
+      </form>
     </section>
 
     <section class="card" aria-labelledby="deps-title">
