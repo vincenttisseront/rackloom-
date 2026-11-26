@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from .. import hosts as hosts_mod
@@ -111,7 +111,10 @@ def plan_details(resolution: dict[str, Any]) -> dict[str, Any]:
             "inventory": {"observed_at": inv.get("observed_at"), "simulated": inv.get("simulated", True)},
             "capacity": {
                 "observed_at": cap.get("observed_at"),
-                "age_seconds": cap.get("age_seconds"),
+                "age_seconds": (
+                    int((datetime.now(UTC) - datetime.fromisoformat(cap["observed_at"])).total_seconds())
+                    if cap.get("observed_at") else None
+                ),
                 "reservation": False,
                 "notice": cap.get("notice") or "Mesure d'inventaire, pas une réservation.",
                 "simulated": cap.get("simulated", True),

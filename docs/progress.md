@@ -60,7 +60,8 @@
 | Chat F47–F50 (runbooks, routage, aperçu, préférences) | livré | testé localement | `test_f47_f50_chat.py` ; e2e `88-f47-f50-chat.spec.ts` ; migration `0008` ; fake Ollama OK ; aucun secret réel ; Ollama réel non (D2) |
 | Catalogue Git avec promotion (F01) | livré | testé localement | `test_f01_catalogue_git.py` ; migration `0009` ; pins + promotions ; e2e `91-f01-catalogue.spec.ts` ; forge réelle : non |
 | Contrôle de capacité (F05, règle R110, bundle `builtin@5`) | livré | testé localement | `test_f05_capacity.py` ; chute après approbation → `capacity_below_threshold` ; mesure vieillie → `capacity_stale` ; UI mesure sans réservation ; L2 non fait |
-| Fonctions F02 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F37, F46–F50, F55, F57, F60, F01, F05) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : lot B F03 → F09 |
+| Réservations IPAM/DNS (F03, règle R120, bundle `builtin@6`) | livré | testé localement | `test_f03_ipam.py` ; preview sans écriture ; concurrence ; `held_uncertain` ; migration `0010` ; IPAM réel : non |
+| Fonctions F02 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F37, F46–F50, F55, F57, F60, F01, F05, F03) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : lot B F09 |
 
 ## Démonstrations D1 à D6
 
@@ -300,8 +301,13 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Mesures CPU/mémoire/stockage sur inventaire fictif ; âge ; jamais une réservation ; rejeu à l'admission.
 - Preuves : `test_f05_capacity.py` (2). Cluster réel : non (D2).
 
+### F03 : IPAM/DNS (2026-11-26, heure de Paris)
+
+- Branche `cursor/f03-ipam-dns-235e` (sur F05). Migration `0009` ; R120 ; `builtin@6` ; adaptateur `ipam-fake` (192.0.2.0/24).
+- Cycle prepare → reserve → confirm / held_uncertain ; preview sans écriture.
+- Preuves : `test_f03_ipam.py` (4). IPAM réel : non (D2, D11).
+
 ## Prochain jalon
 
-1. Fusionner **F01** puis **F05** sur `main` après CI verte (Vincent).
-2. Lot B suite : **F03** → **F09**.
-3. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
+1. Fusionner la chaîne lot B (**F01** → **F05** → **F03** → **F09**) après CI verte (Vincent).
+2. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
