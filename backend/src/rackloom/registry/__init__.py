@@ -339,7 +339,19 @@ def validate_template(m: dict[str, Any]) -> None:
             raise CatalogError(f"template.{kind} : convention de nommage sans {{nn}}")
         if env["tie_break"] != ["rank", "stable_id"]:
             raise CatalogError(f"template.{kind} : départage non pris en charge {env['tie_break']}")
-    if not set(m["outputs_allowlist"]) <= {"name", "vm_uuid"}:
+    anti = m["deployment_policy"].get("anti_affinity")
+    if anti is not None:
+        if not isinstance(anti, dict) or anti.get("scope") not in ("cluster",):
+            raise CatalogError("template : anti_affinity.scope doit être « cluster »")
+        if set(anti) - {"scope"}:
+            raise CatalogError("template : anti_affinity n'admet que « scope »")
+    for lic in m["deployment_policy"].get("licenses") or []:
+        if not isinstance(lic, dict) or not lic.get("sku") or set(lic) - {"sku", "per_instance"}:
+            raise CatalogError("template : licenses attend [{sku, per_instance?}]")
+        if "per_instance" in lic and (not isinstance(lic["per_instance"], int) or lic["per_instance"] < 1):
+            raise CatalogError("template : licenses.per_instance doit être un entier ≥ 1")
+    # F33 : sorties typées publiables (jamais le state brut).
+    if not set(m["outputs_allowlist"]) <= {"name", "vm_uuid", "fqdn", "service_id"}:
         raise CatalogError("template : sortie publiable non prise en charge")
     for ref in m.get("secret_refs", []):
         if not str(ref).startswith("secret://"):

@@ -16,6 +16,7 @@ from ..changes.transitions import transition
 from ..db import Conn, Jsonb
 from ..errors import ApiError
 from ..executions import queue
+from ..identity import service_accounts
 from ..identity.authz import Principal, require_role
 from ..ids import uuid7
 from ..projects import calendars, freezes
@@ -28,6 +29,7 @@ def _auth_context(principal: Principal) -> dict[str, Any]:
 
 def decide(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, Any],
            request_id: str | None = None) -> dict[str, Any]:
+    service_accounts.refuse_approval(principal)
     allowed = {"plan_id", "retry_id", "bundle_digest", "decision", "comment"}
     extra = set(body) - allowed
     if extra:

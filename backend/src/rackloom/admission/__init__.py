@@ -5,7 +5,7 @@ file (étape `start`). R065 (AT01) borne la configuration aux cibles approuvées
 dépendent d'un état pouvant changer entre l'admission et l'envoi au fournisseur (gel, calendrier,
 capacité) sont rejouées dans la transaction qui marque cet envoi (étape `dispatch`). Emplacements
 réservés, non encore enregistrés : 100 (F11), 115 (F39),
-125 (F34), 130 (F16), 135 (F38), 140 (F10). R095 (F37), R110 (F05) et R120 (F03) sont enregistrées.
+130 (F16), 135 (F38), 140 (F10). R095 (F37), R110 (F05), R120 (F03) et R125 (F34) sont enregistrées.
 """
 
 
@@ -17,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from .. import clock, ipam, policy
+from .. import clock, ipam, licenses, policy
 from ..connectors import circuit
 from ..db import Conn, Jsonb
 from ..identity.authz import Principal, load_bindings
@@ -148,9 +148,21 @@ def bundle_digest(ctx: Context) -> Verdict:
     return Verdict(True)
 
 
-RESOLVED_GRANTS = (("image", "/placement/image"), ("cluster", "/placement/cluster"),
-                   ("datastore", "/placement/datastore"), ("folder", "/placement/folder"),
-                   ("network", "/placement/network"))
+RESOLVED_GRANTS_BASE = (("image", "/placement/image"), ("folder", "/placement/folder"),
+                        ("network", "/placement/network"))
+
+
+def _resolved_grants(values: dict[str, Any]) -> list[tuple[str, str]]:
+    """Octrois à revalider : placement partagé + clusters/datastores par réplica (F32)."""
+    grants = list(RESOLVED_GRANTS_BASE)
+    per_cluster = sorted(p for p in values if p.startswith("/placement/instances/") and p.endswith("/cluster"))
+    per_ds = sorted(p for p in values if p.startswith("/placement/instances/") and p.endswith("/datastore"))
+    if per_cluster:
+        grants.extend(("cluster", p) for p in per_cluster)
+        grants.extend(("datastore", p) for p in per_ds)
+    else:
+        grants.extend((("cluster", "/placement/cluster"), ("datastore", "/placement/datastore")))
+    return grants
 
 
 @rule(55, "R055", "write")
@@ -165,14 +177,18 @@ def resolution_admissible(ctx: Context) -> Verdict:
         return Verdict(False, f"la version {tpl['version'] if tpl else '?'} du template a été retirée : "
                        "une nouvelle révision explicite est nécessaire", "resolution_no_longer_admissible")
     values = rev["resolved"]["values"]
-    for kind, pointer in RESOLVED_GRANTS:
-        stable_id = values[pointer]["value"]
+    for kind, pointer in _resolved_grants(values):
+        entry = values.get(pointer)
+        if entry is None:
+            return Verdict(False, f"placement {pointer} absent de la révision : "
+                           "une nouvelle révision explicite est nécessaire", "resolution_no_longer_admissible")
+        stable_id = entry["value"]
         granted = ctx.conn.execute(
             "SELECT 1 FROM resource_grants WHERE project_id = %s AND environment_id = %s AND kind = %s "
             "AND stable_id = %s AND revoked_at IS NULL",
             (ctx.change["project_id"], rev["environment_id"], kind, stable_id)).fetchone()
         if granted is None:
-            return Verdict(False, f"{values[pointer].get('label', stable_id)} n'est plus octroyé à cet environnement : "
+            return Verdict(False, f"{entry.get('label', stable_id)} n'est plus octroyé à cet environnement : "
                            "une nouvelle révision explicite est nécessaire", "resolution_no_longer_admissible")
     return Verdict(True)
 
@@ -314,6 +330,21 @@ def ipam_reservations_ready(ctx: Context) -> Verdict:
     if bad:
         return Verdict(False, f"réservation IPAM non prête : {bad[0]['state']}", "ipam_not_reserved")
     return Verdict(True)
+
+
+@rule(125, "R125", "write", stages=("start", "dispatch"))
+def licenses_available(ctx: Context) -> Verdict:
+    """Licences du profil disponibles ou politique sur « non vérifié » (F34)."""
+    reqs = licenses.requirements_from(ctx.revision["resolved"] if ctx.revision else None)
+    if not reqs:
+        return Verdict(True)
+    result = licenses.check(ctx.conn, reqs)
+    if result["status"] == "available":
+        return Verdict(True)
+    if result["status"] == "unverified" and licenses.unverified_policy() == "continue":
+        return Verdict(True)
+    code, message = licenses.refusal(result)
+    return Verdict(False, message, code)
 
 
 @rule(900, "R900", "write")

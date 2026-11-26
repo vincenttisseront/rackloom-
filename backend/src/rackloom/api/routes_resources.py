@@ -52,6 +52,15 @@ def get_service_card(deployment_id: UUID, request: Request) -> dict[str, Any]:
         return service_card.for_principal(u.conn, u.p, deployment_id)
 
 
+@router.get("/deployments/{deployment_id}/outputs")
+def get_deployment_outputs(deployment_id: UUID, request: Request) -> dict[str, Any]:
+    """F33 : sorties typées versionnées (allowlist) ; hors périmètre → 404 ; jamais le state."""
+    from ..deployments import outputs as deployment_outputs
+
+    with unit_of_work(request) as u:
+        return deployment_outputs.latest(u.conn, u.p, deployment_id)
+
+
 @router.get("/deployments/{deployment_id}/drift")
 def get_drift(deployment_id: UUID, request: Request) -> dict[str, Any]:
     """F09 : dernier scan de dérive (lecture seule, aucune correction)."""

@@ -41,8 +41,11 @@ export { expect }
 export function password(who: string): string {
   const lines = readFileSync(`${ROOT}.lab/demo-credentials.txt`, 'utf8').split('\n')
   for (const line of lines) {
-    const [email, pw] = line.trim().split(/\s+/)
-    if (email === `${who}@demo.invalid` && pw) return pw
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const [email, pw] = trimmed.split(/\s+/)
+    // F35 : jetons Bearer (`bearer:…`) ne sont pas des mots de passe de connexion.
+    if (email === `${who}@demo.invalid` && pw && !pw.startsWith('bearer:')) return pw
   }
   throw new Error(`identité de démonstration absente : ${who}`)
 }

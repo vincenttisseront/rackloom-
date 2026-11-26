@@ -98,6 +98,11 @@ TECH_TOKENS = {
     "secret",
     "secrets",
     "token",
+    "license",
+    "licence",
+    "licenses",
+    "licences",
+    "sku",
     "playbook",
     "provider",
     "providers",
@@ -172,6 +177,7 @@ BLOCK_MESSAGES = {
     "no_authorized_image": "Aucune image compatible n'est disponible pour ce profil.",
     "no_authorized_network": "Aucun réseau n'est disponible pour ce profil.",
     "no_authorized_placement": "Aucun emplacement autorisé ne correspond à ce profil.",
+    "anti_affinity_unsatisfiable": "Aucun placement autorisé ne sépare les réplicas comme l'exige le profil.",
     "inventory_stale": "Les données d'inventaire sont trop anciennes ; elles doivent être actualisées.",
     "name_unavailable": "Aucun nom conforme à la convention n'est disponible.",
     "capacity_below_threshold": "La capacité libre est sous le seuil sur le placement proposé.",
@@ -187,6 +193,7 @@ GROUPS = {
     "/placement/cluster": "placement",
     "/placement/datastore": "placement",
     "/placement/folder": "placement",
+    "/placement/instances": "placement",
     "/placement/network": "reseau",
     "/placement/addressing": "reseau",
     "/instances": "dimensionnement",
@@ -322,6 +329,52 @@ def _rank(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _tags_match(item: dict[str, Any], wanted: dict[str, Any]) -> bool:
     tags = item["attributes"].get("tags", {})
     return isinstance(tags, dict) and all(tags.get(k) == v for k, v in wanted.items())
+
+
+def _site_of(item: dict[str, Any]) -> str | None:
+    tags = item["attributes"].get("tags", {})
+    site = tags.get("site") if isinstance(tags, dict) else None
+    return str(site) if site is not None else None
+
+
+def _datastore_for(cluster: dict[str, Any], datastores: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Préfère un datastore du même site que le cluster ; sinon le premier classé."""
+    site = _site_of(cluster)
+    if site is not None:
+        matched = [d for d in datastores if _site_of(d) == site]
+        if matched:
+            return matched[0]
+        return None
+    return datastores[0] if datastores else None
+
+
+def _assign_placements(
+    clusters: list[dict[str, Any]],
+    datastores: list[dict[str, Any]],
+    quantity: int,
+    anti_affinity: dict[str, Any] | None,
+) -> list[tuple[dict[str, Any], dict[str, Any]]] | str:
+    """Place chaque réplica. Renvoie la liste (cluster, datastore) ou un code de blocage."""
+    scope = (anti_affinity or {}).get("scope")
+    if scope == "cluster" and quantity > len(clusters):
+        return "anti_affinity_unsatisfiable"
+    if not clusters or not datastores:
+        return "no_authorized_placement"
+    out: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    used_clusters: set[str] = set()
+    for index in range(quantity):
+        if scope == "cluster":
+            cluster = clusters[index]
+            if cluster["stable_id"] in used_clusters:
+                return "anti_affinity_unsatisfiable"
+            used_clusters.add(cluster["stable_id"])
+        else:
+            cluster = clusters[0]
+        datastore = _datastore_for(cluster, datastores)
+        if datastore is None:
+            return "no_authorized_placement"
+        out.append((cluster, datastore))
+    return out
 
 
 def _used_names(conn: Conn, project_id: UUID, environment_id: UUID, change_id: UUID | None) -> set[str]:
@@ -634,15 +687,25 @@ def resolve(
     networks = _rank(
         [i for i in by_kind.get("network", []) if i["attributes"].get("role") == placement["network_role"]]
     )
+    anti_affinity = contract["deployment_policy"].get("anti_affinity")
+    if anti_affinity is not None and not isinstance(anti_affinity, dict):
+        anti_affinity = None
+    placements: list[tuple[dict[str, Any], dict[str, Any]]] | str | None = None
     if not fresh["stale"]:
         if not images:
             out["blocks"].append(_block("no_authorized_image", referent))
         if not networks:
             out["blocks"].append(_block("no_authorized_network", referent))
-        if not clusters or not datastores or not folders:
+        if not folders:
             out["blocks"].append(_block("no_authorized_placement", referent))
+        else:
+            placements = _assign_placements(clusters, datastores, quantity, anti_affinity)
+            if isinstance(placements, str):
+                out["blocks"].append(_block(placements, referent))
+                placements = None
     if out["blocks"]:
         return finish("blocked")
+    assert placements is not None
 
     def pick(pointer: str, items: list[dict[str, Any]], ref: str) -> dict[str, Any]:
         chosen = items[0]
@@ -657,10 +720,47 @@ def resolve(
         return chosen
 
     image = pick("/placement/image", images, "creation_method.image_filter")
-    cluster = pick("/placement/cluster", clusters, f"environments.{env['kind']}.placement.cluster_tags")
-    datastore = pick("/placement/datastore", datastores, f"environments.{env['kind']}.placement.datastore_tags")
     folder = pick("/placement/folder", folders, f"environments.{env['kind']}.placement.folder")
     network = pick("/placement/network", networks, f"environments.{env['kind']}.placement.network_role")
+    # Placement principal (1ʳᵉ instance) + détail par réplica pour F32 / R055.
+    primary_cluster, primary_datastore = placements[0]
+    cluster_src = "tie_break" if len(clusters) > 1 else "inventory"
+    ds_src = "tie_break" if len(datastores) > 1 else "inventory"
+    cluster_ref = f"environments.{env['kind']}.placement.cluster_tags"
+    ds_ref = f"environments.{env['kind']}.placement.datastore_tags"
+    val(
+        "/placement/cluster",
+        primary_cluster["stable_id"],
+        cluster_src,
+        label=primary_cluster["name"],
+        ref=cluster_ref,
+        candidates=len(clusters),
+    )
+    val(
+        "/placement/datastore",
+        primary_datastore["stable_id"],
+        ds_src,
+        label=primary_datastore["name"],
+        ref=ds_ref,
+        candidates=len(datastores),
+    )
+    for index, (cl, ds) in enumerate(placements):
+        val(
+            f"/placement/instances/{index}/cluster",
+            cl["stable_id"],
+            cluster_src,
+            label=cl["name"],
+            ref=cluster_ref,
+            candidates=len(clusters),
+        )
+        val(
+            f"/placement/instances/{index}/datastore",
+            ds["stable_id"],
+            ds_src,
+            label=ds["name"],
+            ref=ds_ref,
+            candidates=len(datastores),
+        )
     val(
         "/placement/addressing",
         contract["system_profile"]["network"]["addressing"],
@@ -674,12 +774,16 @@ def resolve(
             "name": image["name"],
             "guest_os": image["attributes"].get("guest_os"),
         },
-        "cluster": {"stable_id": cluster["stable_id"], "name": cluster["name"]},
-        "datastore": {"stable_id": datastore["stable_id"], "name": datastore["name"]},
+        "cluster": {"stable_id": primary_cluster["stable_id"], "name": primary_cluster["name"]},
+        "datastore": {"stable_id": primary_datastore["stable_id"], "name": primary_datastore["name"]},
         "folder": {"stable_id": folder["stable_id"], "name": folder["name"]},
         "network": {"stable_id": network["stable_id"], "name": network["name"]},
         "addressing": contract["system_profile"]["network"]["addressing"],
     }
+    # Hors de placement : le dossier d'exécution n'attend que des stable_id sous targets.placement.
+    out["anti_affinity"] = (
+        {"scope": anti_affinity["scope"]} if anti_affinity and anti_affinity.get("scope") else None
+    )
 
     # Instances : noms existants conservés, nouveaux noms selon la convention (préférence F50 si valide).
     dims = env_params["size_tiers"][tier]
@@ -709,7 +813,15 @@ def resolve(
     tier_ref = f"environments.{env['kind']}.size_tiers.{tier}"
     out["instances"] = []
     for index, name in enumerate(names):
-        out["instances"].append({"name": name, "size_tier": tier, **dims, "existing": name in previous})
+        cl, ds = placements[index]
+        out["instances"].append({
+            "name": name,
+            "size_tier": tier,
+            **dims,
+            "existing": name in previous,
+            "cluster": {"stable_id": cl["stable_id"], "name": cl["name"]},
+            "datastore": {"stable_id": ds["stable_id"], "name": ds["name"]},
+        })
         val(f"/instances/{index}/name", name, naming_source, ref=naming_ref)
         for key in ("vcpu", "memory_mb", "disk_gb"):
             val(f"/instances/{index}/{key}", dims[key], "template", ref=tier_ref)
@@ -809,8 +921,8 @@ def resolve(
     # F05 : mesure de capacité (âge, marge) — jamais présentée comme une réservation.
     cap = capacity_check.evaluate(
         conn,
-        cluster_id=cluster["stable_id"],
-        datastore_id=datastore["stable_id"],
+        cluster_id=primary_cluster["stable_id"],
+        datastore_id=primary_datastore["stable_id"],
         demand=capacity_check.demand_from_instances(out["instances"]),
         now=now,
     )
@@ -819,6 +931,13 @@ def resolve(
         code = (cap.get("refusal") or {}).get("code", "capacity_below_threshold")
         out["blocks"].append(_block(code, referent, "/placement/cluster"))
         return finish("blocked")
+    # F34 : exigences figées dans la révision (pas de recalcul silencieux à l'admission).
+    license_specs = contract["deployment_policy"].get("licenses") or []
+    out["licenses"] = [
+        {"sku": str(s["sku"]), "per_instance": int(s.get("per_instance", 1))}
+        for s in license_specs
+        if isinstance(s, dict) and s.get("sku")
+    ]
     return finish("incomplete" if out["missing"] else "resolved")
 
 

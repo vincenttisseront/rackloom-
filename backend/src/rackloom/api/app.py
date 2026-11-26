@@ -23,6 +23,7 @@ from . import (
     routes_auth,
     routes_changes,
     routes_chat,
+    routes_ci,
     routes_environments,
     routes_follow,
     routes_projects,
@@ -122,6 +123,7 @@ def create_app() -> FastAPI:
         routes_follow,
         routes_resources,
         routes_chat,
+        routes_ci,
         routes_admin,
         routes_studio,
     ):

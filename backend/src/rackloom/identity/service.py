@@ -79,6 +79,9 @@ def login(conn: Conn, email: str, password: str, client: str,
     ok = verify_password(user["password_hash"] if user else DUMMY_PASSWORD_HASH, password)
     if user and settings.profile == "production" and user["is_demo"]:
         ok = False
+    # F35 : les identités de service s'authentifient par jeton Bearer, pas par mot de passe.
+    if user and user["kind"] == "service":
+        ok = False
     if not user or not ok or user["status"] != "active":
         conn.execute("INSERT INTO login_attempts (email, client, succeeded) VALUES (%s, %s, false)",
                      (email, client))
@@ -129,13 +132,15 @@ def resolve_session(conn: Conn, token: str, touch: bool = True) -> Principal | N
         """
         SELECT s.id, s.user_id, s.auth_method, s.auth_time, s.idle_expires_at, s.absolute_expires_at,
                s.privilege_epoch AS s_epoch, s.revoked_at, s.last_seen_at,
-               u.email, u.display_name, u.status, u.privilege_epoch AS u_epoch, u.is_demo
+               u.email, u.display_name, u.status, u.privilege_epoch AS u_epoch, u.is_demo, u.kind
         FROM sessions s JOIN users u ON u.id = s.user_id
         WHERE s.id_hash = %s
         """,
         (token_hash(token),),
     ).fetchone()
     if row is None or row["revoked_at"] is not None or row["status"] != "active":
+        return None
+    if row["kind"] == "service":
         return None
     t = now()
     if row["idle_expires_at"] <= t or row["absolute_expires_at"] <= t:
@@ -154,6 +159,7 @@ def resolve_session(conn: Conn, token: str, touch: bool = True) -> Principal | N
         user_id=row["user_id"], email=row["email"], display_name=row["display_name"], session_id=row["id"],
         auth_method=row["auth_method"], auth_time=row["auth_time"],
         bindings=load_bindings(conn, row["user_id"]), csrf_token=csrf_token_for(token),
+        kind=row["kind"] or "human",
     )
 
 

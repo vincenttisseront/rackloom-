@@ -34,6 +34,44 @@
         "title": "BootstrapBody",
         "type": "object"
       },
+      "CiSubmitBody": {
+        "additionalProperties": false,
+        "properties": {
+          "need": {
+            "additionalProperties": true,
+            "title": "Need",
+            "type": "object"
+          },
+          "project": {
+            "maxLength": 40,
+            "minLength": 2,
+            "title": "Project",
+            "type": "string"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "submit": {
+            "default": false,
+            "title": "Submit",
+            "type": "boolean"
+          },
+          "title": {
+            "default": "Demande CI",
+            "maxLength": 200,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "need"
+        ],
+        "title": "CiSubmitBody",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2189,6 +2227,95 @@
         ]
       }
     },
+    "/api/v1/ci/submissions": {
+      "post": {
+        "description": "Soumet un besoin catégorie A. Rejeu avec la même clé → même demande.",
+        "operationId": "ci_submit_api_v1_ci_submissions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CiSubmitBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Ci Submit Api V1 Ci Submissions Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ci Submit",
+        "tags": [
+          "ci"
+        ]
+      }
+    },
+    "/api/v1/ci/submissions/{change_id}": {
+      "get": {
+        "operationId": "ci_get_api_v1_ci_submissions__change_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Ci Get Api V1 Ci Submissions  Change Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ci Get",
+        "tags": [
+          "ci"
+        ]
+      }
+    },
     "/api/v1/connectors": {
       "get": {
         "operationId": "list_connectors_api_v1_connectors_get",
@@ -2790,6 +2917,52 @@
           }
         },
         "summary": "Trigger Drift Scan",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/deployments/{deployment_id}/outputs": {
+      "get": {
+        "description": "F33 : sorties typées versionnées (allowlist) ; hors périmètre → 404 ; jamais le state.",
+        "operationId": "get_deployment_outputs_api_v1_deployments__deployment_id__outputs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Deployment Outputs Api V1 Deployments  Deployment Id  Outputs Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Deployment Outputs",
         "tags": [
           "ressources"
         ]

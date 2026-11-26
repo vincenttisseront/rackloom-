@@ -3,20 +3,25 @@ schema: rackloom.fake-inventory/v1
 # entièrement fictifs. Aucune donnée d'infrastructure réelle.
 items:
   - {kind: datacenter, stable_id: datacenter-1, name: dc-demo}
-  # Capacité fictive (F05) : MHz CPU et MiB mémoire ; jamais une réservation.
-  - {kind: cluster, stable_id: domain-c10, name: cl-dev, parent: datacenter-1,
-     attributes: {tags: {env: dev}, cpu_mhz_total: 40000, cpu_mhz_free: 28000,
+  # Deux clusters dev (sites a/b) : F32 place les réplicas séparés ; capacité fictive F05.
+  - {kind: cluster, stable_id: domain-c10, name: cl-dev-a, parent: datacenter-1,
+     attributes: {tags: {env: dev, site: a}, cpu_mhz_total: 40000, cpu_mhz_free: 28000,
                   memory_mb_total: 262144, memory_mb_free: 180000}}
+  - {kind: cluster, stable_id: domain-c11, name: cl-dev-b, parent: datacenter-1,
+     attributes: {tags: {env: dev, site: b}, cpu_mhz_total: 40000, cpu_mhz_free: 26000,
+                  memory_mb_total: 262144, memory_mb_free: 170000}}
   - {kind: cluster, stable_id: domain-c20, name: cl-prod, parent: datacenter-1,
-     attributes: {tags: {env: prod}, cpu_mhz_total: 80000, cpu_mhz_free: 50000,
+     attributes: {tags: {env: prod, site: a}, cpu_mhz_total: 80000, cpu_mhz_free: 50000,
                   memory_mb_total: 524288, memory_mb_free: 360000}}
   - {kind: folder, stable_id: group-v21, name: vitrine/dev, parent: datacenter-1}
   - {kind: folder, stable_id: group-v22, name: vitrine/prod, parent: datacenter-1}
   - {kind: folder, stable_id: group-v23, name: compta/dev, parent: datacenter-1}
-  - {kind: datastore, stable_id: datastore-201, name: ds-dev-01, parent: datacenter-1,
-     attributes: {tags: {tier: standard}, capacity_gb: 1000, free_gb: 420}}
+  - {kind: datastore, stable_id: datastore-201, name: ds-dev-a, parent: datacenter-1,
+     attributes: {tags: {tier: standard, site: a}, capacity_gb: 1000, free_gb: 420}}
+  - {kind: datastore, stable_id: datastore-202, name: ds-dev-b, parent: datacenter-1,
+     attributes: {tags: {tier: standard, site: b}, capacity_gb: 1000, free_gb: 380}}
   - {kind: datastore, stable_id: datastore-301, name: ds-prod-01, parent: datacenter-1,
-     attributes: {tags: {tier: standard}, capacity_gb: 2000, free_gb: 900}}
+     attributes: {tags: {tier: standard, site: a}, capacity_gb: 2000, free_gb: 900}}
   # Deux réseaux équivalents pour vitrine/dev : le départage (rang, puis identifiant stable)
   # retient net-dev-vitrine-a.
   - {kind: network, stable_id: network-101, name: net-dev-vitrine-a, parent: datacenter-1,

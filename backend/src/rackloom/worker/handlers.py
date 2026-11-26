@@ -323,6 +323,8 @@ def _vms_from_state(state: dict[str, Any] | None) -> list[dict[str, Any]]:
 def _record_instances(conn: Conn, change: dict[str, Any], resolution: dict[str, Any],
                       vms: list[dict[str, Any]]) -> None:
     """Le déploiement reflète l'état observé (state), pas l'intention : seules les instances présentes."""
+    from ..deployments import outputs as deployment_outputs
+
     present = {v["name"]: v for v in vms}
     instances = [{"name": i["name"], "size_tier": i["size_tier"], "vcpu": i["vcpu"], "memory_mb": i["memory_mb"],
                   "disk_gb": i["disk_gb"], "vm_uuid": present[i["name"]]["uuid"]}
@@ -330,6 +332,20 @@ def _record_instances(conn: Conn, change: dict[str, Any], resolution: dict[str, 
     if change["deployment_id"]:
         conn.execute("UPDATE deployments SET instances = %s, status = CASE WHEN %s THEN 'active' ELSE status END "
                      "WHERE id = %s", (Jsonb(instances), bool(instances), change["deployment_id"]))
+        # F33 : publie les sorties allowlistées (jamais le state brut exposé à l'API).
+        if instances:
+            dep = conn.execute(
+                "SELECT project_id, template_version_id FROM deployments WHERE id = %s",
+                (change["deployment_id"],),
+            ).fetchone()
+            if dep is not None:
+                deployment_outputs.publish(
+                    conn,
+                    deployment_id=change["deployment_id"],
+                    project_id=dep["project_id"],
+                    template_version_id=dep["template_version_id"],
+                    instances=instances,
+                )
 
 
 def finish_apply(r: JobContext, run_id: str, status: dict[str, Any], *, job: dict[str, Any] | None = None) -> str:

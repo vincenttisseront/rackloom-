@@ -54,6 +54,7 @@ deployment_policy:
   waves: {mode: single}                   # pilote et vagues : AT01, F19
   stop_conditions: [any_host_configuration_failed]
   retry: {strategy: failed_steps_only}
+  # anti_affinity: {scope: cluster}  # F32 : activé seulement quand le profil l'exige
 terraform: {module: lab-vm, version: 1.0.0}
 outputs_allowlist: [name, vm_uuid]        # sorties publiables : F33
 preview_limits:

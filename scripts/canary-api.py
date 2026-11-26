@@ -20,8 +20,17 @@ API = f"{BASE}/api/v1"
 
 
 def credentials() -> dict[str, str]:
-    lines = (ROOT / ".lab" / "demo-credentials.txt").read_text(encoding="utf-8").splitlines()
-    return dict(line.split()[:2] for line in lines if line.strip() and not line.startswith("#"))
+    """Mots de passe humains seulement — ignore les jetons Bearer F35 (`bearer:…`)."""
+    out: dict[str, str] = {}
+    for line in (ROOT / ".lab" / "demo-credentials.txt").read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split(None, 1)
+        if len(parts) != 2 or parts[1].startswith("bearer:"):
+            continue
+        out[parts[0]] = parts[1]
+    return out
 
 
 class Crawler:
