@@ -101,7 +101,7 @@ def find_similar(
         (project["id"], list(ACTIVE_STATES)),
     ).fetchall()
 
-    matches: list[dict[str, Any]] = []
+    scored: list[tuple[float, Any, dict[str, Any]]] = []
     for change in rows:
         if exclude_change_id is not None and change["id"] == exclude_change_id:
             continue
@@ -114,19 +114,24 @@ def find_similar(
         score, reasons = _score(need, probe)
         if score < min_score or not reasons:
             continue
-        matches.append(
-            {
-                "change_id": str(change["id"]),
-                "ref": change_ref(change),
-                "title": change["title"],
-                "state": change["state"],
-                "state_label": STATES[change["state"]],
-                "similarity": {"score": round(score, 2), "reasons": reasons},
-            }
+        scored.append(
+            (
+                score,
+                change["updated_at"],
+                {
+                    "change_id": str(change["id"]),
+                    "ref": change_ref(change),
+                    "title": change["title"],
+                    "state": change["state"],
+                    "state_label": STATES[change["state"]],
+                    "similarity": {"score": round(score, 2), "reasons": reasons},
+                },
+            )
         )
 
-    matches.sort(key=lambda m: (-m["similarity"]["score"], m["ref"]))
-    matches = matches[:limit]
+    # À score égal, les plus récentes d'abord (sinon un CHG-ancien monopolise le top N).
+    scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
+    matches = [m for _, _, m in scored[:limit]]
     return {"matches": matches, "count": len(matches), "notice": NOTICE}
 
 

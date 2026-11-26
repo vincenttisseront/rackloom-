@@ -77,3 +77,21 @@ def test_poursuite_separee_pas_de_fusion(api, conn, demo):
     ).json()
     assert any(m["change_id"] == existing["id"] for m in body["matches"])
     assert all(m["change_id"] != second["id"] for m in body["matches"])
+
+
+def test_departage_recent_avant_ancien(api, conn, demo):
+    """À score égal, les demandes les plus récentes restent dans le top N (défaut 10)."""
+    old_ids = [
+        _create_open(api, "alice", "vitrine", f"Ancienne {i}", environment="dev")["id"]
+        for i in range(12)
+    ]
+    recent = _create_open(api, "alice", "vitrine", "Toute récente", environment="dev")
+    body = api("alice").post(
+        f"{API}/projects/vitrine/changes/similar",
+        json={"need": flows.need(environment="dev")},
+    ).json()
+    ids = [m["change_id"] for m in body["matches"]]
+    assert recent["id"] in ids
+    assert body["count"] == 10
+    # Au moins une des plus anciennes a dû céder sa place.
+    assert sum(1 for oid in old_ids if oid in ids) <= 9
