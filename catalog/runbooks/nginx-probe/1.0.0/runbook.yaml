@@ -1,0 +1,20 @@
+schema: rackloom.runbook/v1
+slug: nginx-probe
+version: 1.0.0
+title: "Sonde HTTP Nginx en échec"
+description: >
+  Diagnostic lorsqu'une observation journal ou une sonde HTTP Nginx échoue.
+  Cite les preuves ; toute remédiation reste une demande à approuver.
+triggers:
+  event_types: [host.journal, verification.failed, health_check.failed]
+  observation_kinds: [journal, probe]
+steps:
+  - id: cite_journal
+    kind: fact
+    text: "Citer les extraits de journal filtrés fournis dans le contexte."
+  - id: hypothesize_config
+    kind: hypothesis
+    text: "Hypothèse : configuration ou service Nginx indisponible — à confirmer, pas à exécuter."
+  - id: request_redeploy
+    kind: remediation
+    text: "Proposer éventuellement un nouveau besoin de service web Ubuntu, jamais un job direct."

@@ -5,7 +5,7 @@ const props = defineProps<{ project: string; need: () => any }>()
 const emit = defineEmits<{ apply: [patch: { path: string; value: any }]; used: [] }>()
 
 const api = useApi()
-const status = ref<{ available: boolean; simulated: boolean; adapter: string } | null>(null)
+const status = ref<{ available: boolean; simulated: boolean; adapter: string; routing?: any } | null>(null)
 const conversationId = ref<string | null>(null)
 const message = ref('')
 const sending = ref(false)
@@ -71,10 +71,17 @@ function apply(p: { path: string; value: any }, key: string) {
       L'assistant est {{ status.adapter === 'disabled' ? 'désactivé' : 'indisponible' }}. Le formulaire permet de décrire
       tout le besoin ; les contrôles et l'approbation sont les mêmes.
     </div>
+    <div
+      v-else-if="status?.routing?.tasks?.draft && status.routing.tasks.draft.available === false"
+      class="banner warn"
+      role="status"
+      data-testid="assistant-routing-down"
+    >
+      Le modèle de rédaction est indisponible. Le formulaire reste utilisable ; aucun repli cloud n'est tenté.
+    </div>
     <template v-else>
       <div v-if="down" class="banner warn" role="status" data-testid="assistant-unavailable">
-        L'assistant est indisponible pour le moment. Le formulaire permet de décrire tout le besoin ; les contrôles
-        et l'approbation sont les mêmes.
+        {{ down.includes('analyse') ? down : "L'assistant est indisponible pour le moment. Le formulaire permet de décrire tout le besoin ; les contrôles et l'approbation sont les mêmes." }}
       </div>
       <p class="small muted">
         Décrivez votre besoin en langage courant. L'assistant propose ; vous confirmez chaque valeur dans le formulaire.

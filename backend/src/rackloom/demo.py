@@ -38,6 +38,9 @@ def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
     fixture = _read(root / "lab" / "fixtures" / "inventory.yaml")
     policy.ensure_builtin(conn)
     registry.load(conn, root / "catalog")
+    from .chat import runbooks as runbook_mod
+
+    runbook_mod.load_catalog(conn, root / "catalog")
 
     connectors: dict[str, Any] = {}
     for c in profile["connectors"]:

@@ -2362,6 +2362,64 @@
         ]
       }
     },
+    "/api/v1/conversations/{conversation_id}/context-preview": {
+      "post": {
+        "description": "F49 : aperçu du contexte filtré. Retrait d'extraits seulement ; aucun ajout hors périmètre.",
+        "operationId": "preview_context_api_v1_conversations__conversation_id__context_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Preview Context Api V1 Conversations  Conversation Id  Context Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Context",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
     "/api/v1/conversations/{conversation_id}/messages": {
       "post": {
         "operationId": "post_message_api_v1_conversations__conversation_id__messages_post",
@@ -3936,6 +3994,106 @@
         "summary": "List Hosts",
         "tags": [
           "projets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/preferences": {
+      "get": {
+        "description": "F50 : préférences de projet approuvées (lecture).",
+        "operationId": "get_preferences_api_v1_projects__project__preferences_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Preferences Api V1 Projects  Project  Preferences Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Preferences",
+        "tags": [
+          "assistant"
+        ]
+      },
+      "post": {
+        "description": "F50 : publie une nouvelle version de préférences (référent uniquement).",
+        "operationId": "publish_preferences_api_v1_projects__project__preferences_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Publish Preferences Api V1 Projects  Project  Preferences Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Preferences",
+        "tags": [
+          "assistant"
         ]
       }
     },

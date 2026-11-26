@@ -1,9 +1,18 @@
 <script setup lang="ts">
 const api = useApi()
 const connectors = ref<any[]>([])
-const assistant = ref<{ adapter: string; scenario: string; simulated: boolean; adapters: string[]; scenarios: string[]; prompt_id?: string } | null>(null)
+const assistant = ref<{
+  adapter: string
+  scenario: string
+  simulated: boolean
+  adapters: string[]
+  scenarios: string[]
+  prompt_id?: string
+  routing?: any
+} | null>(null)
 const adapter = ref('fake')
 const scenario = ref('nominal')
+const analysisDisabled = ref(false)
 const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
 const busy = ref(false)
@@ -17,6 +26,8 @@ async function loadAssistant() {
   assistant.value = await api.get('/admin/assistant')
   adapter.value = assistant.value!.adapter
   scenario.value = assistant.value!.scenario
+  const disabled = assistant.value?.routing?.disabled_roles || []
+  analysisDisabled.value = disabled.includes('analysis')
 }
 
 async function loadEval() {
@@ -39,9 +50,13 @@ async function saveAssistant() {
   error.value = null
   notice.value = null
   try {
-    await api.put('/admin/assistant', { adapter: adapter.value, scenario: scenario.value })
+    await api.put('/admin/assistant', {
+      adapter: adapter.value,
+      scenario: scenario.value,
+      routing: { disabled_roles: analysisDisabled.value ? ['analysis'] : [] },
+    })
     await loadAssistant()
-    notice.value = `Assistant : ${ADAPTERS[adapter.value]}${adapter.value === 'fake' ? `, scénario « ${scenario.value} »` : ''}.`
+    notice.value = `Assistant : ${ADAPTERS[adapter.value]}${adapter.value === 'fake' ? `, scénario « ${scenario.value} »` : ''}${analysisDisabled.value ? ' ; analyse indisponible' : ''}.`
   } catch (e) {
     error.value = errorText(e)
   } finally {
@@ -129,8 +144,19 @@ async function runEval() {
             <option v-for="s in assistant.scenarios" :key="s" :value="s">{{ s }}</option>
           </select>
         </div>
+        <div class="field">
+          <label>
+            <input v-model="analysisDisabled" type="checkbox" data-testid="analysis-disabled" />
+            Modèle d'analyse indisponible (F48 : formulaire inchangé, pas de repli cloud)
+          </label>
+        </div>
         <button type="submit" class="primary" :disabled="busy" data-testid="assistant-save">Enregistrer</button>
       </form>
+      <p v-if="assistant.routing" class="small muted" data-testid="assistant-routing">
+        Routage serveur : rédaction {{ assistant.routing.routes?.draft?.available === false ? 'indisponible' : 'ok' }},
+        analyse {{ assistant.routing.routes?.explain?.available === false ? 'indisponible' : 'ok' }}.
+        Aucun sélecteur de modèle pour l'utilisateur standard.
+      </p>
       <div class="field-head" style="margin-top: 1.25rem">
         <h3 id="assistant-eval-title">Banc d'évaluation</h3>
       </div>
