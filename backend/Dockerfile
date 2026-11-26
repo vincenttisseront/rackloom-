@@ -13,7 +13,6 @@ RUN uv export --frozen --no-dev --no-emit-project --format requirements-txt -o /
  && python -m venv /opt/venv \
  && /opt/venv/bin/pip install --no-cache-dir --require-hashes -r /tmp/requirements.txt
 COPY backend/src ./src
-COPY backend/README.md* ./
 RUN /opt/venv/bin/pip install --no-cache-dir --no-deps .
 
 FROM python:3.12-slim-bookworm

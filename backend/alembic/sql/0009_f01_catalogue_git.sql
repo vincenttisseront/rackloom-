@@ -50,3 +50,20 @@ FROM template_versions tv
 CROSS JOIN (VALUES ('dev'), ('test'), ('preprod'), ('prod')) AS k(kind)
 WHERE tv.status = 'published'
 ON CONFLICT DO NOTHING;
+
+DO $$
+DECLARE
+    t text;
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rackloom_api') THEN
+        FOREACH t IN ARRAY ARRAY['catalog_source_pins', 'template_promotions'] LOOP
+            EXECUTE format('GRANT SELECT, INSERT, UPDATE ON %I TO rackloom_api', t);
+        END LOOP;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rackloom_worker') THEN
+        FOREACH t IN ARRAY ARRAY['catalog_source_pins', 'template_promotions'] LOOP
+            EXECUTE format('GRANT SELECT ON %I TO rackloom_worker', t);
+        END LOOP;
+    END IF;
+END;
+$$;
