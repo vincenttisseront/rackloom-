@@ -25,6 +25,7 @@ JOB_CLASS = {
     "ansible_configure": "write",
     "verify": "read",
     "reconcile": "read",
+    "drift_scan": "read",
 }
 
 JOB_LABELS = {
@@ -37,6 +38,7 @@ JOB_LABELS = {
     "ansible_configure": "Configuration des logiciels",
     "verify": "Vérification du service",
     "reconcile": "Réconciliation",
+    "drift_scan": "Détection de dérive (lecture seule)",
 }
 
 
