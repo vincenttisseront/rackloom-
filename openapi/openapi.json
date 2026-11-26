@@ -2804,6 +2804,30 @@
         ]
       }
     },
+    "/api/v1/inbox": {
+      "get": {
+        "description": "F55 : boîte « À moi d'agir » et « En attente d'une autre personne ».",
+        "operationId": "get_inbox_api_v1_inbox_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Inbox Api V1 Inbox Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Inbox",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
     "/api/v1/jobs/{job_id}": {
       "get": {
         "operationId": "get_job_api_v1_jobs__job_id__get",
