@@ -6,7 +6,7 @@ décision d'admission, chaque résolution et chaque dossier d'exécution : un pl
 une version antérieure est refusé à l'admission (`policy_changed`) et doit être réapprouvé.
 
 Historique : `builtin@1` (lot 1), `builtin@2` (F28 : R080), `builtin@3` (F27 : R090 ;
-R065 AT01 documenté dans le même bundle).
+R065 AT01), `builtin@4` (F37 : R095 disjoncteur par connecteur).
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from typing import Any
 from ..canonical import digest
 from ..db import Conn, Jsonb
 
-BUILTIN_VERSION = "builtin@3"
+BUILTIN_VERSION = "builtin@4"
 
 BUILTIN_RULES: dict[str, Any] = {
     "admission": [
@@ -33,10 +33,13 @@ BUILTIN_RULES: dict[str, Any] = {
          "title": "environnement non gelé, au démarrage et à l'envoi au fournisseur"},
         {"id": "R090", "order": 90, "class": "write", "stages": ["start", "dispatch"],
          "title": "dans une fenêtre de maintenance, hors gel calendaire"},
+        {"id": "R095", "order": 95, "class": "write", "stages": ["start", "dispatch"],
+         "title": "disjoncteur du connecteur fermé"},
         {"id": "R900", "order": 900, "class": "write", "title": "verrou de stack acquis"},
     ],
     # Emplacements réservés au backlog, documentés mais non encore enregistrés.
-    "reserved": {"100": "F11", "110": "F05", "120": "F03", "130": "F16", "140": "F10"},
+    "reserved": {"100": "F11", "110": "F05", "115": "F39", "120": "F03", "125": "F34",
+                 "130": "F16", "135": "F38", "140": "F10"},
     "platform": {
         "production_requires_explicit_environment": True,
         "production_requires_distinct_approver": True,
@@ -44,6 +47,7 @@ BUILTIN_RULES: dict[str, Any] = {
         "plan_expiry_margin_seconds": 60,
         "inventory_max_age_hours": 24,
         "destructive_actions_blocked": True,
+        "connector_circuit_failure_threshold": 3,
     },
 }
 

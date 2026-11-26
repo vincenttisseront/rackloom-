@@ -4,8 +4,8 @@ Chaque job est réévalué au moment où un worker le réclame, quelle que soit 
 file (étape `start`). R065 (AT01) borne la configuration aux cibles approuvées. Les règles qui
 dépendent d'un état pouvant changer entre l'admission et l'envoi au fournisseur (gel, calendrier)
 sont rejouées dans la transaction qui marque cet envoi (étape `dispatch`). Emplacements
-réservés, non encore enregistrés : 95 (F37), 100 (F11), 110 (F05), 115 (F39), 120 (F03),
-125 (F34), 130 (F16), 135 (F38), 140 (F10).
+réservés, non encore enregistrés : 100 (F11), 110 (F05), 115 (F39), 120 (F03),
+125 (F34), 130 (F16), 135 (F38), 140 (F10). R095 (F37) est enregistrée.
 """
 
 
@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from .. import clock, policy
+from ..connectors import circuit
 from ..db import Conn, Jsonb
 from ..identity.authz import Principal, load_bindings
 from ..projects import calendars, freezes
@@ -250,6 +251,19 @@ def within_change_calendar(ctx: Context) -> Verdict:
     if state["ok"]:
         return Verdict(True)
     return Verdict(False, state["reason"], state["code"])
+
+
+@rule(95, "R095", "write", stages=("start", "dispatch"))
+def connector_circuit_closed(ctx: Context) -> Verdict:
+    """Disjoncteur fermé sur chaque connecteur requis par le job d'écriture (F37)."""
+    kinds = circuit.required_kinds(ctx.job["kind"])
+    if not kinds:
+        return Verdict(True)
+    opened = circuit.open_connectors(ctx.conn, kinds, lock=True)
+    if not opened:
+        return Verdict(True)
+    first = opened[0]
+    return Verdict(False, circuit.refusal(first), "connector_circuit_open")
 
 
 @rule(900, "R900", "write")
