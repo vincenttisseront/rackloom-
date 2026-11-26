@@ -5,11 +5,18 @@ test('F54 — solliciter Bruno, répondre, hors périmètre 404', async ({ page 
   const alice = await session('alice')
   const planned = await planViaApi(alice, 'vitrine', 'F54 passer la main')
 
+  const cands = (await alice.call('GET', `/changes/${planned.id}/review-candidates`)).body as {
+    id: string
+    display_name: string
+    email: string
+  }[]
+  const bruno = cands.find(c => c.email === 'bruno@demo.invalid')
+  expect(bruno, JSON.stringify(cands)).toBeTruthy()
+
   await login(page, 'alice')
   await page.goto(`/demandes/${planned.id}`)
   await expect(page.getByTestId('handoff-panel')).toBeVisible()
-  const select = page.getByTestId('handoff-candidate')
-  await select.selectOption({ label: /Bruno/ })
+  await page.getByTestId('handoff-candidate').selectOption(bruno!.id)
   await page.getByTestId('handoff-question').fill('Le plan te paraît-il correct ?')
   await press(page.getByTestId('handoff-submit'))
   await expect(page.getByTestId('handoff-item')).toBeVisible()

@@ -9,7 +9,14 @@ test('F56 — estimation sans date garantie ni modèle', async ({ page }) => {
   expect(est.status).toBe(200)
   expect(est.body.model_used).toBe(false)
   expect(est.body.approval.guaranteed_delivery_at).toBeNull()
-  expect(est.body.execution.label).toMatch(/non estimable/i)
+  // En e2e la pile peut déjà avoir assez d'historique → fourchette ; sinon « délai non estimable ».
+  expect(['insufficient_history', 'estimated']).toContain(est.body.execution.status)
+  if (est.body.execution.status === 'insufficient_history') {
+    expect(est.body.execution.label).toMatch(/non estimable/i)
+  } else {
+    expect(est.body.execution.range?.p50_seconds).toBeGreaterThan(0)
+  }
+  expect(est.body.queue.status).toBe('unavailable')
 
   await login(page, 'alice')
   await page.goto(`/demandes/${planned.id}`)
