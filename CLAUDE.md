@@ -185,7 +185,7 @@ demo-reset: ## Supprime les volumes de démo et de labo (confirmation demandée)
 	./scripts/demo.sh reset
 ```
 
-Commande d'exploitation `rackloom` (dans le conteneur `api` ou `worker`) : `migrate`, `keys init`, `bootstrap-token`, `demo seed`, `catalog load` (charge et valide `catalog/`, ne publie rien), `jobs list --stuck`, `reconcile <job_id>` (met en file une réconciliation, en lecture seule), `audit verify`, `openapi export`.
+Commande d'exploitation `rackloom` (dans le conteneur `api` ou `worker`) : `migrate`, `keys init`, `bootstrap-token`, `demo seed`, `catalog load` (charge et valide `catalog/`, ne publie rien), `jobs list --stuck`, `reconcile <job_id>` (met en file une réconciliation, en lecture seule), `audit verify`, `openapi export`, `chat eval` (F46 : banc d'évaluation, aucun job).
 
 ## 5. Conventions
 

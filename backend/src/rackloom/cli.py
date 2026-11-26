@@ -63,9 +63,16 @@ def cmd_demo_seed(args: argparse.Namespace) -> int:
             print(str(exc), file=sys.stderr)
             return 1
         conn.commit()
-    print(json.dumps({"projects": sorted(result["projects"]), "generated_passwords": result["generated_passwords"],
-                      "credentials_file": str(credentials) if result["generated_passwords"] else None},
-                     ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "projects": sorted(result["projects"]),
+                "generated_passwords": result["generated_passwords"],
+                "credentials_file": str(credentials) if result["generated_passwords"] else None,
+            },
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 
@@ -83,12 +90,13 @@ def cmd_jobs_list(args: argparse.Namespace) -> int:
     with _conn() as conn:
         query = "SELECT id, kind, state, attempts, lease_expires_at, blocked_reason, created_at FROM jobs"
         if args.stuck:
-            query += (" WHERE (state IN ('leased', 'running') AND lease_expires_at < now()) "
-                      "OR (state = 'queued' AND created_at < now() - interval '15 minutes')")
+            query += (
+                " WHERE (state IN ('leased', 'running') AND lease_expires_at < now()) "
+                "OR (state = 'queued' AND created_at < now() - interval '15 minutes')"
+            )
         rows = conn.execute(query + " ORDER BY created_at DESC LIMIT 200").fetchall()
     for r in rows:
-        print(f"{r['id']} {r['kind']:<18} {r['state']:<10} tentatives={r['attempts']} "
-              f"{r['blocked_reason'] or ''}")
+        print(f"{r['id']} {r['kind']:<18} {r['state']:<10} tentatives={r['attempts']} {r['blocked_reason'] or ''}")
     return 0
 
 
@@ -97,12 +105,19 @@ def cmd_reconcile(args: argparse.Namespace) -> int:
     from .executions import queue
 
     with _conn() as conn:
-        rows = conn.execute("SELECT * FROM changes WHERE state = 'uncertain' "
-                            + ("AND id = %s" if args.change else ""),
-                            (args.change,) if args.change else ()).fetchall()
+        rows = conn.execute(
+            "SELECT * FROM changes WHERE state = 'uncertain' " + ("AND id = %s" if args.change else ""),
+            (args.change,) if args.change else (),
+        ).fetchall()
         for change in rows:
-            queue.enqueue(conn, kind="reconcile", change=change, stack_id=None,
-                          idempotency_key=f"reconcile:cli:{change['id']}:{change['row_version']}", payload={})
+            queue.enqueue(
+                conn,
+                kind="reconcile",
+                change=change,
+                stack_id=None,
+                idempotency_key=f"reconcile:cli:{change['id']}:{change['row_version']}",
+                payload={},
+            )
             print(f"réconciliation en file pour {change_ref(change)}")
         conn.commit()
     return 0
@@ -194,8 +209,10 @@ def cmd_grants(args: argparse.Namespace) -> int:
         ids = projects.set_grants_revoked(conn, args.project, args.environment, args.kind, revoked, args.reason)
         conn.commit()
     verb = "retiré(s)" if revoked else "rétabli(s)"
-    print(f"{len(ids)} octroi(s) {args.kind} {verb} pour {args.project}/{args.environment}"
-          + (f" : {', '.join(ids)}" if ids else ""))
+    print(
+        f"{len(ids)} octroi(s) {args.kind} {verb} pour {args.project}/{args.environment}"
+        + (f" : {', '.join(ids)}" if ids else "")
+    )
     return 0
 
 
@@ -210,9 +227,58 @@ def cmd_artifacts_scan(args: argparse.Namespace) -> int:
     with _conn() as conn:
         rows = conn.execute("SELECT * FROM artifacts WHERE key_class = 'B' ORDER BY created_at").fetchall()
     found = [str(r["id"]) for r in rows if needle in artifacts.read(r)]
-    print(f"{len(rows)} artefact(s) de classe B déchiffré(s), {len(found)} contenant la valeur"
-          + (f" : {', '.join(found)}" if found else ""))
+    print(
+        f"{len(rows)} artefact(s) de classe B déchiffré(s), {len(found)} contenant la valeur"
+        + (f" : {', '.join(found)}" if found else "")
+    )
     return 1 if found else 0
+
+
+def cmd_chat_eval(args: argparse.Namespace) -> int:
+    """F46 : banc d'évaluation Ollama (conversations fictives, aucun job)."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from .chat import eval as chat_eval
+    from .identity.authz import Principal, load_bindings
+
+    with _conn() as conn:
+        admin = conn.execute(
+            "SELECT u.* FROM users u JOIN role_bindings b ON b.user_id = u.id "
+            "WHERE b.role = 'platform_admin' AND b.revoked_at IS NULL LIMIT 1"
+        ).fetchone()
+        if admin is None:
+            print("aucun administrateur de plateforme : banc refusé", file=sys.stderr)
+            return 1
+        principal = Principal(
+            user_id=admin["id"],
+            email=admin["email"],
+            display_name=admin["display_name"],
+            session_id=uuid4(),
+            auth_method="cli",
+            auth_time=datetime.now(UTC),
+            bindings=load_bindings(conn, admin["id"]),
+        )
+        from .errors import ApiError
+
+        try:
+            report = chat_eval.run_bench(
+                conn, principal, adapter=args.adapter, scenario=args.scenario, project_slug=args.project
+            )
+        except ApiError as exc:
+            print(json.dumps({"code": exc.code, "message": exc.message}, ensure_ascii=False), file=sys.stderr)
+            return 1
+        conn.commit()
+    print(
+        json.dumps(
+            {
+                k: report[k]
+                for k in ("id", "verdict", "adapter", "model", "prompt_id", "scenario", "failure_codes", "metrics")
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0 if report["verdict"] == "passed" else 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -258,7 +324,8 @@ def build_parser() -> argparse.ArgumentParser:
     ln.add_argument("node", nargs="+")
     ln.set_defaults(func=cmd_lab_nodes)
     grants = sub.add_parser("grants", help="octrois de ressources d'un environnement").add_subparsers(
-        dest="grants_command", required=True)
+        dest="grants_command", required=True
+    )
     for name in ("revoke", "restore"):
         g = grants.add_parser(name)
         g.add_argument("--project", required=True)
@@ -267,8 +334,9 @@ def build_parser() -> argparse.ArgumentParser:
         g.add_argument("--reason", required=True)
         g.set_defaults(func=cmd_grants)
     arts = sub.add_parser("artifacts").add_subparsers(dest="artifacts_command", required=True)
-    arts.add_parser("scan", help="T24 : cherche une valeur (entrée standard) dans les artefacts de classe B"
-                    ).set_defaults(func=cmd_artifacts_scan)
+    arts.add_parser(
+        "scan", help="T24 : cherche une valeur (entrée standard) dans les artefacts de classe B"
+    ).set_defaults(func=cmd_artifacts_scan)
     ci = sub.add_parser("ci").add_subparsers(dest="ci_command", required=True)
     s = ci.add_parser("submit", help="dépose un besoin (JSON, catégorie A) par l'API")
     s.add_argument("--url", required=True)
@@ -279,6 +347,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--need", required=True)
     s.add_argument("--submit", action="store_true")
     s.set_defaults(func=cmd_ci_submit)
+    chat = sub.add_parser("chat").add_subparsers(dest="chat_command", required=True)
+    ce = chat.add_parser("eval", help="F46 : banc d'évaluation (conversations fictives, aucun job)")
+    ce.add_argument("--adapter", choices=["fake", "ollama"])
+    ce.add_argument("--scenario", help="scénario de l'adaptateur fictif à qualifier")
+    ce.add_argument("--project", default="vitrine", help="projet dont le contexte sert de banc")
+    ce.set_defaults(func=cmd_chat_eval)
     return parser
 
 
