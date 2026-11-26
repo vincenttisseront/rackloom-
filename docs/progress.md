@@ -4,7 +4,7 @@
 
 - **Lot 0 (cadrage)** : fusionné dans `main` (PR #1).
 - **Lot 1 (parcours Compose avec résolveur central et modèle template/composant)** : **terminé, testé localement**. Livré en trois PR : #2 et #3 fusionnées en avance, puis la PR de clôture #4 (`cursor/lot-1-cloture-e231`).
-- **Lot A** : **F28** fusionné (PR #6) ; **F27** (calendriers) sur `cursor/lot-a-f27-calendriers-20f1` (PR #7) ; F21 suit. **AT01** fusionné (PR #5) ; **F60** fusionné (PR #8) ; **F57** fusionné (PR #9).
+- **Lot A** : **F28** fusionné (PR #6) ; **F27** fusionné (PR #7) ; **F21** (chronologie) sur `cursor/lot-a-f21-chronologie-20f1`. **AT01** fusionné (PR #5) ; **F60** fusionné (PR #8) ; **F57** fusionné (PR #9).
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -52,7 +52,8 @@
 | Fiche « Votre service est prêt » (F57) | livré | testé localement | `tests/integration/test_f57_service_card.py` ; `web/e2e/97-atelier-f57.spec.ts` ; T41 pour le calcul réel |
 | Boîte « À moi d'agir » (F55) | livré | testé localement | `tests/integration/test_f55_inbox.py` ; `web/e2e/98-atelier-f55.spec.ts` |
 | Calendriers de changement (F27, règle R090, bundle `builtin@3`, migration `0004`) | livré | testé localement | `test_calendars.py`, `70-f27-calendriers.spec.ts` ; vidéo `media/lot-a-f27-calendriers.webm` |
-| Fonctions F01 à F54 / F56 / F58 à F59 (hors F28, F27) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas lot A : F21 |
+| Chronologie de changement unifiée (F21) | livré | testé localement | `test_f21_timeline.py` ; `80-f21-chronologie.spec.ts` ; sources ADR ; scrub TB6 |
+| Fonctions F01 à F54 / F56 / F58 à F59 (hors F28, F27, F21) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : F31 |
 
 ## Démonstrations D1 à D6
 
@@ -67,6 +68,7 @@ Toutes passent dans Chromium (Playwright 1.65.1, TLS vérifié par une base NSS 
 | D5 | `web/e2e/90-d5-versions.spec.ts` | plan A approuvé en 1.0.0, 1.1.0 publiée avant le démarrage → A s'exécute en 1.0.0 (empreinte inchangée, déploiement épinglé) ; nouvelle demande → 1.1.0 ; 1.0.0 retirée avant le démarrage de B → job bloqué `resolution_no_longer_admissible`, plan intact |
 | D6 | `web/e2e/50-d6-assistant.spec.ts` | assistant désactivé par l'administrateur, puis en panne : bandeau clair, parcours formulaire jusqu'à « Succès — service prêt » avec la même approbation, mêmes refus (API, CI, production non confirmée) |
 | F28 | `web/e2e/60-f28-gel.spec.ts` | plan approuvé en file (worker arrêté), gel UI avec motif, redémarrage → `blocked` / `env_frozen` sans envoi ; inventaire et assistant (diagnostic) disponibles ; 403/404 ; dégel |
+| F21 | `web/e2e/80-f21-chronologie.spec.ts` | sources ADR visibles ; coupure navigateur puis reprise sans doublon ; flux autre projet → 404 ; aucune sortie brute ; approbation + Terraform/vCenter/Ansible corrélés |
 
 Capture du parcours principal et de F28 : `media/` du magasin du projet (voir le rapport de lot) ; elles ne sont pas versionnées.
 
@@ -244,8 +246,13 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - `GET /inbox` : « À moi d'agir » / « En attente d'une autre personne » via `workflow.available_actions`.
 - Preuves : `test_f55_inbox.py` (4) ; e2e `98-atelier-f55.spec.ts` (alice, bruno, david ; révocation → 403).
 
+### Lot A : F21 chronologie (2026-11-25, heure de Paris)
+
+- Branche `cursor/lot-a-f21-chronologie-20f1` depuis `main` (F27 fusionné) ; fusionnée (#11).
+- Sources ADR (`request`, `approval`, `admission`, `job`, `terraform`, `ansible`, `vcenter`, `verification`, `chat`, `system`) ; scrub des sorties brutes (TB6) ; `approval.decided` ; reprise SSE / Last-Event-ID ; UI libellés de source.
+- Preuves : `test_f21_timeline.py` (3) ; Playwright `80-f21-chronologie.spec.ts` ; vidéo magasin `media/lot-a-f21-chronologie.webm`. Labo réel vCenter : non (D2).
+
 ## Prochain jalon
 
-1. Fusionner **F55** (PR #10) après CI verte (main inclut déjà F27).
-2. Puis **F21**, entièrement testable localement.
-3. Ensuite **F31 → F37 → F46**. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
+1. Fusionner **F55** (PR #10) après CI verte (main inclut déjà F27 et F21).
+2. Ensuite **F31 → F37 → F46**. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

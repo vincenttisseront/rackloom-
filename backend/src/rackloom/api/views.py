@@ -331,10 +331,13 @@ def job_view(conn: Conn, job: dict[str, Any]) -> dict[str, Any]:
 
 
 def event_view(row: dict[str, Any]) -> dict[str, Any]:
+    from ..events import scrub_event_data
+
+    data = row["data"] if isinstance(row["data"], dict) else {}
     return {"id": row["id"], "type": row["type"], "source": row["source"], "severity": row["severity"],
             "occurred_at": iso(row["occurred_at"]), "job_id": str(row["job_id"]) if row["job_id"] else None,
             "correlation_id": str(row["correlation_id"]) if row["correlation_id"] else None,
-            "data": row["data"]}
+            "data": scrub_event_data(data)}
 
 
 def host_view(conn: Conn, host: dict[str, Any]) -> dict[str, Any]:

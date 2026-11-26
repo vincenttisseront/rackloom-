@@ -327,7 +327,7 @@ def refresh_inventory(connector_id: UUID, request: Request) -> dict[str, Any]:
                            "vSphere fictif au lot 1")
         fixture = inventory.load_fixture(get_settings().fixtures_dir / "inventory.yaml")
         snapshot = inventory.record_snapshot(u.conn, row["id"], fixture["items"])
-        emit(u.conn, type="inventory.refreshed", source="vsphere-fake",
+        emit(u.conn, type="inventory.refreshed", source="vcenter",
              data={"snapshot_id": str(snapshot), "items": len(fixture["items"]), "simulated": True})
         audit.record(u.conn, actor_type="user", actor_id=str(u.p.user_id), action="inventory.refresh", outcome="ok",
                      targets={"connector": row["slug"]}, versions={"snapshot": str(snapshot)},
