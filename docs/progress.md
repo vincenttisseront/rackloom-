@@ -56,7 +56,8 @@
 | Chronologie de changement unifiée (F21) | livré | testé localement | `test_f21_timeline.py` ; `80-f21-chronologie.spec.ts` ; sources ADR ; scrub TB6 |
 | Préflight de bout en bout (F31) | livré | testé localement | `test_f31_preflight.py` ; job `preflight` avant `tf_plan` ; TLS jetable → `tls_untrusted` ; state HTTP fermé → `state_unreachable` ; canari absent ; state inchangé ; L2 (vCenter/state réels) non fait |
 | Disjoncteur par connecteur (F37, règle R095, bundle `builtin@4`) | livré | testé localement | `test_f37_circuit.py` ; ouverture → `connector_circuit_open` sur `write` ; `read` admis ; fermeture bloquée si `uncertain` ; L2 (coupure vCenter réelle) non fait |
-| Fonctions F01 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F37, F55, F57, F60) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : F46 |
+| Banc d'évaluation Ollama (F46) | livré | testé localement | `test_f46_eval.py` ; e2e `87-f46-eval.spec.ts` ; `defaults_prod` / `asks_vlan` → échec ; rapport versionné (`model` + `prompt_id`) ; aucun job ; Ollama réel non qualifié (D2) |
+| Fonctions F01 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F37, F46, F55, F57, F60) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances (F48 après F46) |
 
 ## Démonstrations D1 à D6
 
@@ -263,12 +264,18 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F37 disjoncteur (2026-11-26, heure de Paris)
 
-- Branche `cursor/f37-circuit-breaker-cd8f` depuis `main` (F31 fusionné).
+- Branche `cursor/f37-circuit-breaker-cd8f` depuis `main` (F31 fusionné) ; fusionnée (#13).
 - Migration `0006` ; états `closed`/`open` sur `connectors` ; règle R095 (`start`/`dispatch`) ; bundle `builtin@4` ; seuil `connector_circuit_failure_threshold` ; fermeture après test de santé seulement s'il ne reste aucun job `uncertain` lié.
 - Preuves : `test_f37_circuit.py`. Labo réel (coupure vCenter) : non (D2).
 
+### F46 banc d'évaluation Ollama (2026-11-26, heure de Paris)
+
+- Branche `cursor/f46-ollama-eval-bench-4c10` depuis `main` (F37 fusionné).
+- Migration `0007` (`chat_eval_reports`, ajout seul) ; prompt versionné `rackloom.chat-prompt/v1` ; `rackloom.chat.eval` rejoue des conversations fictives ; métriques (questions inutiles, résolution du besoin, ciblage, champs verrouillés) ; `defaults_prod` / `asks_vlan` → `verdict=failed` ; API admin + `rackloom chat eval` ; UI Connecteurs.
+- Preuves : `test_f46_eval.py` ; e2e `87-f46-eval.spec.ts`. Qualifier un vrai modèle Ollama : non (D2).
+
 ## Prochain jalon
 
-1. Fusionner **F37** sur `main` après CI verte (Vincent).
-2. Ensuite **F46**.
+1. Fusionner **F46** sur `main` après CI verte (Vincent).
+2. Ensuite selon le backlog (ex. F48 après F46).
 3. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

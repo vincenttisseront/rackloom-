@@ -182,6 +182,118 @@
         ]
       }
     },
+    "/api/v1/admin/assistant/eval": {
+      "get": {
+        "operationId": "list_assistant_evals_api_v1_admin_assistant_eval_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Assistant Evals Api V1 Admin Assistant Eval Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Assistant Evals",
+        "tags": [
+          "assistant"
+        ]
+      },
+      "post": {
+        "description": "F46 : rejoue les conversations fictives ; n'écrit ni besoin, ni approbation, ni job.",
+        "operationId": "run_assistant_eval_api_v1_admin_assistant_eval_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Run Assistant Eval Api V1 Admin Assistant Eval Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Assistant Eval",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/v1/admin/assistant/eval/{report_id}": {
+      "get": {
+        "operationId": "get_assistant_eval_api_v1_admin_assistant_eval__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Assistant Eval Api V1 Admin Assistant Eval  Report Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Assistant Eval",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
     "/api/v1/admin/components": {
       "get": {
         "operationId": "list_components_api_v1_admin_components_get",

@@ -1,12 +1,14 @@
 <script setup lang="ts">
 const api = useApi()
 const connectors = ref<any[]>([])
-const assistant = ref<{ adapter: string; scenario: string; simulated: boolean; adapters: string[]; scenarios: string[] } | null>(null)
+const assistant = ref<{ adapter: string; scenario: string; simulated: boolean; adapters: string[]; scenarios: string[]; prompt_id?: string } | null>(null)
 const adapter = ref('fake')
 const scenario = ref('nominal')
 const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
 const busy = ref(false)
+const evalBusy = ref(false)
+const lastEval = ref<any | null>(null)
 const CAPS = ['configure', 'test_connection', 'inventory', 'plan', 'execute', 'track', 'cancel']
 const CAP_LABELS: Record<string, string> = { configure: 'Configurer', test_connection: 'Tester', inventory: 'Inventaire', plan: 'Plan', execute: 'Exécuter', track: 'Suivre', cancel: 'Annuler' }
 const ADAPTERS: Record<string, string> = { fake: 'Adaptateur fictif (déterministe)', ollama: 'Ollama (modèle local)', disabled: 'Désactivé' }
@@ -17,10 +19,16 @@ async function loadAssistant() {
   scenario.value = assistant.value!.scenario
 }
 
+async function loadEval() {
+  const listed = await api.get('/admin/assistant/eval')
+  lastEval.value = listed.items?.[0] || null
+}
+
 onMounted(async () => {
   try {
     connectors.value = await api.get('/connectors')
     await loadAssistant()
+    await loadEval()
   } catch (e) {
     error.value = errorText(e)
   }
@@ -38,6 +46,25 @@ async function saveAssistant() {
     error.value = errorText(e)
   } finally {
     busy.value = false
+  }
+}
+
+async function runEval() {
+  evalBusy.value = true
+  error.value = null
+  notice.value = null
+  try {
+    lastEval.value = await api.post('/admin/assistant/eval', {
+      adapter: adapter.value === 'disabled' ? undefined : adapter.value,
+      scenario: adapter.value === 'fake' ? scenario.value : undefined,
+    })
+    notice.value = lastEval.value.verdict === 'passed'
+      ? `Qualification réussie pour ${lastEval.value.model} (${lastEval.value.prompt_id}).`
+      : `Qualification échouée : ${(lastEval.value.failure_codes || []).join(', ') || 'voir le rapport'}.`
+  } catch (e) {
+    error.value = errorText(e)
+  } finally {
+    evalBusy.value = false
   }
 }
 </script>
@@ -104,6 +131,34 @@ async function saveAssistant() {
         </div>
         <button type="submit" class="primary" :disabled="busy" data-testid="assistant-save">Enregistrer</button>
       </form>
+      <div class="field-head" style="margin-top: 1.25rem">
+        <h3 id="assistant-eval-title">Banc d'évaluation</h3>
+      </div>
+      <p class="small muted">
+        Rejoue des conversations fictives avant de changer de modèle ou de prompt
+        (<code>{{ assistant.prompt_id || '—' }}</code>). N'écrit ni demande, ni approbation, ni job.
+        Les scénarios <code>defaults_prod</code> et <code>asks_vlan</code> font échouer la qualification.
+      </p>
+      <div class="actions">
+        <button type="button" class="primary" :disabled="evalBusy || adapter === 'disabled'" data-testid="assistant-eval-run" @click="runEval">
+          Lancer l'évaluation
+        </button>
+      </div>
+      <div v-if="lastEval" class="small" style="margin-top: 0.75rem" data-testid="assistant-eval-report">
+        <span
+          class="badge"
+          :class="lastEval.verdict === 'passed' ? 'ok' : 'bad'"
+          data-testid="assistant-eval-verdict"
+        >{{ lastEval.verdict === 'passed' ? 'qualifié' : 'échoué' }}</span>
+        <span class="muted"> · {{ lastEval.model }} · {{ lastEval.prompt_id }}</span>
+        <span v-if="lastEval.failure_codes?.length" class="muted"> · {{ lastEval.failure_codes.join(', ') }}</span>
+        <div class="muted" style="margin-top: 0.25rem">
+          questions inutiles {{ lastEval.metrics?.unnecessary_questions ?? 0 }},
+          besoin résolu {{ lastEval.metrics?.need_resolved ?? 0 }}/{{ lastEval.metrics?.fixtures ?? 0 }},
+          prod par défaut {{ lastEval.metrics?.production_defaults ?? 0 }},
+          VLAN {{ lastEval.metrics?.vlan_questions ?? 0 }}
+        </div>
+      </div>
     </section>
   </div>
 </template>

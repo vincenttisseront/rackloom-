@@ -393,7 +393,7 @@ Ils sont présents au lot 1 parce qu'ils coûtent peu et évitent une migration 
 | Champ `zone` dans la spécification du launcher | oui (`local`) | F16 |
 | Secrets en écriture seule côté API, références dans les contrats | oui | F13, F43 |
 | Contrat de connecteur à capacités et suite de contrat | oui (connecteurs du lot 1) | F30 |
-| Adaptateurs de modèle interchangeables, constructeur de contexte filtré, scénarios fictifs rejouables | oui | F46, F48, F49 |
+| Adaptateurs de modèle interchangeables, constructeur de contexte filtré, scénarios fictifs rejouables, banc d'évaluation (`chat_eval_reports`, prompt `rackloom.chat-prompt/v1`) | oui | F46, F48, F49 |
 | Date de fin capturée | capturée, non appliquée | F06 |
 | Interrupteur global de suspension des envois (`dispatch_paused`) | non | F26, maintenance |
 | État du service distinct de l'état des jobs, preuves et heure par contrôle de santé (§8) | oui | F57, F58 |
