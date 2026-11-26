@@ -25,7 +25,7 @@ def _events(conn, change_id):
 def test_f21_sources_et_correlation_parcours(conn, demo, worker, lab, api):
     lab.start(1)
     c = flows.create_and_submit(conn, demo)
-    assert worker.drain(kinds=["tf_plan"]) == ["tf_plan"]
+    assert flows.drain_plan(worker) == ["preflight", "tf_plan"]
     flows.approve(conn, demo, c["id"], flows.latest_plan(conn, c["id"]))
     assert worker.drain() == ["tf_apply", "guest_ready", "ansible_configure", "verify"]
 

@@ -162,7 +162,13 @@ const serviceCard = computed(() => deployment.value?.service_card || service.val
       <div class="big">Service : {{ service.service_status_label }}</div>
       <div class="small">{{ service.service_reason || 'Pas encore vérifié.' }}</div>
     </div>
-    <div v-if="change.reason && !service" class="banner info">{{ change.reason }}</div>
+    <div
+      v-if="change.reason && !service"
+      class="banner"
+      :class="change.state === 'plan_failed' ? 'bad' : 'info'"
+      role="status"
+      data-testid="change-reason"
+    >{{ change.reason }}</div>
 
     <div class="grid-main">
       <div>

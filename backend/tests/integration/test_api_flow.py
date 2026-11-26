@@ -40,7 +40,7 @@ def _plan_ready(api, worker, **need_kw):
     assert "submit" in [a["action"] for a in v["change"]["allowed_actions"]]
     r = alice.post(f"{API}/changes/{cid}/submit", json={"revision_no": v["revision_no"]})
     assert r.status_code == 200, r.text
-    assert worker.drain(kinds=["tf_plan"]) == ["tf_plan"]
+    assert flows.drain_plan(worker) == ["preflight", "tf_plan"]
     return alice, cid
 
 
@@ -144,7 +144,7 @@ def test_t05_t08_approbation_par_api(api, worker, conn):
     assert view["deployment"]["service_status"] == "unknown"
     assert view["deployment"]["service_status_label"] == "Non vérifié"
     jobs = alice.get(f"{API}/changes/{cid}/jobs").json()
-    assert [j["kind"] for j in jobs][:3] == ["tf_plan", "tf_apply", "guest_ready"]
+    assert [j["kind"] for j in jobs][:4] == ["preflight", "tf_plan", "tf_apply", "guest_ready"]
 
 
 @pytest.mark.terraform

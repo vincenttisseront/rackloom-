@@ -4,7 +4,8 @@
 
 - **Lot 0 (cadrage)** : fusionné dans `main` (PR #1).
 - **Lot 1 (parcours Compose avec résolveur central et modèle template/composant)** : **terminé, testé localement**. Livré en trois PR : #2 et #3 fusionnées en avance, puis la PR de clôture #4 (`cursor/lot-1-cloture-e231`).
-- **Lot A** : **F28** fusionné (PR #6) ; **F27** fusionné (PR #7) ; **F21** (chronologie) sur `cursor/lot-a-f21-chronologie-20f1`. **AT01** fusionné (PR #5) ; **F60** fusionné (PR #8) ; **F57** fusionné (PR #9).
+- **Lot A** : **F28** fusionné (PR #6) ; **F27** fusionné (PR #7) ; **F21** fusionné (PR #11). **AT01** fusionné (PR #5) ; **F60** fusionné (PR #8) ; **F57** fusionné (PR #9) ; **F55** fusionné (PR #10).
+- **F31** (préflight) : en cours sur `cursor/f31-preflight-9304` (PR #12).
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -53,7 +54,8 @@
 | Boîte « À moi d'agir » (F55) | livré | testé localement | `tests/integration/test_f55_inbox.py` ; `web/e2e/98-atelier-f55.spec.ts` |
 | Calendriers de changement (F27, règle R090, bundle `builtin@3`, migration `0004`) | livré | testé localement | `test_calendars.py`, `70-f27-calendriers.spec.ts` ; vidéo `media/lot-a-f27-calendriers.webm` |
 | Chronologie de changement unifiée (F21) | livré | testé localement | `test_f21_timeline.py` ; `80-f21-chronologie.spec.ts` ; sources ADR ; scrub TB6 |
-| Fonctions F01 à F54 / F56 / F58 à F59 (hors F28, F27, F21) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : F31 |
+| Préflight de bout en bout (F31) | livré | testé localement | `test_f31_preflight.py` ; job `preflight` avant `tf_plan` ; TLS jetable → `tls_untrusted` ; state HTTP fermé → `state_unreachable` ; canari absent ; state inchangé ; L2 (vCenter/state réels) non fait |
+| Fonctions F01 à F54 / F56 / F58 à F59 (hors F28, F27, F21, F31, F55, F57, F60) et atelier AT02 à AT04 | à faire | non vérifié | `docs/backlog.md` ; prochain pas : F37, F46 |
 
 ## Démonstrations D1 à D6
 
@@ -252,7 +254,14 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Sources ADR (`request`, `approval`, `admission`, `job`, `terraform`, `ansible`, `vcenter`, `verification`, `chat`, `system`) ; scrub des sorties brutes (TB6) ; `approval.decided` ; reprise SSE / Last-Event-ID ; UI libellés de source.
 - Preuves : `test_f21_timeline.py` (3) ; Playwright `80-f21-chronologie.spec.ts` ; vidéo magasin `media/lot-a-f21-chronologie.webm`. Labo réel vCenter : non (D2).
 
+### F31 préflight (2026-11-26, heure de Paris)
+
+- Branche `cursor/f31-preflight-9304` depuis `main` (F21 fusionné).
+- Job `preflight` (classe `read`) enfilé à la soumission / replan ; `tf_plan` seulement après succès ; contrôles vCenter (TLS / simulé), state (local_demo ou HTTP), prérequis catalogue ; motifs `tls_untrusted` / `state_unreachable` sans identifiant ni canari.
+- Preuves : `backend/tests/integration/test_f31_preflight.py`. Labo réel : non (D2).
+
 ## Prochain jalon
 
-1. Fusionner **F55** (PR #10) après CI verte (main inclut déjà F27 et F21).
-2. Ensuite **F31 → F37 → F46**. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
+1. Fusionner **F31** (PR #12) sur `main` après CI verte (Vincent). **F55** est déjà sur `main` (#10).
+2. Ensuite **F37 → F46**.
+3. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

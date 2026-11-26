@@ -120,7 +120,7 @@ def test_f27_plan_expire_pendant_attente_fenetre(conn, demo, worker):
     tuesday = datetime(2026, 3, 24, 9, 0, tzinfo=PARIS).astimezone(UTC)
     with clock.frozen_at(tuesday):
         c = flows.create_and_submit(conn, demo)
-        worker.drain(kinds=["tf_plan"])
+        flows.drain_plan(worker)
         plan = flows.latest_plan(conn, c["id"])
         # TTL court : le plan expire avant lundi.
         conn.execute("UPDATE plans SET valid_until = %s WHERE id = %s",
@@ -199,7 +199,7 @@ def test_f27_r090_aussi_a_dispatch(conn, demo, worker, monkeypatch):
 
 def _approve_now(conn, demo, worker):
     c = flows.create_and_submit(conn, demo)
-    worker.drain(kinds=["tf_plan"])
+    flows.drain_plan(worker)
     plan = flows.latest_plan(conn, c["id"])
     res = flows.approve(conn, demo, c["id"], plan)
     return c, plan, res["job_id"]

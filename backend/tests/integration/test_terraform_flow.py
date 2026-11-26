@@ -21,7 +21,7 @@ pytestmark = pytest.mark.terraform
 
 def _plan_ready(conn, demo, worker, **kw):
     c = flows.create_and_submit(conn, demo, **kw)
-    assert worker.drain(kinds=["tf_plan"]) == ["tf_plan"]
+    assert flows.drain_plan(worker) == ["preflight", "tf_plan"]
     assert flows.change(conn, c["id"])["state"] == "plan_ready"
     return c, flows.latest_plan(conn, c["id"])
 
@@ -166,13 +166,14 @@ def test_t07_role_revoque_avant_demarrage(conn, demo, worker, worker_env):
     worker.drain(kinds=["tf_apply"])
     job = flows.job(conn, res["job_id"])
     assert job["state"] == "blocked" and job["blocked_reason"] == "approver_revoked"
-    # Opératrice révoquée : la planification suivante est refusée aussi.
+    # Opératrice révoquée : le préflight (puis le plan) est refusé à l'admission.
     c2 = flows.create_and_submit(conn, demo)
     conn.execute("UPDATE role_bindings SET revoked_at = now() WHERE user_id = %s AND role = 'operator'",
                  (demo.user("alice")["id"],))
     conn.commit()
-    worker.drain(kinds=["tf_plan"])
+    assert worker.drain(kinds=["preflight", "tf_plan"]) == ["preflight"]
     assert flows.job(conn, c2["job_id"])["blocked_reason"] == "requester_revoked"
+    assert not flows.jobs_of(conn, c2["id"], "tf_plan")
     assert not list((worker_env / "demo-infra").glob("*/*.json"))
 
 
@@ -209,7 +210,7 @@ def _modify(conn, demo, worker, deployment_id, **need_kw):
     assert res["revision"]["outcome"] == "resolved", res["revision"]
     service.submit(conn, alice, m["id"], res["revision_no"])
     conn.commit()
-    worker.drain(kinds=["tf_plan"])
+    flows.drain_plan(worker)
     return m, res, flows.latest_plan(conn, m["id"])
 
 

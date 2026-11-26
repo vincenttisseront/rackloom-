@@ -78,6 +78,13 @@ def create_and_submit(conn, demo, *, who: str = "alice", project: str = "vitrine
             "job_id": sub["job_id"], "deployment_id": sub["deployment_id"]}
 
 
+def drain_plan(worker) -> list[str]:
+    """F31 : préflight puis tf_plan (ordre garanti : le second n'est enfilé qu'après succès)."""
+    done = worker.drain(kinds=["preflight", "tf_plan"])
+    assert done == ["preflight", "tf_plan"], done
+    return done
+
+
 def change(conn, change_id) -> dict[str, Any]:
     conn.commit()
     return conn.execute("SELECT * FROM changes WHERE id = %s", (change_id,)).fetchone()

@@ -39,7 +39,7 @@ def _wait(predicate, timeout: float = 60, step: float = 0.2):
 
 def _approved(conn, demo, worker, **kw):
     c = flows.create_and_submit(conn, demo, **kw)
-    worker.drain(kinds=["tf_plan"])
+    flows.drain_plan(worker)
     plan = flows.latest_plan(conn, c["id"])
     res = flows.approve(conn, demo, c["id"], plan)
     return c, plan, res["job_id"]
@@ -54,7 +54,7 @@ def test_t15_deux_workers_chaque_job_une_fois(conn, demo, worker):
     changes = [flows.create_and_submit(conn, demo) for _ in range(4)]
     w2 = Worker(worker_id="test-worker-2")
     w2.register()
-    threads = [threading.Thread(target=w.drain, kwargs={"kinds": ["tf_plan"]}) for w in (worker, w2)]
+    threads = [threading.Thread(target=w.drain, kwargs={"kinds": ["preflight", "tf_plan"]}) for w in (worker, w2)]
     for t in threads:
         t.start()
     for t in threads:
@@ -192,7 +192,7 @@ def test_t27_seconde_planification_sans_changement(conn, demo, worker, worker_en
     conn.commit()
     service.replan(conn, demo.principal("alice"), c["id"])
     conn.commit()
-    worker.drain(kinds=["tf_plan"])
+    flows.drain_plan(worker)
     plan2 = flows.latest_plan(conn, c["id"])
     assert plan2["status"] == "no_changes"
     assert flows.change(conn, c["id"])["state"] == "succeeded"
@@ -208,7 +208,7 @@ def test_t27_seconde_planification_sans_changement(conn, demo, worker, worker_en
         ("vit-dev-web-01", True), ("vit-dev-web-02", False)]
     service.submit(conn, alice, m["id"], res["revision_no"])
     conn.commit()
-    worker.drain(kinds=["tf_plan"])
+    flows.drain_plan(worker)
     plan3 = flows.latest_plan(conn, m["id"])
     assert plan3["status"] == "ready"
     assert plan3["summary"]["vm_counts"] == {"create": 1, "update": 0, "replace": 0, "delete": 0, "no-op": 1}

@@ -455,6 +455,7 @@ implementation: {ansible_role: rackloom.nginx, version: 1.0.0}
 | Type | Classe | Exécuté par | Réseau | Limites (CPU, mémoire, durée) | Produit |
 |---|---|---|---|---|---|
 | `inventory_refresh` | read | worker (connecteur fictif en processus) | — | 30 s | instantané d'inventaire |
+| `preflight` | read | worker (F31 : TLS, state, prérequis ; aucun changement cible) | — | 30 s | motif de blocage ou enfilement de `tf_plan` |
 | `tf_plan` | read | runner terraform | `none` | 1, 1 Gio, 10 min | plan chiffré, résumé, dossier, empreinte |
 | `tf_apply` | write | runner terraform | `none` | 1, 1 Gio, 30 min | sorties de la liste autorisée, lineage, serial |
 | `tf_state_read` | read | runner terraform | `none` | 0,5, 512 Mio, 5 min | adresses, lineage, serial (jamais le state brut) |

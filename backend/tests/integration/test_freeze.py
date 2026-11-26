@@ -40,7 +40,7 @@ def _wait(predicate, timeout: float = 60, step: float = 0.2):
 
 def _approved(conn, demo, worker, **kw):
     c = flows.create_and_submit(conn, demo, **kw)
-    assert worker.drain(kinds=["tf_plan"]) == ["tf_plan"]
+    assert flows.drain_plan(worker) == ["preflight", "tf_plan"]
     plan = flows.latest_plan(conn, c["id"])
     res = flows.approve(conn, demo, c["id"], plan)
     return c, plan, res["job_id"]
@@ -168,15 +168,16 @@ def test_f28_job_deja_envoye_poursuivi_et_suivi(conn, demo, worker, worker_env, 
     view = api("alice").get(f"{API}/changes/{c['id']}").json()
     assert view["deployment"]["service_status"] == "created_not_ready"
     assert view["environment_freeze"]["reason"] == REASON
+    # preflight, tf_plan, tf_apply, guest_ready, verify
     assert [j["state"] for j in api("alice").get(f"{API}/changes/{c['id']}/jobs").json()] == [
-        "succeeded", "succeeded", "succeeded", "succeeded"]
+        "succeeded", "succeeded", "succeeded", "succeeded", "succeeded"]
 
 
 @pytest.mark.terraform
 def test_f28_lecture_admise_et_approbation_suspendue(conn, demo, worker, api):
     _freeze(conn, demo)
     c = flows.create_and_submit(conn, demo)
-    assert worker.drain(kinds=["tf_plan"]) == ["tf_plan"]
+    assert flows.drain_plan(worker) == ["preflight", "tf_plan"]
     assert flows.change(conn, c["id"])["state"] == "plan_ready"
     plan_decision = _decisions(conn, c["job_id"])
     assert plan_decision[0]["outcome"] == "admitted"
@@ -198,7 +199,7 @@ def test_f28_lecture_admise_et_approbation_suspendue(conn, demo, worker, api):
     # Les jobs de lecture (inventaire, collecte, vérification, réconciliation) ne lisent pas le gel.
     change = flows.change(conn, c["id"])
     env = demo.env("vitrine", "dev")
-    for kind in ("inventory_refresh", "tf_state_read", "guest_ready", "verify", "reconcile"):
+    for kind in ("inventory_refresh", "preflight", "tf_state_read", "guest_ready", "verify", "reconcile"):
         job = queue.enqueue(conn, kind=kind, change=change, idempotency_key=f"f28-{kind}:{c['id']}")
         decision = admission.evaluate(admission.Context(conn=conn, job=job, change=change, environment=env,
                                                         execution=None, approval=None, plan=None))

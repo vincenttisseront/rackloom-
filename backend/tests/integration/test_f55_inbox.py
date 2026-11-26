@@ -12,7 +12,8 @@ API = "/api/v1"
 
 def _plan_ready(conn, demo, worker, **kw):
     c = flows.create_and_submit(conn, demo, **kw)
-    assert worker.drain(kinds=["tf_plan"]) == ["tf_plan"]
+    # F31 : preflight puis tf_plan (tf_plan n'est enfilé qu'après succès).
+    assert flows.drain_plan(worker) == ["preflight", "tf_plan"]
     assert flows.change(conn, c["id"])["state"] == "plan_ready"
     return c
 
