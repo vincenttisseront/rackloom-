@@ -50,10 +50,15 @@ async function saveAssistant() {
     <section class="card">
       <table>
         <thead>
-          <tr><th scope="col">Connecteur</th><th v-for="c in CAPS" :key="c" scope="col">{{ CAP_LABELS[c] }}</th><th scope="col">Erreurs</th></tr>
+          <tr>
+            <th scope="col">Connecteur</th>
+            <th v-for="c in CAPS" :key="c" scope="col">{{ CAP_LABELS[c] }}</th>
+            <th scope="col">Disjoncteur</th>
+            <th scope="col">Erreurs</th>
+          </tr>
         </thead>
         <tbody>
-          <tr v-for="k in connectors" :key="k.id">
+          <tr v-for="k in connectors" :key="k.id" :data-testid="`connector-${k.slug}`">
             <td><strong>{{ k.slug }}</strong> <SimBadge v-if="k.simulated" /></td>
             <td v-for="c in CAPS" :key="c">
               <template v-if="k.capabilities[c]?.available">
@@ -62,6 +67,15 @@ async function saveAssistant() {
                 <div v-if="k.capabilities[c].note" class="small muted">{{ k.capabilities[c].note }}</div>
               </template>
               <span v-else class="badge neutral">non disponible</span>
+            </td>
+            <td>
+              <span
+                v-if="k.circuit?.state === 'open'"
+                class="badge bad"
+                data-testid="circuit-open"
+                :title="k.circuit.opened_reason || ''"
+              >ouvert</span>
+              <span v-else class="badge ok" data-testid="circuit-closed">fermé</span>
             </td>
             <td>{{ k.error_count }}</td>
           </tr>

@@ -16,7 +16,7 @@ from pydantic import ValidationError
 
 from .. import audit, inventory, projects, registry, secrets, studio
 from ..config import get_settings
-from ..connectors import MATRIX, vsphere
+from ..connectors import MATRIX, circuit, vsphere
 from ..db import Conn, Jsonb, get_pool
 from ..errors import ApiError, forbidden, not_found
 from ..events import emit
@@ -200,11 +200,13 @@ def _connector(conn, connector_id: UUID) -> dict[str, Any]:
 
 
 def _connector_view(row: dict[str, Any]) -> dict[str, Any]:
+    circ = circuit.summary(row)
     return {"id": str(row["id"]), "slug": row["slug"], "kind": row["kind"], "mode": row["mode"],
             "simulated": row["mode"] == "simulated", "config": row["config"], "config_version": row["config_version"],
             "secrets": {name: "défini" for name in row["secret_refs"]}, "capabilities": row["capabilities"],
             "last_test_at": iso(row["last_test_at"]), "last_test_result": row["last_test_result"],
-            "error_count": row["error_count"]}
+            "error_count": row["error_count"],
+            "circuit": {**circ, "opened_at": iso(circ["opened_at"]) if circ["opened_at"] else None}}
 
 
 def _vsphere_config(conn: Conn, row: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -292,12 +294,29 @@ def put_connector_secret(connector_id: UUID, name: str, request: Request,
         return {"connector": row["slug"], "secret": name, "status": "défini"}
 
 
+@router.post("/connectors/{connector_id}/circuit/open")
+def open_connector_circuit(connector_id: UUID, request: Request,
+                           body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """Ouvre manuellement le disjoncteur (F37) : suspend les nouvelles écritures vers ce connecteur."""
+    _only(body, {"reason"})
+    with unit_of_work(request, write=True) as u:
+        require_admin(u.p)
+        row = _connector(u.conn, connector_id)
+        trip = circuit.open_circuit(
+            u.conn, row["id"], body.get("reason"),
+            actor_type="user", actor_id=str(u.p.user_id), request_id=u.request_id,
+        )
+        view = _connector_view(trip["connector"])
+        return {"connector": view, "opened": trip["opened"], "write_jobs": trip["write_jobs"]}
+
+
 @router.post("/connectors/{connector_id}/test")
 def test_connector(connector_id: UUID, request: Request) -> dict[str, Any]:
     with unit_of_work(request, write=True) as u:
         require_admin(u.p)
         row = _connector(u.conn, connector_id)
         cap = row["capabilities"].get("test_connection") or MATRIX[row["kind"]]["test_connection"]
+        result: dict[str, Any]
         if not cap["available"]:
             result = {"status": "unavailable", "simulated": False, "message": "test non disponible pour ce connecteur"}
         elif cap["mode"] == "simulated":
@@ -309,11 +328,35 @@ def test_connector(connector_id: UUID, request: Request) -> dict[str, Any]:
             result = {"status": "not_verified", "simulated": False,
                       "message": "Vérifié à l'exécution par le runner ; voir `make doctor`"}
         result["at"] = datetime.now(UTC).isoformat()
-        u.conn.execute("UPDATE connectors SET last_test_at = now(), last_test_result = %s, "
-                       "error_count = error_count + %s WHERE id = %s",
-                       (Jsonb(result), int(result["status"] == "failed"), row["id"]))
+        u.conn.execute("UPDATE connectors SET last_test_at = now(), last_test_result = %s WHERE id = %s",
+                       (Jsonb(result), row["id"]))
+        status = str(result["status"])
+        if status == "failed":
+            reason = str(result.get("message") or result.get("code") or "test de connexion échoué")
+            trip = circuit.record_failure(
+                u.conn, row["id"], reason, actor_type="user", actor_id=str(u.p.user_id),
+            )
+            circ = circuit.summary(trip["connector"])
+            result["circuit"] = circ
+            result["circuit_opened"] = trip["opened"]
+        elif status == "ok":
+            close = circuit.note_success(
+                u.conn, row["id"], actor_type="user", actor_id=str(u.p.user_id), request_id=u.request_id,
+            )
+            circ = circuit.summary(close["connector"])
+            result["circuit"] = circ
+            result["circuit_closed"] = close["closed"]
+            if close.get("blocked_by_uncertain"):
+                result["circuit_close_blocked"] = close["blocked_by_uncertain"]
+                result["message"] = close.get("message") or result.get("message")
+        else:
+            circ = circuit.summary(row)
+            result["circuit"] = circ
+        circ_view = result["circuit"]
+        assert isinstance(circ_view, dict)
+        circ_view["opened_at"] = iso(circ_view["opened_at"]) if circ_view.get("opened_at") else None
         audit.record(u.conn, actor_type="user", actor_id=str(u.p.user_id), action="connector.test",
-                     outcome=result["status"], targets={"connector": row["slug"]}, request_id=u.request_id)
+                     outcome=status, targets={"connector": row["slug"]}, request_id=u.request_id)
         return result
 
 

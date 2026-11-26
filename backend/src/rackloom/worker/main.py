@@ -102,6 +102,12 @@ class Worker:
                        actor_id=self.worker_id, severity="warning",
                        detail={"message": f"Résultat incertain ({reason}) : réconciliation en lecture seule, "
                                           "aucune relance automatique", "job_id": str(job["id"])})
+        # F37 : une écriture devenue incertaine compte pour le disjoncteur des connecteurs requis.
+        for kind in connectors.circuit.required_kinds(job["kind"]):
+            connectors.circuit.record_failure_for_kind(
+                conn, kind, f"écriture {job['kind']} incertaine : {reason}",
+                actor_type="worker", actor_id=self.worker_id,
+            )
         queue.enqueue(conn, kind="reconcile", change=change, stack_id=None,
                       idempotency_key=f"reconcile:{job['id']}", payload={"job_id": str(job["id"])}, priority=10)
 

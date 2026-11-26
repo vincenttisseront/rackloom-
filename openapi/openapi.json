@@ -1771,6 +1771,64 @@
         ]
       }
     },
+    "/api/v1/connectors/{connector_id}/circuit/open": {
+      "post": {
+        "description": "Ouvre manuellement le disjoncteur (F37) : suspend les nouvelles écritures vers ce connecteur.",
+        "operationId": "open_connector_circuit_api_v1_connectors__connector_id__circuit_open_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connector_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connector Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Open Connector Circuit Api V1 Connectors  Connector Id  Circuit Open Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Connector Circuit",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
     "/api/v1/connectors/{connector_id}/inventory-refresh": {
       "post": {
         "operationId": "refresh_inventory_api_v1_connectors__connector_id__inventory_refresh_post",
