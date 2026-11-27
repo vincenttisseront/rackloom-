@@ -1,0 +1,20 @@
+[Unit]
+Description=Rackloom appliance (Docker Compose)
+Documentation=file:///opt/rackloom/README.md
+After=docker.service network-online.target rackloom-firstboot.service
+Wants=network-online.target
+Requires=docker.service
+RequiresMountsFor=/opt/rackloom /etc/rackloom /var/lib/rackloom
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/etc/rackloom/appliance.env
+WorkingDirectory=/opt/rackloom/compose
+ExecStart=/usr/bin/docker compose --env-file /etc/rackloom/appliance.env -f /opt/rackloom/compose/compose.yaml up -d --wait
+ExecStop=/usr/bin/docker compose --env-file /etc/rackloom/appliance.env -f /opt/rackloom/compose/compose.yaml down
+TimeoutStartSec=600
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

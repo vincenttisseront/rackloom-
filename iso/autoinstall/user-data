@@ -1,0 +1,50 @@
+#cloud-config
+# Autoinstall Ubuntu Server 24.04 LTS pour l'appliance Rackloom (ADR-0004).
+# Section stockage interactive : l'opérateur choisit et confirme le disque.
+# Aucun secret, mot de passe applicatif ou certificat privé n'est embarqué.
+autoinstall:
+  version: 1
+  locale: fr_FR.UTF-8
+  keyboard:
+    layout: fr
+    variant: ""
+  timezone: Etc/UTC
+  identity:
+    hostname: rackloom
+    # Compte console local d'installation uniquement ; le mot de passe est
+    # demandé à l'installateur (pas de secret dans l'ISO). Remplacé / complété
+    # par le jeton d'amorçage WebUI au premier boot.
+    username: rackloom
+  # Mot de passe console : l'installateur le demande (interactive-sections).
+  interactive-sections:
+    - storage
+    - identity
+  storage:
+    layout:
+      name: lvm
+  ssh:
+    install-server: true
+    allow-pw: false
+  packages:
+    - qemu-guest-agent
+    - curl
+    - ca-certificates
+    - openssl
+  apt:
+    # Miroir local éventuel via late-commands ; pas de téléchargement imprévu
+    # après le premier boot (bundles F17 pour le reste).
+    preserve_sources_list: false
+    fallback: offline-install
+  late-commands:
+    # Docker depuis les .deb embarqués (hors pool de l'ISO amont).
+    - /cdrom/rackloom/install-debs.sh
+    - curtin in-target -- mkdir -p /opt/rackloom /etc/rackloom /var/lib/rackloom
+    - curtin in-target -- mkdir -p /etc/rackloom/secrets /etc/rackloom/keys /etc/rackloom/tls
+    - cp -a /cdrom/rackloom/payload/. /target/
+    - curtin in-target -- chmod 0755 /usr/local/sbin/rackloom-firstboot /usr/local/lib/rackloom/*.sh
+    - curtin in-target -- chmod 0644 /lib/systemd/system/rackloom.service /lib/systemd/system/rackloom-firstboot.service
+    - curtin in-target -- systemctl enable docker.service
+    - curtin in-target -- systemctl enable rackloom-firstboot.service
+    - curtin in-target -- systemctl enable rackloom.service
+    - curtin in-target -- usermod -aG docker rackloom || true
+  shutdown: reboot

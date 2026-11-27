@@ -32,5 +32,8 @@ web/.data/
 web/test-results/
 web/playwright-report/
 dist/
+# Artefacts ISO locaux (Lot 3) ; ne jamais committer l'ISO ni les tar d'images.
+*.iso
+iso/work/
 build/
 *.egg-info/

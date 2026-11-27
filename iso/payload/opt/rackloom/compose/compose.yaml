@@ -1,0 +1,192 @@
+# Pile appliance (Lot 3) : images préchargées, secrets générés au premier boot.
+# Aucun `build:` : construction hors ligne uniquement depuis les tar embarqués.
+# Seul Caddy publie 443. PostgreSQL, launcher et runners restent internes.
+name: rackloom
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+
+x-backend-env: &backend-env
+  RACKLOOM_PROFILE: production
+  RACKLOOM_PUBLIC_ORIGIN: ${RACKLOOM_PUBLIC_ORIGIN}
+  RACKLOOM_KEYS_DIR: /run/rackloom-keys
+  RACKLOOM_DATA_DIR: /var/lib/rackloom
+  RACKLOOM_CHAT_ADAPTER: ${RACKLOOM_CHAT_ADAPTER:-disabled}
+
+services:
+  caddy:
+    <<: *hardened
+    image: rackloom/web:appliance
+    ports: ["443:443"]
+    networks: [edge, core]
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+      - /etc/rackloom/tls:/etc/rackloom/tls:ro
+      - /etc/rackloom/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      api: {condition: service_healthy}
+
+  postgres:
+    <<: *hardened
+    image: postgres:16.11-bookworm
+    user: "999:999"
+    networks: [core]
+    environment:
+      POSTGRES_USER: rackloom_owner
+      POSTGRES_DB: rackloom
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_owner
+    secrets: [pg_owner, pg_api, pg_worker]
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,size=64m"
+      - "/var/run/postgresql:rw,nosuid,size=8m,uid=999,gid=999"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/10-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "rackloom_owner", "-d", "rackloom"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  cli:
+    <<: *hardened
+    image: rackloom/backend:appliance
+    restart: "no"
+    profiles: [tools]
+    entrypoint: ["rackloom"]
+    networks: [core]
+    environment:
+      <<: *backend-env
+      RACKLOOM_DATABASE_URL: postgresql://rackloom_owner@postgres:5432/rackloom
+      RACKLOOM_DATABASE_PASSWORD_FILE: /run/secrets/pg_owner
+      RACKLOOM_MIGRATOR_PASSWORD_FILE: /run/secrets/pg_owner
+    secrets: [pg_owner]
+    volumes:
+      - keys-api:/run/rackloom-keys:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  init:
+    <<: *hardened
+    image: rackloom/backend:appliance
+    restart: "no"
+    profiles: [tools]
+    user: "0:0"
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
+    network_mode: none
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        rackloom keys init --dir /keys/worker
+        && cp /keys/worker/artifact-b.key /keys/worker/secrets-box.pub /keys/api/
+        && cp /keys/worker/offline-bundle-sign.key /keys/worker/offline-bundle-sign.pub /keys/api/
+        && chown -R 10001:10001 /keys/worker /keys/api
+        && chmod 0600 /keys/api/artifact-b.key /keys/api/offline-bundle-sign.key
+        && chmod 0644 /keys/api/offline-bundle-sign.pub
+        && chown 10001:10001 /vol/workspaces /vol/artifacts /vol/audit-export /vol/offline-bundles
+        && chmod 0770 /vol/workspaces /vol/artifacts /vol/audit-export /vol/offline-bundles
+    volumes:
+      - keys-worker:/keys/worker
+      - keys-api:/keys/api
+      - workspaces:/vol/workspaces
+      - artifacts:/vol/artifacts
+      - audit-export:/vol/audit-export
+      - offline-bundles:/vol/offline-bundles
+
+  api:
+    <<: *hardened
+    image: rackloom/backend:appliance
+    networks: [core]
+    environment:
+      <<: *backend-env
+      RACKLOOM_DATABASE_URL: postgresql://rackloom_api@postgres:5432/rackloom
+      RACKLOOM_DATABASE_PASSWORD_FILE: /run/secrets/pg_api
+    secrets: [pg_api]
+    volumes:
+      - keys-api:/run/rackloom-keys:ro
+      - artifacts:/var/lib/rackloom/artifacts:ro
+      - audit-export:/var/lib/rackloom/audit-export
+      - offline-bundles:/var/lib/rackloom/offline-bundles
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3).status != 200)",
+        ]
+      interval: 3s
+      timeout: 4s
+      retries: 40
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  worker:
+    <<: *hardened
+    image: rackloom/backend:appliance
+    command: ["python", "-m", "rackloom.worker.main"]
+    networks: [core]
+    environment:
+      <<: *backend-env
+      RACKLOOM_DATABASE_URL: postgresql://rackloom_worker@postgres:5432/rackloom
+      RACKLOOM_DATABASE_PASSWORD_FILE: /run/secrets/pg_worker
+      RACKLOOM_LAUNCHER_MODE: socket
+      RACKLOOM_LAUNCHER_SOCKET: /run/rackloom/launcher.sock
+      RACKLOOM_WORKER_SLOTS: ${RACKLOOM_WORKER_SLOTS:-2}
+    secrets: [pg_worker]
+    volumes:
+      - keys-worker:/run/rackloom-keys:ro
+      - artifacts:/var/lib/rackloom/artifacts
+      - workspaces:/var/lib/rackloom/workspaces
+      - launcher-sock:/run/rackloom
+    depends_on:
+      postgres: {condition: service_healthy}
+      launcher: {condition: service_started}
+
+  launcher:
+    <<: *hardened
+    image: rackloom/launcher:appliance
+    user: "0:10001"
+    cap_add: [CHOWN]
+    network_mode: none
+    environment:
+      RACKLOOM_RUNNER_IMAGE_TERRAFORM: rackloom/runner-terraform:appliance
+      RACKLOOM_RUNNER_IMAGE_ANSIBLE: rackloom/runner-ansible:appliance
+      RACKLOOM_VOLUME_WORKSPACES: rackloom_workspaces
+      RACKLOOM_VOLUME_TFSTATE: rackloom_tfstate
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - launcher-sock:/run/rackloom
+      - workspaces:/volumes/workspaces
+      - tfstate:/volumes/tfstate
+
+x-isolated: &isolated
+  internal: true
+  driver_opts: {com.docker.network.bridge.gateway_mode_ipv4: isolated}
+
+networks:
+  edge: {name: rackloom_edge}
+  core: {<<: *isolated, name: rackloom_core}
+
+volumes:
+  pgdata: {name: rackloom_pgdata}
+  keys-worker: {name: rackloom_keys_worker}
+  keys-api: {name: rackloom_keys_api}
+  artifacts: {name: rackloom_artifacts}
+  audit-export: {name: rackloom_audit_export}
+  offline-bundles: {name: rackloom_offline_bundles}
+  workspaces: {name: rackloom_workspaces}
+  tfstate: {name: rackloom_tfstate}
+  launcher-sock: {name: rackloom_launcher_sock}
+  caddy-data: {name: rackloom_caddy_data}
+  caddy-config: {name: rackloom_caddy_config}
+
+secrets:
+  pg_owner: {file: /etc/rackloom/secrets/pg_owner}
+  pg_api: {file: /etc/rackloom/secrets/pg_api}
+  pg_worker: {file: /etc/rackloom/secrets/pg_worker}

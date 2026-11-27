@@ -45,7 +45,7 @@ lint:           ## Lint seul (backend, launcher, scripts)
 	cd backend && uv run ruff check . ../launcher/src ../scripts && uv run lint-imports
 fmt:            ## Trie les imports et applique les corrections sûres de ruff
 	cd backend && uv run ruff check --fix . ../launcher/src ../scripts
-iso:            ## Lot 3 : construit l'ISO
-	@echo "make iso : disponible au lot 3" >&2; exit 2
-test-iso:       ## Lot 3 : installe et démarre l'ISO sur disque virtuel jetable
-	@echo "make test-iso : disponible au lot 3" >&2; exit 2
+iso:            ## Lot 3 : construit l'ISO appliance (Ubuntu 24.04 autoinstall)
+	./iso/build.sh
+test-iso:       ## Lot 3 : installe l'ISO sur disque virtuel jetable (QEMU + OVMF)
+	./iso/test.sh
