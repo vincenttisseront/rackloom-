@@ -185,6 +185,279 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/access-review-items/{item_id}": {
+      "get": {
+        "operationId": "get_access_review_item_api_v1_access_review_items__item_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Access Review Item Api V1 Access Review Items  Item Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Access Review Item",
+        "tags": [
+          "identites-audit"
+        ]
+      }
+    },
+    "/api/v1/access-review-items/{item_id}/decide": {
+      "post": {
+        "operationId": "decide_access_review_item_api_v1_access_review_items__item_id__decide_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Decide Access Review Item Api V1 Access Review Items  Item Id  Decide Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Access Review Item",
+        "tags": [
+          "identites-audit"
+        ]
+      }
+    },
+    "/api/v1/admin/access-reviews": {
+      "get": {
+        "operationId": "list_access_reviews_api_v1_admin_access_reviews_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Access Reviews Api V1 Admin Access Reviews Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Access Reviews",
+        "tags": [
+          "identites-audit"
+        ]
+      },
+      "post": {
+        "operationId": "prepare_access_review_api_v1_admin_access_reviews_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Prepare Access Review Api V1 Admin Access Reviews Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Prepare Access Review",
+        "tags": [
+          "identites-audit"
+        ]
+      }
+    },
+    "/api/v1/admin/access-reviews/{campaign_id}": {
+      "get": {
+        "operationId": "get_access_review_api_v1_admin_access_reviews__campaign_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Access Review Api V1 Admin Access Reviews  Campaign Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Access Review",
+        "tags": [
+          "identites-audit"
+        ]
+      }
+    },
+    "/api/v1/admin/approved-endpoints/{endpoint_id}/scan-tls": {
+      "post": {
+        "operationId": "scan_tls_endpoint_api_v1_admin_approved_endpoints__endpoint_id__scan_tls_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Scan Tls Endpoint Api V1 Admin Approved Endpoints  Endpoint Id  Scan Tls Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scan Tls Endpoint",
+        "tags": [
+          "identites-audit"
+        ]
+      }
+    },
     "/api/v1/admin/assistant": {
       "get": {
         "operationId": "assistant_config_api_v1_admin_assistant_get",
@@ -360,6 +633,174 @@
         "summary": "Get Assistant Eval",
         "tags": [
           "assistant"
+        ]
+      }
+    },
+    "/api/v1/admin/audit-exports": {
+      "get": {
+        "operationId": "list_audit_exports_api_v1_admin_audit_exports_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Audit Exports Api V1 Admin Audit Exports Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Audit Exports",
+        "tags": [
+          "identites-audit"
+        ]
+      },
+      "post": {
+        "operationId": "create_audit_export_api_v1_admin_audit_exports_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Audit Export Api V1 Admin Audit Exports Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Audit Export",
+        "tags": [
+          "identites-audit"
+        ]
+      }
+    },
+    "/api/v1/admin/audit-exports/{destination_id}/overwrite/{audit_id}": {
+      "post": {
+        "operationId": "overwrite_audit_export_api_v1_admin_audit_exports__destination_id__overwrite__audit_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "destination_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Destination Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "audit_id",
+            "required": true,
+            "schema": {
+              "title": "Audit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Overwrite Audit Export Api V1 Admin Audit Exports  Destination Id  Overwrite  Audit Id  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Overwrite Audit Export",
+        "tags": [
+          "identites-audit"
+        ]
+      }
+    },
+    "/api/v1/admin/audit-exports/{destination_id}/run": {
+      "post": {
+        "operationId": "run_audit_export_api_v1_admin_audit_exports__destination_id__run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "destination_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Destination Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Run Audit Export Api V1 Admin Audit Exports  Destination Id  Run Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Audit Export",
+        "tags": [
+          "identites-audit"
         ]
       }
     },
@@ -657,6 +1098,97 @@
         "summary": "Simulate Policy",
         "tags": [
           "gouvernance"
+        ]
+      }
+    },
+    "/api/v1/admin/scim/sync-fixture": {
+      "post": {
+        "description": "Synchronise depuis une liste fictive explicite (aucun IdP réel).",
+        "operationId": "sync_scim_fixture_api_v1_admin_scim_sync_fixture_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sync Scim Fixture Api V1 Admin Scim Sync Fixture Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Scim Fixture",
+        "tags": [
+          "identites-audit"
+        ]
+      }
+    },
+    "/api/v1/admin/scim/tokens": {
+      "post": {
+        "operationId": "mint_scim_token_api_v1_admin_scim_tokens_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Mint Scim Token Api V1 Admin Scim Tokens Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mint Scim Token",
+        "tags": [
+          "identites-audit"
         ]
       }
     },
@@ -1115,6 +1647,58 @@
         "summary": "Withdraw",
         "tags": [
           "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/tls-certificates": {
+      "get": {
+        "operationId": "list_tls_certificates_api_v1_admin_tls_certificates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Tls Certificates Api V1 Admin Tls Certificates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Tls Certificates",
+        "tags": [
+          "identites-audit"
+        ]
+      }
+    },
+    "/api/v1/admin/tls-certificates/alerts": {
+      "get": {
+        "operationId": "list_tls_alerts_api_v1_admin_tls_certificates_alerts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Tls Alerts Api V1 Admin Tls Certificates Alerts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Tls Alerts",
+        "tags": [
+          "identites-audit"
         ]
       }
     },
@@ -2529,6 +3113,141 @@
         ]
       }
     },
+    "/api/v1/connector-rotations/{rotation_id}/cutover": {
+      "post": {
+        "operationId": "cutover_rotation_api_v1_connector_rotations__rotation_id__cutover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rotation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cutover Rotation Api V1 Connector Rotations  Rotation Id  Cutover Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cutover Rotation",
+        "tags": [
+          "identites-audit"
+        ]
+      }
+    },
+    "/api/v1/connector-rotations/{rotation_id}/retire": {
+      "post": {
+        "operationId": "retire_rotation_api_v1_connector_rotations__rotation_id__retire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rotation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Retire Rotation Api V1 Connector Rotations  Rotation Id  Retire Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire Rotation",
+        "tags": [
+          "identites-audit"
+        ]
+      }
+    },
+    "/api/v1/connector-rotations/{rotation_id}/validate": {
+      "post": {
+        "operationId": "validate_rotation_api_v1_connector_rotations__rotation_id__validate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rotation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rotation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Validate Rotation Api V1 Connector Rotations  Rotation Id  Validate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Rotation",
+        "tags": [
+          "identites-audit"
+        ]
+      }
+    },
     "/api/v1/connectors": {
       "get": {
         "operationId": "list_connectors_api_v1_connectors_get",
@@ -2712,6 +3431,109 @@
         "summary": "Refresh Inventory",
         "tags": [
           "administration"
+        ]
+      }
+    },
+    "/api/v1/connectors/{connector_id}/rotations": {
+      "get": {
+        "operationId": "list_rotations_api_v1_connectors__connector_id__rotations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connector_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connector Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Rotations Api V1 Connectors  Connector Id  Rotations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Rotations",
+        "tags": [
+          "identites-audit"
+        ]
+      },
+      "post": {
+        "operationId": "propose_rotation_api_v1_connectors__connector_id__rotations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connector_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connector Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Propose Rotation Api V1 Connectors  Connector Id  Rotations Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose Rotation",
+        "tags": [
+          "identites-audit"
         ]
       }
     },
@@ -5154,6 +5976,139 @@
         "summary": "Revoke Role",
         "tags": [
           "administration"
+        ]
+      }
+    },
+    "/api/v1/scim/v2/Users": {
+      "post": {
+        "operationId": "scim_create_user_api_v1_scim_v2_Users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scim Create User",
+        "tags": [
+          "scim"
+        ]
+      }
+    },
+    "/api/v1/scim/v2/Users/{user_id}": {
+      "get": {
+        "operationId": "scim_get_user_api_v1_scim_v2_Users__user_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scim Get User",
+        "tags": [
+          "scim"
+        ]
+      },
+      "patch": {
+        "operationId": "scim_patch_user_api_v1_scim_v2_Users__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scim Patch User",
+        "tags": [
+          "scim"
         ]
       }
     },

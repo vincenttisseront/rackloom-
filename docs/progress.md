@@ -9,7 +9,8 @@
 - **F51 à F54 et F56** (simplifier la demande et le suivi) : PR #15 (`cursor/f51-f56-demande-suivi-a149`), migration Alembic `0012`.
 - **F32–F35** : PR #22 (`cursor/f32-f35-placement-outputs-licenses-ci-5bfe`), migration Alembic `0013` (après #15 ; GRANT worker inclus).
 - **Lot C (F10–F14)** : fusionné (PR #24), migration Alembic `0014`, bundle `builtin@8` (R100, R140).
-- **F36–F40 (résilience)** : branche `cursor/f36-f40-resilience-fd86`, migration Alembic `0015`, bundle `builtin@9` (R115, R135).
+- **F36–F40 (résilience)** : fusionné (PR #25), migration Alembic `0015`, bundle `builtin@9` (R115, R135).
+- **F41–F45 (identités et audit)** : branche `cursor/f41-f45-identites-audit-7aae`, migration Alembic `0016` (SCIM, revue d'accès, rotation, copie d'audit, certificats TLS).
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -84,7 +85,12 @@
 | Réauthentification forte (F12) | livré | testé localement (IdP simulé) | step-up local + preuve IdP de test ; lecture OK sans preuve ; approbation refusée sans step-up ; IdP réel : non |
 | Administration déléguée (F13) | livré | testé localement | rôles `project_admin` / `connector_admin` ; secrets jamais lus ; artefact hors projet → 404 |
 | Accès d'urgence (F14) | livré | testé localement | `rackloom emergency` ; panne SSO simulée ; fermeture → `emergency_closed` ; `docs/emergency-access.md` |
-| Fonctions F02 à F45 restantes / F58 à F59 et atelier AT02 à AT04 (hors F01, F03, F05, F09, F32–F40, F10–F14) | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances ; F58/F59 après lot 2 / OIDC |
+| Arrivées et départs SCIM (F41) | livré (annuaire de test) | testé localement | `test_f41_f45_identity_audit.py` ; désactivation → cookie 401, jobs en file `blocked` ; jobs déjà envoyés inchangés ; IdP réel : non |
+| Revue périodique des accès (F42) | livré | testé localement | campagnes + items ; périmètre project_admin → 404 hors projet ; révocation auditée |
+| Rotation identifiants connecteurs (F43) | livré (test simulé) | testé localement | candidat invalide → pas de bascule, canari absent ; retire après fin des jobs |
+| Copie d'audit hors appliance (F44) | livré (stockage local verrouillé) | testé localement | reprise sans doublon ; écrasement refusé si object_lock ; canari masqué |
+| Registre certificats TLS (F45) | livré | testé localement | scan endpoint approuvé ; alerte `expiring_soon` au propriétaire ; TLS toujours vérifié |
+| Fonctions F02 à F45 restantes / F58 à F59 et atelier AT02 à AT04 (hors F01, F03, F05, F09, F32–F45, F10–F14) | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances ; F58/F59 après lot 2 / OIDC |
 
 ## Démonstrations D1 à D6
 
@@ -367,9 +373,20 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - **F35** : utilisateurs `kind=service` + `service_tokens` ; Bearer sans CSRF ; `POST /ci/submissions` idempotent ; approbation refusée (`service_identity_forbidden`).
 - Migration `0013` (après F54 `0012`). Preuves : `test_f32_placement.py`, `test_f33_outputs.py`, `test_f34_licenses.py`, `test_f35_ci.py`. Labo réel / source licences réelle : non (D2, D11).
 
+### F41–F45 identités et audit (2026-11-27, heure de Paris)
+
+- Branche `cursor/f41-f45-identites-audit-7aae` depuis `main` (après F36–F40 / `0015`).
+- Migration `0016` : `scim_tokens`, `scim_sync_events`, `users.external_id`, campagnes de revue, rotations de secrets, destinations/livraisons d'export d'audit, `tls_certificate_records` ; GRANT `rackloom_api` / `rackloom_worker`.
+- **F41** : SCIM 2.0 Users (Bearer) + sync fixture ; désactivation → `privilege_epoch`, jobs `queued` → `blocked` (`identity_disabled`) ; R020 explicite.
+- **F42** : préparation automatique (orphelins, bindings injustifiés, exceptions/grants expirés) ; décision confirmée/révoquée auditée ; hors périmètre → 404.
+- **F43** : propose / validate / cutover / retire sans reveal API ; sondage simulé à la proposition ; valeur jamais dans UI/logs.
+- **F44** : stockage local à verrouillage d'objets ; `dedupe_key` = hash d'audit ; reprise sans doublon.
+- **F45** : scan TLS des endpoints approuvés ; alerte d'expiration ; aucune clé privée.
+- Preuves : `test_f41_f45_identity_audit.py` ; e2e `100-f41-f45-identites.spec.ts` ; page `/admin/identites`. Annuaire / stockage / vCenter réels : non (D2).
+
 ## Prochain jalon
 
-1. Fusionner **F36–F40 (`0015`, `builtin@9`)** après CI verte (Vincent).
-2. Ensuite selon le backlog (F02–F45 restantes, AT02–AT04).
-3. F58 / F59 après dépendances (lot 2 / OIDC pour F59) ; F12/F14 à rejouer contre l'IdP d'entreprise au lot 4.
+1. Fusionner **F41–F45 (`0016`)** après CI verte (Vincent).
+2. Ensuite selon le backlog (F02–F40 restantes hors livrés, AT02–AT04, F46–F50 déjà faits).
+3. F58 / F59 après dépendances (lot 2 / OIDC pour F59) ; F12/F14/F41 à rejouer contre l'IdP d'entreprise au lot 4.
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
