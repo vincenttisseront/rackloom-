@@ -14,11 +14,18 @@ const canConnectors = computed(() =>
 const links = computed(() => {
   const items: { to: string; title: string; blurb: string }[] = []
   if (isPublisher.value) {
-    items.push({
-      to: '/admin/templates',
-      title: 'Templates',
-      blurb: 'Versions publiées, contrats et impact avant publication.',
-    })
+    items.push(
+      {
+        to: '/admin/templates',
+        title: 'Templates',
+        blurb: 'Versions publiées, contrats et impact avant publication.',
+      },
+      {
+        to: '/admin/images',
+        title: 'Fabrique d’images',
+        blurb: 'Pipeline de fabrication : provenance, tests, promotion et dépréciation.',
+      },
+    )
   }
   if (canConnectors.value) {
     items.push({

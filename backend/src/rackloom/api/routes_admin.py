@@ -14,7 +14,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Request
 from pydantic import ValidationError
 
-from .. import audit, inventory, projects, registry, secrets, studio
+from .. import audit, factory, inventory, projects, registry, secrets, studio
 from ..config import get_settings
 from ..connectors import MATRIX, circuit, vsphere
 from ..db import Conn, Jsonb, get_pool
@@ -247,6 +247,130 @@ def review_catalog_pin(pin_id: UUID, request: Request, body: dict[str, Any] = Bo
             "review_reason": pin["review_reason"],
             "reviewed_at": iso(pin["reviewed_at"]),
         }
+
+
+def _image_view(view: dict[str, Any]) -> dict[str, Any]:
+    """Sérialise une vue fabrique pour l'API (timestamps ISO)."""
+    out = dict(view)
+    for key in ("created_at", "built_at", "tested_at", "deprecated_at"):
+        if key in out:
+            out[key] = iso(out[key])
+    out["tests"] = [{**t, "ran_at": iso(t["ran_at"])} for t in view.get("tests", [])]
+    out["promotions"] = [
+        {**p, "promoted_at": iso(p["promoted_at"])} for p in view.get("promotions", [])
+    ]
+    return out
+
+
+@router.get("/admin/images")
+def list_images(request: Request) -> list[dict[str, Any]]:
+    """F07 : liste des versions d'images de la fabrique."""
+    with unit_of_work(request) as u:
+        _registry_reader(u.p)
+        return factory.list_builds(u.conn)
+
+
+@router.get("/admin/images/{slug}/versions/{version}")
+def get_image(slug: str, version: str, request: Request) -> dict[str, Any]:
+    """F07 : détail d'une version (provenance, tests, promotions)."""
+    with unit_of_work(request) as u:
+        _registry_reader(u.p)
+        view = factory.get(u.conn, slug, version)
+        if view is None:
+            raise not_found("version d'image")
+        actions: list[str] = []
+        if u.p.has_role("template_publisher"):
+            if view["status"] == "draft":
+                actions.append("build")
+            if view["status"] in ("built", "ready", "failed"):
+                actions.append("test")
+            if view["status"] == "ready":
+                promoted = {p["environment_kind"] for p in view["promotions"]}
+                for kind in factory.ENV_KINDS:
+                    if kind not in promoted:
+                        actions.append(f"promote:{kind}")
+            if view["status"] in ("ready", "failed", "built"):
+                actions.append("deprecate")
+        return {**_image_view(view), "actions": actions}
+
+
+@router.post("/admin/images")
+def create_image(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F07 : enregistre une version d'image en brouillon (aucun job)."""
+    _only(body, {"slug", "version", "title", "source_kind", "source_digest", "os", "layout_id", "attributes"})
+    with unit_of_work(request, write=True) as u:
+        view = factory.create(
+            u.conn,
+            u.p,
+            slug=str(body.get("slug") or ""),
+            version=str(body.get("version") or ""),
+            title=str(body.get("title") or ""),
+            source_kind=str(body.get("source_kind") or ""),
+            source_digest=str(body.get("source_digest") or ""),
+            os=str(body.get("os") or ""),
+            layout_id=str(body.get("layout_id") or ""),
+            attributes=body.get("attributes") if isinstance(body.get("attributes"), dict) else None,
+        )
+        return _image_view(view)
+
+
+@router.post("/admin/images/{slug}/versions/{version}/build")
+def build_image(slug: str, version: str, request: Request) -> dict[str, Any]:
+    """F07 : lance le constructeur fictif (D11 : outil réel non branché)."""
+    with unit_of_work(request, write=True) as u:
+        return _image_view(factory.build(u.conn, u.p, slug, version))
+
+
+@router.post("/admin/images/{slug}/versions/{version}/test")
+def test_image(
+    slug: str, version: str, request: Request, body: dict[str, Any] | None = Body(None)
+) -> dict[str, Any]:
+    """F07 : exécute la batterie de tests. `fail` injecte un échec (recettes)."""
+    payload = body or {}
+    _only(payload, {"fail"})
+    with unit_of_work(request, write=True) as u:
+        return _image_view(
+            factory.run_tests(
+                u.conn,
+                u.p,
+                slug,
+                version,
+                fail=bool(payload.get("fail")),
+            )
+        )
+
+
+@router.post("/admin/images/{slug}/versions/{version}/promote")
+def promote_image(slug: str, version: str, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F07 : promotion vers un kind du catalogue. Refusée si les tests ont échoué."""
+    _only(body, {"reason", "environment_kind"})
+    with unit_of_work(request, write=True) as u:
+        return _image_view(
+            factory.promote(
+                u.conn,
+                u.p,
+                slug,
+                version,
+                environment_kind=str(body.get("environment_kind") or ""),
+                reason=str(body.get("reason") or ""),
+            )
+        )
+
+
+@router.post("/admin/images/{slug}/versions/{version}/deprecate")
+def deprecate_image(slug: str, version: str, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F07 : déprécie sans retirer l'image."""
+    _only(body, {"reason"})
+    with unit_of_work(request, write=True) as u:
+        return _image_view(
+            factory.deprecate(
+                u.conn,
+                u.p,
+                slug,
+                version,
+                reason=str(body.get("reason") or ""),
+            )
+        )
 
 
 @router.get("/admin/environments/{environment_id}/policies")
