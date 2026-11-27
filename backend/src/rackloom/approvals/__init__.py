@@ -189,6 +189,22 @@ def decide(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, An
             ),
         )
         job = conn.execute("SELECT * FROM jobs WHERE id = %s", (job["id"],)).fetchone()
+    elif change["kind"] == "patch":
+        from .. import patching
+
+        job = patching.enqueue_patch(conn, change, approval_id=approval_id)
+        conn.execute(
+            "UPDATE jobs SET execution_id = %s, stack_id = %s, run_after = %s, "
+            "payload = payload || %s::jsonb WHERE id = %s",
+            (
+                execution_id,
+                plan["stack_id"],
+                run_after,
+                Jsonb({"plan_id": str(plan_id)}),
+                job["id"],
+            ),
+        )
+        job = conn.execute("SELECT * FROM jobs WHERE id = %s", (job["id"],)).fetchone()
     else:
         job = queue.enqueue(
             conn,

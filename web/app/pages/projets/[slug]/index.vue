@@ -12,6 +12,7 @@ const prefForm = ref({ default_size_tier: 'standard', naming: '', reason: '' })
 const prefBusy = ref(false)
 const prefNotice = ref<string | null>(null)
 const consumption = ref<any | null>(null)
+const patchCampaigns = ref<any[]>([])
 const error = ref<string | null>(null)
 
 const KIND_LABEL: Record<string, string> = {
@@ -38,6 +39,11 @@ onMounted(async () => {
       consumption.value = await api.get(`/projects/${slug.value}/consumption`)
     } catch {
       consumption.value = null
+    }
+    try {
+      patchCampaigns.value = await api.get(`/projects/${slug.value}/patch-campaigns`)
+    } catch {
+      patchCampaigns.value = []
     }
     try {
       preferences.value = await api.get(`/projects/${slug.value}/preferences`)
@@ -203,6 +209,49 @@ function envChanged(updated: any) {
         {{ consumption.billing.currency }} / {{ consumption.billing.period }}
         <span class="badge">{{ KIND_LABEL.estimation }}</span>
       </p>
+    </section>
+
+    <section
+      class="card"
+      aria-labelledby="patch-title"
+      data-testid="patch-campaigns-panel"
+    >
+      <h2 id="patch-title">Campagnes de patch</h2>
+      <p class="small muted">
+        Pilote puis vagues ; une dégradation bloque la suite sans retour arrière automatique.
+      </p>
+      <p v-if="!patchCampaigns.length" class="empty" data-testid="patch-campaigns-empty">
+        Aucune campagne.
+      </p>
+      <table v-else>
+        <thead>
+          <tr>
+            <th scope="col">Titre</th>
+            <th scope="col">État</th>
+            <th scope="col">Vagues</th>
+            <th scope="col">Preuve</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="c in patchCampaigns"
+            :key="c.id"
+            :data-testid="`patch-campaign-${c.id}`"
+          >
+            <td>
+              <NuxtLink :to="`/demandes/${c.change_id}`">{{ c.title }}</NuxtLink>
+            </td>
+            <td>
+              <span class="badge">{{ c.state_label || c.state }}</span>
+              <span v-if="c.block_reason" class="small muted"> — {{ c.block_reason }}</span>
+            </td>
+            <td>{{ (c.waves || []).length }}</td>
+            <td>
+              <SimBadge v-if="c.simulated" title="Patch simulé" />
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </section>
 
     <section class="card" aria-labelledby="deps-title">

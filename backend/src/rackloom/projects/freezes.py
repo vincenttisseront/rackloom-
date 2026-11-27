@@ -21,7 +21,7 @@ from ..identity.authz import Principal
 from ..ids import uuid7
 from ..redact import redact
 
-WRITE_KINDS = ("tf_apply", "ansible_configure")
+WRITE_KINDS = ("tf_apply", "ansible_configure", "host_patch")
 ACTIVE_CHANGE_STATES = ("plan_ready", "approved", "executing", "verifying", "partially_succeeded", "uncertain",
                         "reconciling", "blocked")
 

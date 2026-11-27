@@ -50,6 +50,8 @@ CAPABILITIES = frozenset(
         "service_restart",
         "lease_retire",
         "tf_import",
+        "host_patch",
+        "patch_check",
         # Alias de famille pour l'enrôlement (étendus aux kinds concrets).
         "terraform",
         "ansible",
@@ -60,7 +62,7 @@ CAPABILITIES = frozenset(
 FAMILY_EXPAND: dict[str, tuple[str, ...]] = {
     "terraform": ("preflight", "tf_plan", "tf_apply", "tf_state_read", "tf_import"),
     "ansible": ("guest_ready", "ansible_configure", "verify"),
-    "probe": ("verify",),
+    "probe": ("verify", "patch_check"),
 }
 
 # Au-delà de ce délai sans heartbeat, le runner est marqué stale.

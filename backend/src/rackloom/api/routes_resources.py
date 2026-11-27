@@ -323,6 +323,15 @@ def _host(conn, principal, host_id: UUID) -> dict[str, Any]:
     return host
 
 
+@router.get("/patch-campaigns/{campaign_id}")
+def get_patch_campaign(campaign_id: UUID, request: Request) -> dict[str, Any]:
+    """F19 : détail d'une campagne de patch (vagues, contrôles, écritures)."""
+    from .. import patching
+
+    with unit_of_work(request) as u:
+        return patching.get_campaign(u.conn, u.p, campaign_id)
+
+
 @router.get("/adoptions/{adoption_id}")
 def get_adoption(adoption_id: UUID, request: Request) -> dict[str, Any]:
     """F08 : détail d'une adoption (observation fictive, proposition, état)."""
