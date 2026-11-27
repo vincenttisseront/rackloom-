@@ -12,7 +12,9 @@
 - **F36–F40 (résilience)** : fusionné (PR #25), migration Alembic `0015`, bundle `builtin@9` (R115, R135).
 - **F41–F45 (identités et audit)** : fusionné (PR #26), migration Alembic `0016` (SCIM, revue d'accès, rotation, copie d'audit, certificats TLS).
 - **F58–F59 (agir sur le service livré)** : fusionné (PR #27), migration Alembic `0017`.
-- **F02 + F04 (compositions multi-VM et graphe)** : branche `cursor/f02-f04-compositions-graphe-586c`, migration Alembic `0018`.
+- **F02 + F04 (compositions multi-VM et graphe)** : fusionné (PR #31), migration Alembic `0018`.
+- **F06 (baux temporaires)** : fusionné (PR #28), migration Alembic `0019`.
+- **F07 (fabrique d'images)** : PR #30 (`cursor/f07-fabrique-templates-d8de`), migration Alembic `0020` (`down_revision=0019`).
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -97,7 +99,8 @@
 | Compositions multi-VM (F02) | livré | testé localement | `test_f02_composition.py`, `test_f02_f04_light.py`, `test_f02_f04_compositions_graph.py` (lab) ; template `ubuntu-app-base` ; migration `0018` ; L2 non fait |
 | Graphe de dépendances (F04) | livré | testé localement | impact réseau filtré ; hors périmètre masqué/404 ; page `/dependances` ; e2e `102-f02-f04` ; L2 non fait |
 | Baux pour environnements temporaires (F06) | livré (retrait simulé) | testé localement | `test_f06_leases.py` ; e2e `102-f06-baux.spec.ts` ; migration `0019` ; expiration → signalement + plan `retire` ; renew ; job `lease_retire` sans destroy ; L2 non fait |
-| Fonctions F07–F08, F15–F20, F22–F26, F29–F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
+| Fabrique d'images (F07) | livré (fabrique fictive) | testé localement | `test_f07_fabrique.py` ; e2e `102-f07-fabrique.spec.ts` ; migration `0020` ; outil réel (D11) / labo : non |
+| Fonctions F08, F15–F20, F22–F26, F29–F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6
 
@@ -415,9 +418,18 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Ouverture du bail à la soumission si `lifetime_until` ; sweep worker (rappel, expiration, proposition de plan) ; renouvellement (plafond D14) ; plan de retrait approuvable ; exécution simulée (pas de destroy Terraform).
 - Preuves : `test_f06_leases.py` ; e2e `102-f06-baux.spec.ts` ; fiche service (`lease-panel`).
 
+### F07 : fabrique d'images (2026-11-27, heure de Paris)
+
+- Branche `cursor/f07-fabrique-templates-d8de` rebasée sur `main` après F06. Migration **`0020`** (`down_revision=0019`).
+- Tables `image_builds`, `image_build_tests`, `image_build_promotions` ; GRANT `rackloom_api` / `rackloom_worker`.
+- Module `factory` + constructeur fictif (`builder=fake`, D11) : draft → build → tests → ready/failed → promote / deprecate.
+- Recette : `failed` → `409 image_tests_failed` (y compris prod) ; `ready` → promotion OK ; dépréciation sans retrait.
+- UI `/admin/images` ; seed démo `ubuntu-2404-std@1.0.0` aligné sur le filtre ubuntu-web.
+- Preuves : `test_f07_fabrique.py` (2) ; e2e `102-f07-fabrique.spec.ts` ; `test_db_roles`. Outil Packer/vSphere réel : non.
+
 ## Prochain jalon
 
-1. Fusionner **F06 (`0019`)** après CI verte (Vincent).
-2. Ensuite selon le backlog (F07–F08, F15–F20, F22–F26, F29–F30, AT02–AT04).
+1. Fusionner **F07 (`0020`)** (PR #30) après CI verte post-rebase.
+2. Ensuite F08 (`0021`) puis selon le backlog (F15–F20, F22–F26, F29–F30, AT02–AT04).
 3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

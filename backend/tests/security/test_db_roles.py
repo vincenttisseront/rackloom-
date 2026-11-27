@@ -52,6 +52,9 @@ ALLOWED = {
         "SELECT provenance FROM dependency_edges",
         "SELECT expires_on FROM deployment_leases",
         "SELECT new_expires_on FROM deployment_lease_renewals",
+        "SELECT status FROM image_builds",
+        "SELECT outcome FROM image_build_tests",
+        "SELECT environment_kind FROM image_build_promotions",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -94,6 +97,9 @@ ALLOWED = {
         "SELECT provenance FROM dependency_edges",
         "SELECT expires_on FROM deployment_leases",
         "SELECT new_expires_on FROM deployment_lease_renewals",
+        "SELECT status FROM image_builds",
+        "SELECT outcome FROM image_build_tests",
+        "SELECT environment_kind FROM image_build_promotions",
     ],
 }
 

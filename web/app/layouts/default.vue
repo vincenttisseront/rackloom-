@@ -35,6 +35,7 @@ async function logout() {
           <NuxtLink v-if="isAuthor || isPublisher || isAdmin" to="/atelier">Atelier</NuxtLink>
           <NuxtLink v-if="isPublisher || canConnectors || isAdmin" to="/admin">Administration</NuxtLink>
           <NuxtLink v-if="isPublisher" to="/admin/templates">Administration › Templates</NuxtLink>
+          <NuxtLink v-if="isPublisher" to="/admin/images">Administration › Fabrique</NuxtLink>
           <NuxtLink v-if="canConnectors" to="/admin/connecteurs">Administration › Connecteurs</NuxtLink>
           <NuxtLink v-if="isAdmin" to="/admin/environnements">Administration › Environnements</NuxtLink>
           <NuxtLink v-if="isAdmin" to="/admin/gouvernance">Administration › Gouvernance</NuxtLink>
