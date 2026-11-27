@@ -253,6 +253,43 @@ def host_observations(host_id: UUID, request: Request, kind: str | None = None) 
         return [{**r, "collected_at": iso(r["collected_at"])} for r in rows]
 
 
+@router.get("/dependency-graph")
+def get_dependency_graph(request: Request) -> dict[str, Any]:
+    """F04 : graphe de dépendances filtré par projet (hors périmètre exclus)."""
+    from .. import graph
+
+    with unit_of_work(request) as u:
+        return graph.get_graph(u.conn, u.p)
+
+
+@router.post("/dependency-graph/rebuild")
+def rebuild_dependency_graph(request: Request) -> dict[str, Any]:
+    """F04 : reconstruit l'instantané du graphe (lecture seule, aucune écriture fournisseur)."""
+    from .. import graph
+
+    with unit_of_work(request, write=True) as u:
+        result = graph.build(u.conn, built_by=f"user:{u.p.user_id}")
+        audit.record(
+            u.conn,
+            actor_type="user",
+            actor_id=str(u.p.user_id),
+            action="dependency_graph.rebuild",
+            outcome="ok",
+            targets={"build": result["build_id"]},
+            request_id=u.request_id,
+        )
+        return result
+
+
+@router.get("/dependency-graph/impact/{kind}/{stable_id}")
+def dependency_impact(kind: str, stable_id: str, request: Request) -> dict[str, Any]:
+    """F04 : vue d'impact — VM dépendant d'une ressource, sans fuite hors périmètre."""
+    from .. import graph
+
+    with unit_of_work(request) as u:
+        return graph.impact(u.conn, u.p, kind=kind, stable_id=stable_id)
+
+
 @router.get("/artifacts/{artifact_id}")
 def get_artifact(artifact_id: UUID, request: Request) -> Response:
     with unit_of_work(request) as u:

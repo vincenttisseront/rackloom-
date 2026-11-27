@@ -3980,6 +3980,108 @@
         ]
       }
     },
+    "/api/v1/dependency-graph": {
+      "get": {
+        "description": "F04 : graphe de dépendances filtré par projet (hors périmètre exclus).",
+        "operationId": "get_dependency_graph_api_v1_dependency_graph_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Dependency Graph Api V1 Dependency Graph Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Dependency Graph",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/dependency-graph/impact/{kind}/{stable_id}": {
+      "get": {
+        "description": "F04 : vue d'impact — VM dépendant d'une ressource, sans fuite hors périmètre.",
+        "operationId": "dependency_impact_api_v1_dependency_graph_impact__kind___stable_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stable_id",
+            "required": true,
+            "schema": {
+              "title": "Stable Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Dependency Impact Api V1 Dependency Graph Impact  Kind   Stable Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dependency Impact",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/dependency-graph/rebuild": {
+      "post": {
+        "description": "F04 : reconstruit l'instantané du graphe (lecture seule, aucune écriture fournisseur).",
+        "operationId": "rebuild_dependency_graph_api_v1_dependency_graph_rebuild_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rebuild Dependency Graph Api V1 Dependency Graph Rebuild Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rebuild Dependency Graph",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
     "/api/v1/deployments/{deployment_id}": {
       "get": {
         "operationId": "get_deployment_api_v1_deployments__deployment_id__get",

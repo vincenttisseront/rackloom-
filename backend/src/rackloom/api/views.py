@@ -312,6 +312,40 @@ def change_view(conn: Conn, principal: Principal, change: dict[str, Any]) -> dic
     }
 
 
+def _composition_view(conn: Conn, dep: dict[str, Any], host_rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """F02 : résumé des membres de composition et de leur état (lecture seule)."""
+    from .. import composition as composition_mod
+
+    tpl = registry.template_by_id(conn, dep["template_version_id"])
+    contract = tpl["contract"]
+    if not composition_mod.has_composition(contract):
+        return None
+    by_member: dict[str, list[dict[str, Any]]] = {}
+    for h in host_rows:
+        mid = h.get("composition_member")
+        if mid:
+            by_member.setdefault(mid, []).append(h)
+    members_out = []
+    for m in composition_mod.members(contract):
+        hosts_m = by_member.get(m["id"]) or []
+        members_out.append(
+            {
+                "id": m["id"],
+                "title": m["title"],
+                "depends_on": list(m.get("depends_on") or []),
+                "hosts": [
+                    {
+                        "id": str(h["id"]),
+                        "name": h["name"],
+                        "deployment_state": h["deployment_state"],
+                    }
+                    for h in hosts_m
+                ],
+            }
+        )
+    return {"members": members_out}
+
+
 def deployment_summary(conn: Conn, dep: dict[str, Any]) -> dict[str, Any]:
     tpl = registry.template_by_id(conn, dep["template_version_id"])
     env = conn.execute("SELECT slug, name, is_production FROM environments WHERE id = %s",
@@ -347,10 +381,12 @@ def deployment_view(conn: Conn, principal: Principal, dep: dict[str, Any]) -> di
                 "name": h["name"],
                 "deployment_state": h["deployment_state"],
                 "deployment_state_label": HOST_STATES.get(h["deployment_state"], h["deployment_state"]),
+                "composition_member": h.get("composition_member"),
                 "health": hosts_mod.health(conn, h),
             }
             for h in host_rows
         ],
+        "composition": _composition_view(conn, dep, host_rows),
         "changes": [change_summary(conn, c) for c in changes.fetchall()],
         "allowed_actions": workflow.available_actions(conn, principal, "deployment", dep),
     }

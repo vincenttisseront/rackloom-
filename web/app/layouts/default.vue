@@ -31,6 +31,7 @@ async function logout() {
         <NuxtLink to="/" class="brand">Rackloom</NuxtLink>
         <nav v-if="session" aria-label="Navigation principale">
           <NuxtLink to="/">Accueil</NuxtLink>
+          <NuxtLink to="/dependances">Dépendances</NuxtLink>
           <NuxtLink v-if="isAuthor || isPublisher || isAdmin" to="/atelier">Atelier</NuxtLink>
           <NuxtLink v-if="isPublisher || canConnectors || isAdmin" to="/admin">Administration</NuxtLink>
           <NuxtLink v-if="isPublisher" to="/admin/templates">Administration › Templates</NuxtLink>

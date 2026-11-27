@@ -5,7 +5,6 @@ transaction qui enregistre le succès du précédent. Les paramètres viennent e
 la révision approuvée.
 """
 
-
 from __future__ import annotations
 
 import hashlib
@@ -34,76 +33,146 @@ IDENTITIES = {"configure": "rackloom-config", "collect": "rackloom-collect"}
 
 def _load(conn: Conn, job: dict[str, Any], lock: bool = True) -> dict[str, Any]:
     ctx: dict[str, Any] = {"job": job}
-    change = conn.execute(f"SELECT * FROM changes WHERE id = %s{' FOR UPDATE' if lock else ''}",
-                          (job["change_id"],)).fetchone() if job["change_id"] else None
-    ctx["change"] = change
-    ctx["env"] = conn.execute("SELECT * FROM environments WHERE id = %s",
-                              (change["environment_id"],)).fetchone() if change else None
-    ctx["project"] = conn.execute("SELECT * FROM projects WHERE id = %s", (job["project_id"],)).fetchone()
-    ctx["deployment"] = conn.execute("SELECT * FROM deployments WHERE id = %s",
-                                     (change["deployment_id"],)).fetchone() if change and change["deployment_id"] \
+    change = (
+        conn.execute(
+            f"SELECT * FROM changes WHERE id = %s{' FOR UPDATE' if lock else ''}", (job["change_id"],)
+        ).fetchone()
+        if job["change_id"]
         else None
+    )
+    ctx["change"] = change
+    ctx["env"] = (
+        conn.execute("SELECT * FROM environments WHERE id = %s", (change["environment_id"],)).fetchone()
+        if change
+        else None
+    )
+    ctx["project"] = conn.execute("SELECT * FROM projects WHERE id = %s", (job["project_id"],)).fetchone()
+    ctx["deployment"] = (
+        conn.execute("SELECT * FROM deployments WHERE id = %s", (change["deployment_id"],)).fetchone()
+        if change and change["deployment_id"]
+        else None
+    )
     stack_id = job["stack_id"] or (ctx["deployment"]["stack_id"] if ctx["deployment"] else None)
     ctx["stack"] = conn.execute("SELECT * FROM stacks WHERE id = %s", (stack_id,)).fetchone() if stack_id else None
-    ctx["execution"] = conn.execute("SELECT * FROM executions WHERE id = %s",
-                                    (job["execution_id"],)).fetchone() if job["execution_id"] else None
-    ctx["plan"] = conn.execute("SELECT * FROM plans WHERE id = %s", (ctx["execution"]["plan_id"],)).fetchone() \
-        if ctx["execution"] else None
-    approval_id = job["payload"].get("retry_approval_id") or (ctx["execution"]["approval_id"]
-                                                              if ctx["execution"] else None)
-    ctx["approval"] = conn.execute("SELECT * FROM approvals WHERE id = %s", (approval_id,)).fetchone() \
-        if approval_id else None
+    ctx["execution"] = (
+        conn.execute("SELECT * FROM executions WHERE id = %s", (job["execution_id"],)).fetchone()
+        if job["execution_id"]
+        else None
+    )
+    ctx["plan"] = (
+        conn.execute("SELECT * FROM plans WHERE id = %s", (ctx["execution"]["plan_id"],)).fetchone()
+        if ctx["execution"]
+        else None
+    )
+    approval_id = job["payload"].get("retry_approval_id") or (
+        ctx["execution"]["approval_id"] if ctx["execution"] else None
+    )
+    ctx["approval"] = (
+        conn.execute("SELECT * FROM approvals WHERE id = %s", (approval_id,)).fetchone() if approval_id else None
+    )
     revision_no = ctx["plan"]["revision_no"] if ctx["plan"] else job["payload"].get("revision_no")
     if revision_no is None and change is not None:
         revision_no = change["current_revision_no"]
-    ctx["revision"] = conn.execute("SELECT * FROM request_revisions WHERE change_id = %s AND revision_no = %s",
-                                   (change["id"], revision_no)).fetchone() if change else None
-    ctx["version"] = conn.execute("SELECT * FROM request_versions WHERE change_id = %s AND version_no = %s",
-                                  (change["id"], ctx["revision"]["version_no"])).fetchone() \
-        if ctx["revision"] else None
+    ctx["revision"] = (
+        conn.execute(
+            "SELECT * FROM request_revisions WHERE change_id = %s AND revision_no = %s", (change["id"], revision_no)
+        ).fetchone()
+        if change
+        else None
+    )
+    ctx["version"] = (
+        conn.execute(
+            "SELECT * FROM request_versions WHERE change_id = %s AND version_no = %s",
+            (change["id"], ctx["revision"]["version_no"]),
+        ).fetchone()
+        if ctx["revision"]
+        else None
+    )
     ctx["resolution"] = ctx["revision"]["resolved"] if ctx["revision"] else None
     return ctx
 
 
 def _admit(r: JobContext, conn: Conn, ctx: dict[str, Any], recompute=None, stage: str = "start") -> None:
-    decision = admission.evaluate(admission.Context(
-        conn=conn, job=r.job, change=ctx["change"], environment=ctx["env"], execution=ctx["execution"],
-        approval=ctx["approval"], plan=ctx["plan"], revision=ctx["revision"], recompute_digest=recompute),
-        stage=stage)
-    label = (f"Admission (règles {decision['policy']['version']})" if stage == "start"
-             else "Contrôle avant envoi au fournisseur")
+    decision = admission.evaluate(
+        admission.Context(
+            conn=conn,
+            job=r.job,
+            change=ctx["change"],
+            environment=ctx["env"],
+            execution=ctx["execution"],
+            approval=ctx["approval"],
+            plan=ctx["plan"],
+            revision=ctx["revision"],
+            recompute_digest=recompute,
+        ),
+        stage=stage,
+    )
+    label = (
+        f"Admission (règles {decision['policy']['version']})"
+        if stage == "start"
+        else "Contrôle avant envoi au fournisseur"
+    )
     if decision["outcome"] == "admitted":
         if stage == "start":
             r.fenced(conn, "state = 'running', blocked_reason = NULL")
-        r.step(conn, label, "succeeded",
-               summary={"rules": [x["id"] for x in decision["rules"]], "policy": decision["policy"]["version"]})
+        r.step(
+            conn,
+            label,
+            "succeeded",
+            summary={"rules": [x["id"] for x in decision["rules"]], "policy": decision["policy"]["version"]},
+        )
         return
     refusal = decision["refusal"]
-    r.fenced(conn, "state = 'blocked', blocked_reason = %s, finished_at = now(), lease_owner = NULL",
-             (refusal["code"],))
+    r.fenced(
+        conn, "state = 'blocked', blocked_reason = %s, finished_at = now(), lease_owner = NULL", (refusal["code"],)
+    )
     admission.release_stack(conn, r.job)
     r.step(conn, label, "failed", summary={"rule": refusal["id"], "reason": refusal["reason"]})
     field = refusal.get("field")
-    r.event(conn, "job.blocked", {"kind": r.job["kind"], "rule": refusal["id"], "code": refusal["code"],
-                                  "field": field, "stage": stage,
-                                  "message": f"Admission refusée ({refusal['id']}"
-                                  + (f", champ {field}" if field else "")
-                                  + f") : {refusal['reason']}"},
-            severity="error")
+    r.event(
+        conn,
+        "job.blocked",
+        {
+            "kind": r.job["kind"],
+            "rule": refusal["id"],
+            "code": refusal["code"],
+            "field": field,
+            "stage": stage,
+            "message": f"Admission refusée ({refusal['id']}"
+            + (f", champ {field}" if field else "")
+            + f") : {refusal['reason']}",
+        },
+        severity="error",
+    )
     change = ctx["change"]
     if change is not None:
-        target = {"planning": "plan_failed", "approved": "plan_expired" if refusal["code"] == "plan_expired"
-                  else ("cancelled" if refusal["code"] == "cancel_requested" else "blocked")}.get(change["state"])
+        target = {
+            "planning": "plan_failed",
+            "approved": "plan_expired"
+            if refusal["code"] == "plan_expired"
+            else ("cancelled" if refusal["code"] == "cancel_requested" else "blocked"),
+        }.get(change["state"])
         if change["state"] in ("executing", "verifying"):
-            target = "cancelled" if refusal["code"] == "cancel_requested" and r.job["kind"] == "tf_apply" else \
-                "partially_succeeded"
+            target = (
+                "cancelled"
+                if refusal["code"] == "cancel_requested" and r.job["kind"] == "tf_apply"
+                else "partially_succeeded"
+            )
         if target:
             if target == "plan_expired" and ctx["plan"]:
-                conn.execute("UPDATE plans SET status = 'expired' WHERE id = %s AND status = 'ready'",
-                             (ctx["plan"]["id"],))
-            transition(conn, change, target, reason_code=f"admission_{refusal['code']}", actor_type="worker",
-                       actor_id=r.worker_id, detail={"rule": refusal["id"], "message": refusal["reason"]},
-                       severity="error")
+                conn.execute(
+                    "UPDATE plans SET status = 'expired' WHERE id = %s AND status = 'ready'", (ctx["plan"]["id"],)
+                )
+            transition(
+                conn,
+                change,
+                target,
+                reason_code=f"admission_{refusal['code']}",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"rule": refusal["id"], "message": refusal["reason"]},
+                severity="error",
+            )
     raise Refused(refusal["code"])
 
 
@@ -130,8 +199,14 @@ def _store_log(r: JobContext, conn: Conn, work: Path, name: str) -> dict[str, An
     path = work / "out" / name
     if not path.exists():
         return None
-    return artifacts.store(conn, project_id=r.job["project_id"], change_id=r.job["change_id"],
-                           kind=name.replace(".", "_"), key_class="A", plaintext=r.redactor.bytes(path.read_bytes()))
+    return artifacts.store(
+        conn,
+        project_id=r.job["project_id"],
+        change_id=r.job["change_id"],
+        kind=name.replace(".", "_"),
+        key_class="A",
+        plaintext=r.redactor.bytes(path.read_bytes()),
+    )
 
 
 def handle_preflight(r: JobContext) -> None:
@@ -189,8 +264,7 @@ def handle_preflight(r: JobContext) -> None:
             change=ctx["change"],
             stack_id=stack["id"],
             idempotency_key=(
-                f"tf_plan:{r.job['change_id']}:{payload.get('revision_no')}:"
-                f"{ctx['change']['row_version']}"
+                f"tf_plan:{r.job['change_id']}:{payload.get('revision_no')}:{ctx['change']['row_version']}"
             ),
             payload=payload,
         )
@@ -223,8 +297,16 @@ def handle_tf_plan(r: JobContext) -> None:
             _store_log(r, conn, work, "terraform.log")
             r.fenced(conn, "state = 'failed', finished_at = now(), result = %s", (Jsonb({"exit_code": rc}),))
             change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (r.job["change_id"],)).fetchone()
-            transition(conn, change, "plan_failed", reason_code="terraform_plan_failed", actor_type="worker",
-                       actor_id=r.worker_id, detail={"exit_code": rc}, severity="error")
+            transition(
+                conn,
+                change,
+                "plan_failed",
+                reason_code="terraform_plan_failed",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"exit_code": rc},
+                severity="error",
+            )
         r.cleanup(run_id)
         return
     plan_bytes = (out / "plan.bin").read_bytes()
@@ -232,16 +314,31 @@ def handle_tf_plan(r: JobContext) -> None:
     summary = plan_summary.summarize(plan_json)
     with r.tx() as conn:
         ctx = _load(conn, r.job)
-        art = artifacts.store(conn, project_id=r.job["project_id"], change_id=r.job["change_id"], kind="tf_plan_bin",
-                              key_class="A", plaintext=plan_bytes)
+        art = artifacts.store(
+            conn,
+            project_id=r.job["project_id"],
+            change_id=r.job["change_id"],
+            kind="tf_plan_bin",
+            key_class="A",
+            plaintext=plan_bytes,
+        )
         _store_log(r, conn, work, "terraform.log")
         valid_until = datetime.now(UTC) + timedelta(seconds=ctx["env"]["plan_ttl_seconds"])
-        bundle = bundles.build(conn, change=ctx["change"], version=ctx["version"], revision=ctx["revision"],
-                               stack=ctx["stack"], plan_sha256=hashlib.sha256(plan_bytes).hexdigest(),
-                               state_lineage=state_before.get("lineage"), state_serial=state_before.get("serial"),
-                               valid_until=valid_until.isoformat(), terraform_version=summary["terraform_version"])
-        status_ = "blocked_destructive" if summary["destructive"] else ("no_changes" if summary["no_changes"]
-                                                                       else "ready")
+        bundle = bundles.build(
+            conn,
+            change=ctx["change"],
+            version=ctx["version"],
+            revision=ctx["revision"],
+            stack=ctx["stack"],
+            plan_sha256=hashlib.sha256(plan_bytes).hexdigest(),
+            state_lineage=state_before.get("lineage"),
+            state_serial=state_before.get("serial"),
+            valid_until=valid_until.isoformat(),
+            terraform_version=summary["terraform_version"],
+        )
+        status_ = (
+            "blocked_destructive" if summary["destructive"] else ("no_changes" if summary["no_changes"] else "ready")
+        )
         plan_id = queue.new_id()
         conn.execute(
             """
@@ -250,23 +347,57 @@ def handle_tf_plan(r: JobContext) -> None:
                                state_serial)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (plan_id, r.job["change_id"], ctx["revision"]["version_no"], ctx["revision"]["revision_no"],
-             ctx["stack"]["id"], r.job["id"], status_, art["sha256"], art["id"], Jsonb(summary),
-             Jsonb(summary["vm_counts"]), valid_until, Jsonb(bundle), digest(bundle), state_before.get("lineage"),
-             state_before.get("serial")))
-        r.fenced(conn, "state = 'succeeded', finished_at = now(), result = %s",
-                 (Jsonb({"plan_id": str(plan_id), "status": status_}),))
+            (
+                plan_id,
+                r.job["change_id"],
+                ctx["revision"]["version_no"],
+                ctx["revision"]["revision_no"],
+                ctx["stack"]["id"],
+                r.job["id"],
+                status_,
+                art["sha256"],
+                art["id"],
+                Jsonb(summary),
+                Jsonb(summary["vm_counts"]),
+                valid_until,
+                Jsonb(bundle),
+                digest(bundle),
+                state_before.get("lineage"),
+                state_before.get("serial"),
+            ),
+        )
+        r.fenced(
+            conn,
+            "state = 'succeeded', finished_at = now(), result = %s",
+            (Jsonb({"plan_id": str(plan_id), "status": status_}),),
+        )
         counts = summary["vm_counts"]
         if r.job["payload"].get("replan") and summary["no_changes"]:
-            transition(conn, ctx["change"], "succeeded", reason_code="no_changes", actor_type="worker",
-                       actor_id=r.worker_id,
-                       detail={"message": "Aucun changement : l'infrastructure correspond déjà à la demande"})
+            transition(
+                conn,
+                ctx["change"],
+                "succeeded",
+                reason_code="no_changes",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"message": "Aucun changement : l'infrastructure correspond déjà à la demande"},
+            )
         else:
-            transition(conn, ctx["change"], "plan_ready", reason_code="plan_ready", actor_type="worker",
-                       actor_id=r.worker_id,
-                       detail={"plan_id": str(plan_id), "status": status_, "counts": counts,
-                               "bundle_digest": digest(bundle)[:12]},
-                       severity="warning" if status_ == "blocked_destructive" else "info")
+            transition(
+                conn,
+                ctx["change"],
+                "plan_ready",
+                reason_code="plan_ready",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={
+                    "plan_id": str(plan_id),
+                    "status": status_,
+                    "counts": counts,
+                    "bundle_digest": digest(bundle)[:12],
+                },
+                severity="warning" if status_ == "blocked_destructive" else "info",
+            )
     r.cleanup(run_id)
 
 
@@ -281,8 +412,9 @@ def handle_tf_apply(r: JobContext) -> None:
         def recompute() -> str:
             if plan_sha != plan["plan_sha256"]:
                 raise bundles.BundleError("plan_altered", "le plan binaire ne correspond plus à son empreinte")
-            return bundles.recompute_digest(conn, plan, ctx["change"], ctx["version"], ctx["revision"], ctx["stack"],
-                                            plan_sha)
+            return bundles.recompute_digest(
+                conn, plan, ctx["change"], ctx["version"], ctx["revision"], ctx["stack"], plan_sha
+            )
 
         _admit(r, conn, ctx, recompute)
         resolution = ctx["resolution"]
@@ -297,10 +429,19 @@ def handle_tf_apply(r: JobContext) -> None:
             current = _load(conn, r.job)
             _admit(r, conn, current, stage="dispatch")
             r.fenced(conn, "dispatched_at = now(), provider_ref = %s", (run_id,))
-            conn.execute("UPDATE executions SET started_at = coalesce(started_at, now()), state = 'running' "
-                         "WHERE id = %s", (r.job["execution_id"],))
-            transition(conn, current["change"], "executing", reason_code="apply_dispatched", actor_type="worker",
-                       actor_id=r.worker_id, detail={"plan_id": str(plan["id"])})
+            conn.execute(
+                "UPDATE executions SET started_at = coalesce(started_at, now()), state = 'running' WHERE id = %s",
+                (r.job["execution_id"],),
+            )
+            transition(
+                conn,
+                current["change"],
+                "executing",
+                reason_code="apply_dispatched",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"plan_id": str(plan["id"])},
+            )
     except Refused:
         r.cleanup(run_id)
         raise
@@ -323,18 +464,33 @@ def _vms_from_state(state: dict[str, Any] | None) -> list[dict[str, Any]]:
     return [vms[k] for k in sorted(vms) if "uuid" in vms[k]]
 
 
-def _record_instances(conn: Conn, change: dict[str, Any], resolution: dict[str, Any],
-                      vms: list[dict[str, Any]]) -> None:
+def _record_instances(
+    conn: Conn, change: dict[str, Any], resolution: dict[str, Any], vms: list[dict[str, Any]]
+) -> None:
     """Le déploiement reflète l'état observé (state), pas l'intention : seules les instances présentes."""
     from ..deployments import outputs as deployment_outputs
 
     present = {v["name"]: v for v in vms}
-    instances = [{"name": i["name"], "size_tier": i["size_tier"], "vcpu": i["vcpu"], "memory_mb": i["memory_mb"],
-                  "disk_gb": i["disk_gb"], "vm_uuid": present[i["name"]]["uuid"]}
-                 for i in resolution["instances"] if i["name"] in present]
+    instances = []
+    for i in resolution["instances"]:
+        if i["name"] not in present:
+            continue
+        row = {
+            "name": i["name"],
+            "size_tier": i["size_tier"],
+            "vcpu": i["vcpu"],
+            "memory_mb": i["memory_mb"],
+            "disk_gb": i["disk_gb"],
+            "vm_uuid": present[i["name"]]["uuid"],
+        }
+        if i.get("member"):
+            row["member"] = i["member"]
+        instances.append(row)
     if change["deployment_id"]:
-        conn.execute("UPDATE deployments SET instances = %s, status = CASE WHEN %s THEN 'active' ELSE status END "
-                     "WHERE id = %s", (Jsonb(instances), bool(instances), change["deployment_id"]))
+        conn.execute(
+            "UPDATE deployments SET instances = %s, status = CASE WHEN %s THEN 'active' ELSE status END WHERE id = %s",
+            (Jsonb(instances), bool(instances), change["deployment_id"]),
+        )
         # F33 : publie les sorties allowlistées (jamais le state brut exposé à l'API).
         if instances:
             dep = conn.execute(
@@ -371,56 +527,113 @@ def finish_apply(r: JobContext, run_id: str, status: dict[str, Any], *, job: dic
             outcome = "cancelled" if not vms else "cancelled_partial"
         result = {"exit_code": rc, "vms": vms, "outcome": outcome}
         if job is None:
-            r.fenced(conn, "state = %s, finished_at = now(), result = %s",
-                     ("succeeded" if outcome == "applied" else "failed", Jsonb(result)))
+            r.fenced(
+                conn,
+                "state = %s, finished_at = now(), result = %s",
+                ("succeeded" if outcome == "applied" else "failed", Jsonb(result)),
+            )
         else:
-            conn.execute("UPDATE jobs SET state = %s, finished_at = now(), result = %s, updated_at = now() "
-                         "WHERE id = %s AND state = 'uncertain'",
-                         ("succeeded" if outcome == "applied" else "failed", Jsonb(result), target["id"]))
+            conn.execute(
+                "UPDATE jobs SET state = %s, finished_at = now(), result = %s, updated_at = now() "
+                "WHERE id = %s AND state = 'uncertain'",
+                ("succeeded" if outcome == "applied" else "failed", Jsonb(result), target["id"]),
+            )
         admission.release_stack(conn, target)
         change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (target["change_id"],)).fetchone()
         ctx = _load(conn, target, lock=False)
         plan_id = ctx["plan"]["id"]
         if state_after and state_after.get("exists"):
-            conn.execute("UPDATE stacks SET last_lineage = %s, last_serial = %s WHERE id = %s",
-                         (state_after.get("lineage"), state_after.get("serial"), target["stack_id"]))
+            conn.execute(
+                "UPDATE stacks SET last_lineage = %s, last_serial = %s WHERE id = %s",
+                (state_after.get("lineage"), state_after.get("serial"), target["stack_id"]),
+            )
         if outcome in ("applied", "failed", "cancelled_partial"):
             _record_instances(conn, change, ctx["resolution"], vms)
         if change["state"] == "reconciling":
-            change = transition(conn, change, "executing", reason_code="reconciled", actor_type="worker",
-                                actor_id=r.worker_id, detail={"outcome": outcome})
+            change = transition(
+                conn,
+                change,
+                "executing",
+                reason_code="reconciled",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"outcome": outcome},
+            )
         if outcome == "applied":
             conn.execute("UPDATE plans SET status = 'applied' WHERE id = %s", (plan_id,))
             # F03 : confirmer les réservations IPAM après application réussie.
             for reservation in ipam.for_change(conn, change["id"]):
                 if reservation["state"] in ("reserved", "held_uncertain"):
                     ipam.confirm(conn, UUID(reservation["id"]), job_id=target["id"])
-            r.event(conn, "execution.applied", {"message": f"Plan appliqué : {len(vms)} ressource(s) de labo présentes",
-                                                "vms": [v["name"] for v in vms]})
-            queue.enqueue(conn, kind="guest_ready", change=change, execution_id=target["execution_id"],
-                          stack_id=target["stack_id"], idempotency_key=f"guest_ready:{target['execution_id']}",
-                          payload={"vms": vms})
+            r.event(
+                conn,
+                "execution.applied",
+                {
+                    "message": f"Plan appliqué : {len(vms)} ressource(s) de labo présentes",
+                    "vms": [v["name"] for v in vms],
+                },
+            )
+            queue.enqueue(
+                conn,
+                kind="guest_ready",
+                change=change,
+                execution_id=target["execution_id"],
+                stack_id=target["stack_id"],
+                idempotency_key=f"guest_ready:{target['execution_id']}",
+                payload={"vms": vms},
+            )
         elif outcome == "stale":
             conn.execute("UPDATE plans SET status = 'expired' WHERE id = %s", (plan_id,))
-            transition(conn, change, "plan_expired", reason_code="saved_plan_stale", actor_type="worker",
-                       actor_id=r.worker_id, severity="error",
-                       detail={"message": "Terraform a refusé le plan : le state a changé depuis le calcul du "
-                                          "plan. Nouveau plan et nouvelle approbation nécessaires."})
+            transition(
+                conn,
+                change,
+                "plan_expired",
+                reason_code="saved_plan_stale",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                severity="error",
+                detail={
+                    "message": "Terraform a refusé le plan : le state a changé depuis le calcul du "
+                    "plan. Nouveau plan et nouvelle approbation nécessaires."
+                },
+            )
         elif outcome == "cancelled":
             conn.execute("UPDATE plans SET status = 'failed' WHERE id = %s", (plan_id,))
-            transition(conn, change, "cancelled", reason_code="cancelled_before_resources", actor_type="worker",
-                       actor_id=r.worker_id, detail={"message": "Annulation effective : aucune ressource créée"})
+            transition(
+                conn,
+                change,
+                "cancelled",
+                reason_code="cancelled_before_resources",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"message": "Annulation effective : aucune ressource créée"},
+            )
         else:
             conn.execute("UPDATE plans SET status = 'failed' WHERE id = %s", (plan_id,))
-            message = (f"Annulation demandée : application interrompue, {len(vms)} ressource(s) présentes, "
-                       "aucune suppression") if outcome == "cancelled_partial" else \
-                f"Échec de l'application (code {rc}) : {len(vms)} ressource(s) présentes, aucune suppression"
-            transition(conn, change, "failed", reason_code=f"apply_{outcome}", actor_type="worker",
-                       actor_id=r.worker_id, severity="error", detail={"message": message, "vms": len(vms)})
+            message = (
+                (
+                    f"Annulation demandée : application interrompue, {len(vms)} ressource(s) présentes, "
+                    "aucune suppression"
+                )
+                if outcome == "cancelled_partial"
+                else f"Échec de l'application (code {rc}) : {len(vms)} ressource(s) présentes, aucune suppression"
+            )
+            transition(
+                conn,
+                change,
+                "failed",
+                reason_code=f"apply_{outcome}",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                severity="error",
+                detail={"message": message, "vms": len(vms)},
+            )
             if change["deployment_id"]:
-                conn.execute("UPDATE deployments SET service_status = 'failed', service_reason = %s, "
-                             "service_checked_at = now() WHERE id = %s AND status <> 'active'",
-                             (message, change["deployment_id"]))
+                conn.execute(
+                    "UPDATE deployments SET service_status = 'failed', service_reason = %s, "
+                    "service_checked_at = now() WHERE id = %s AND status <> 'active'",
+                    (message, change["deployment_id"]),
+                )
         conn.execute("UPDATE executions SET state = %s WHERE id = %s", (outcome, target["execution_id"]))
     r.cleanup(run_id)
     return outcome
@@ -466,20 +679,35 @@ def _prepare_ansible(
     if file_tree_digest(pb_dir) != pb["digest"]:
         raise RuntimeError("playbook modifié sur disque depuis son chargement")
     shutil.copy2(pb_dir / f"{purpose}.yml", private_dir / "project" / f"{purpose}.yml")
+    from .. import composition as composition_mod
+
+    host_comps = composition_mod.components_for_hosts(resolution, targets)
     if purpose == "configure":
-        for role in resolution["ansible"]["roles"]:
+        roles = [c["role"] for c in host_comps]
+        # Déduplique les rôles tout en conservant ceux du membre ciblé uniquement.
+        seen_roles: set[tuple[str, str]] = set()
+        for role in roles:
+            key = (role["name"], role["version"])
+            if key in seen_roles:
+                continue
+            seen_roles.add(key)
             src = r.settings.catalog_dir / "ansible" / "roles" / role["name"] / role["version"]
             if file_tree_digest(src) != role["digest"]:
                 raise RuntimeError(f"rôle {role['name']} modifié sur disque depuis son chargement")
             shutil.copytree(src, private_dir / "project" / "roles" / role["name"], dirs_exist_ok=True)
         (private_dir / "env" / "extravars").write_text(
-            json.dumps({"rackloom_components": bundles.ansible_components(resolution)})
+            json.dumps({"rackloom_components": bundles.ansible_components_list(host_comps)})
         )
     else:
+        host_checks = resolution["health_checks"]
+        if targets and targets[0].get("composition_member"):
+            member_id = targets[0]["composition_member"]
+            for m in (resolution.get("composition") or {}).get("members") or []:
+                if m["id"] == member_id:
+                    host_checks = m.get("health_checks") or m.get("readiness") or host_checks
+                    break
         (private_dir / "env" / "extravars").write_text(
-            json.dumps(
-                {"rackloom_collect": registry.collect_spec(resolution["components"], resolution["health_checks"])}
-            )
+            json.dumps({"rackloom_collect": registry.collect_spec(host_comps, host_checks)})
         )
     (private_dir / "project" / "ansible.cfg").write_text(
         "[defaults]\nhost_key_checking = True\nroles_path = roles\nretry_files_enabled = False\n"
@@ -501,17 +729,26 @@ def _ansible_run(r: JobContext, run_id: str, kind: str, stdin: str) -> tuple[int
     return status.get("exit_code"), summary
 
 
-def _store_ansible_report(r: JobContext, conn: Conn, run: str, rc: int | None,
-                          summary: dict[str, Any]) -> dict[str, Any]:
+def _store_ansible_report(
+    r: JobContext, conn: Conn, run: str, rc: int | None, summary: dict[str, Any]
+) -> dict[str, Any]:
     """Rapport filtré de classe B (téléchargeable par un membre) : compteurs et tâches, messages masqués."""
     hosts_report = {
-        name: {**{k: h.get(k) for k in ("ok", "changed", "failures", "dark", "skipped")},
-               "tasks": [{k: t.get(k) for k in ("name", "status", "msg")} for t in h.get("tasks", [])]}
-        for name, h in summary.get("hosts", {}).items()}
+        name: {
+            **{k: h.get(k) for k in ("ok", "changed", "failures", "dark", "skipped")},
+            "tasks": [{k: t.get(k) for k in ("name", "status", "msg")} for t in h.get("tasks", [])],
+        }
+        for name, h in summary.get("hosts", {}).items()
+    }
     report = {"run": run, "exit_code": rc, "hosts": hosts_report}
-    return artifacts.store(conn, project_id=r.job["project_id"], change_id=r.job["change_id"],
-                           kind=f"ansible_{run}_report", key_class="B",
-                           plaintext=r.redactor.bytes(json.dumps(report, ensure_ascii=False).encode()))
+    return artifacts.store(
+        conn,
+        project_id=r.job["project_id"],
+        change_id=r.job["change_id"],
+        kind=f"ansible_{run}_report",
+        key_class="B",
+        plaintext=r.redactor.bytes(json.dumps(report, ensure_ascii=False).encode()),
+    )
 
 
 def _host_ok(summary: dict[str, Any], name: str) -> tuple[bool, str]:
@@ -559,10 +796,14 @@ def handle_guest_ready(r: JobContext) -> None:
                 continue
             if host is None:
                 node = free.pop(0) if free else None
+                member = next(
+                    (i.get("member") for i in resolution.get("instances") or [] if i.get("name") == vm["name"]),
+                    None,
+                )
                 host = conn.execute(
                     "INSERT INTO hosts (id, project_id, environment_id, deployment_id, template_version_id, change_id, "
-                    "stack_id, vm_stable_id, name, address, deployment_state) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+                    "stack_id, vm_stable_id, name, address, deployment_state, composition_member) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
                     (
                         queue.new_id(),
                         r.job["project_id"],
@@ -575,6 +816,7 @@ def handle_guest_ready(r: JobContext) -> None:
                         vm["name"],
                         node["address"] if node else None,
                         "created" if node else "no_address",
+                        member,
                     ),
                 ).fetchone()
             mapping.append({"vm": vm["name"], "node": host["address"]})
@@ -785,9 +1027,17 @@ def _configure_targets(conn: Conn, job: dict[str, Any], ctx: dict[str, Any]) -> 
     )
 
 
-def _record_configure(r: JobContext, conn: Conn, job: dict[str, Any], targets: list[dict[str, Any]],
-                      resolution: dict[str, Any], rc: int | None, summary: dict[str, Any], *,
-                      source: str) -> list[dict[str, Any]]:
+def _record_configure(
+    r: JobContext,
+    conn: Conn,
+    job: dict[str, Any],
+    targets: list[dict[str, Any]],
+    resolution: dict[str, Any],
+    rc: int | None,
+    summary: dict[str, Any],
+    *,
+    source: str,
+) -> list[dict[str, Any]]:
     """Enregistre le rapport configure et met à jour les hôtes. Retourne ceux configurés avec succès."""
     _store_ansible_report(r, conn, "configure", rc, summary)
     payload = job["payload"]
@@ -796,29 +1046,37 @@ def _record_configure(r: JobContext, conn: Conn, job: dict[str, Any], targets: l
     configured: list[dict[str, Any]] = []
     for h in targets:
         ok, reason = _host_ok(summary, h["name"])
-        conn.execute("UPDATE hosts SET deployment_state = %s WHERE id = %s",
-                     ("configured" if ok else "config_failed", h["id"]))
-        comps = ", ".join(f"{c['slug']} {c['version']}" for c in resolution["components"])
+        conn.execute(
+            "UPDATE hosts SET deployment_state = %s WHERE id = %s", ("configured" if ok else "config_failed", h["id"])
+        )
+        from .. import composition as composition_mod
+
+        host_comps = composition_mod.components_for_hosts(resolution, [h])
+        comps = ", ".join(f"{c['slug']} {c['version']}" for c in host_comps)
+        member_label = f" [{h['composition_member']}]" if h.get("composition_member") else ""
         host_stats = summary.get("hosts", {}).get(h["name"]) or {}
         # Ansible omet l'hôte du compteur `changed` quand rien n'a changé.
         changed = host_stats.get("changed", 0)
         r.step(
             conn,
-            f"{prefix}Configuration {comps} ({h['name']})",
+            f"{prefix}Configuration {comps} ({h['name']}{member_label})",
             "succeeded" if ok else "failed",
             summary={
                 "host": h["name"],
+                **({"member": h["composition_member"]} if h.get("composition_member") else {}),
                 **({"changed": changed} if ok else {}),
                 **({"reason": reason} if not ok else {}),
             },
         )
         if ok:
             configured.append(h)
-    result = {"configured": [h["name"] for h in configured], "exit_code": rc, "outcome": "configured",
-              "source": source}
+    result = {"configured": [h["name"] for h in configured], "exit_code": rc, "outcome": "configured", "source": source}
     if source == "workspace":
-        conn.execute("UPDATE jobs SET state = 'succeeded', finished_at = now(), result = %s, updated_at = now() "
-                     "WHERE id = %s AND state = 'uncertain'", (Jsonb(result), job["id"]))
+        conn.execute(
+            "UPDATE jobs SET state = 'succeeded', finished_at = now(), result = %s, updated_at = now() "
+            "WHERE id = %s AND state = 'uncertain'",
+            (Jsonb(result), job["id"]),
+        )
     else:
         r.fenced(conn, "state = 'succeeded', finished_at = now(), result = %s", (Jsonb(result),))
     return configured
@@ -866,9 +1124,15 @@ def finish_configure(r: JobContext, run_id: str, status: dict[str, Any], *, job:
         configured = _record_configure(r, conn, job, targets, ctx["resolution"], rc, summary, source="workspace")
         change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (job["change_id"],)).fetchone()
         if change["state"] == "reconciling":
-            change = transition(conn, change, "executing", reason_code="reconciled_configure",
-                                actor_type="worker", actor_id=r.worker_id,
-                                detail={"outcome": "configured", "source": "workspace"})
+            change = transition(
+                conn,
+                change,
+                "executing",
+                reason_code="reconciled_configure",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"outcome": "configured", "source": "workspace"},
+            )
         payload = job["payload"]
         queue.enqueue(
             conn,
@@ -1169,7 +1433,13 @@ def handle_verify(r: JobContext) -> None:
                 )
                 r.step(conn, f"Vérification ({h['name']})", "failed", summary={"reason": "hôte injoignable"})
                 continue
-            results = evaluate_checks(resolution["health_checks"], report, probes.get(h["name"]), at)
+            member_checks = resolution["health_checks"]
+            if h.get("composition_member"):
+                for m in (resolution.get("composition") or {}).get("members") or []:
+                    if m["id"] == h["composition_member"]:
+                        member_checks = m.get("health_checks") or m.get("readiness") or member_checks
+                        break
+            results = evaluate_checks(member_checks, report, probes.get(h["name"]), at)
             ok = all(x["ok"] for x in results)
             _observe_report(r, conn, h, report, results)
             probe = probes.get(h["name"])
@@ -1295,8 +1565,9 @@ def handle_reconcile(r: JobContext) -> None:
         r.fenced(conn, "state = 'running'")
         change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (r.job["change_id"],)).fetchone()
         if change["state"] == "uncertain":
-            transition(conn, change, "reconciling", reason_code="reconcile_started", actor_type="worker",
-                       actor_id=r.worker_id)
+            transition(
+                conn, change, "reconciling", reason_code="reconcile_started", actor_type="worker", actor_id=r.worker_id
+            )
         r.step(conn, "Interrogation du launcher", "running")
     run_id = target["provider_ref"] or str(target_id)
     status = r.launcher.status(run_id)
@@ -1309,8 +1580,11 @@ def handle_reconcile(r: JobContext) -> None:
         outcome = finish_apply(r, run_id, status, job=target)
         with r.tx() as conn:
             r.step(conn, "Conclusion : sorties du runner retrouvées", "succeeded", summary={"outcome": outcome})
-            r.fenced(conn, "state = 'succeeded', finished_at = now(), result = %s",
-                     (Jsonb({"source": "launcher", "outcome": outcome}),))
+            r.fenced(
+                conn,
+                "state = 'succeeded', finished_at = now(), result = %s",
+                (Jsonb({"source": "launcher", "outcome": outcome}),),
+            )
         return
     with r.tx() as conn:
         ctx = _load(conn, target, lock=False)
@@ -1333,57 +1607,109 @@ def handle_reconcile(r: JobContext) -> None:
         conclusion = "indeterminate"
     with r.tx() as conn:
         change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (r.job["change_id"],)).fetchone()
-        r.step(conn, "Conclusion à partir du state", "succeeded", summary={"conclusion": conclusion,
-                                                                          "vms": sorted(present)})
+        r.step(
+            conn,
+            "Conclusion à partir du state",
+            "succeeded",
+            summary={"conclusion": conclusion, "vms": sorted(present)},
+        )
         if conclusion == "applied":
-            conn.execute("UPDATE jobs SET state = 'succeeded', finished_at = now(), result = %s WHERE id = %s",
-                         (Jsonb({"vms": vms, "outcome": "applied", "source": "state"}), target_id))
+            conn.execute(
+                "UPDATE jobs SET state = 'succeeded', finished_at = now(), result = %s WHERE id = %s",
+                (Jsonb({"vms": vms, "outcome": "applied", "source": "state"}), target_id),
+            )
             admission.release_stack(conn, target)
             conn.execute("UPDATE plans SET status = 'applied' WHERE id = %s", (plan["id"],))
             _record_instances(conn, change, resolution, vms)
-            change = transition(conn, change, "executing", reason_code="reconciled_applied", actor_type="worker",
-                                actor_id=r.worker_id, detail={"message": "Réconciliation : plan appliqué (state)"})
-            queue.enqueue(conn, kind="guest_ready", change=change, execution_id=target["execution_id"],
-                          stack_id=target["stack_id"], idempotency_key=f"guest_ready:{target['execution_id']}",
-                          payload={"vms": vms})
+            change = transition(
+                conn,
+                change,
+                "executing",
+                reason_code="reconciled_applied",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"message": "Réconciliation : plan appliqué (state)"},
+            )
+            queue.enqueue(
+                conn,
+                kind="guest_ready",
+                change=change,
+                execution_id=target["execution_id"],
+                stack_id=target["stack_id"],
+                idempotency_key=f"guest_ready:{target['execution_id']}",
+                payload={"vms": vms},
+            )
         elif conclusion == "not_applied":
-            conn.execute("UPDATE jobs SET state = 'failed', finished_at = now(), result = %s WHERE id = %s",
-                         (Jsonb({"outcome": "not_applied", "source": "state"}), target_id))
+            conn.execute(
+                "UPDATE jobs SET state = 'failed', finished_at = now(), result = %s WHERE id = %s",
+                (Jsonb({"outcome": "not_applied", "source": "state"}), target_id),
+            )
             admission.release_stack(conn, target)
-            transition(conn, change, "failed", reason_code="reconciled_not_applied", actor_type="worker",
-                       actor_id=r.worker_id, severity="error",
-                       detail={"message": "Réconciliation : plan non appliqué, aucune relance automatique"})
+            transition(
+                conn,
+                change,
+                "failed",
+                reason_code="reconciled_not_applied",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                severity="error",
+                detail={"message": "Réconciliation : plan non appliqué, aucune relance automatique"},
+            )
         else:
-            transition(conn, change, "uncertain", reason_code="reconciled_indeterminate", actor_type="worker",
-                       actor_id=r.worker_id, severity="error",
-                       detail={"message": "Réconciliation indéterminée : intervention manuelle requise"})
-        r.fenced(conn, "state = 'succeeded', finished_at = now(), result = %s",
-                 (Jsonb({"conclusion": conclusion}),))
+            transition(
+                conn,
+                change,
+                "uncertain",
+                reason_code="reconciled_indeterminate",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                severity="error",
+                detail={"message": "Réconciliation indéterminée : intervention manuelle requise"},
+            )
+        r.fenced(conn, "state = 'succeeded', finished_at = now(), result = %s", (Jsonb({"conclusion": conclusion}),))
 
 
 def _reconcile_other(r: JobContext, target: dict[str, Any], status: dict[str, Any]) -> None:
     """Ansible : conclure depuis les sorties si présentes ; sinon interrompu, aucune relance automatique."""
     run_id = target["provider_ref"] or str(target["id"])
     out = r.settings.workspaces_dir / run_id / "out"
-    if (target["kind"] == "ansible_configure" and status["state"] == "exited" and (out / "exit_code").exists()
-            and (out / "ansible_summary.json").exists()):
+    if (
+        target["kind"] == "ansible_configure"
+        and status["state"] == "exited"
+        and (out / "exit_code").exists()
+        and (out / "ansible_summary.json").exists()
+    ):
         outcome = finish_configure(r, run_id, status, job=target)
         with r.tx() as conn:
             r.step(conn, "Conclusion : sorties du runner retrouvées", "succeeded", summary={"outcome": outcome})
-            r.fenced(conn, "state = 'succeeded', finished_at = now(), result = %s",
-                     (Jsonb({"source": "launcher", "outcome": outcome}),))
+            r.fenced(
+                conn,
+                "state = 'succeeded', finished_at = now(), result = %s",
+                (Jsonb({"source": "launcher", "outcome": outcome}),),
+            )
         return
     with r.tx() as conn:
-        conn.execute("UPDATE jobs SET state = 'failed', finished_at = now(), result = %s WHERE id = %s "
-                     "AND state = 'uncertain'", (Jsonb({"outcome": "interrupted", "launcher": status["state"]}),
-                                                  target["id"]))
+        conn.execute(
+            "UPDATE jobs SET state = 'failed', finished_at = now(), result = %s WHERE id = %s AND state = 'uncertain'",
+            (Jsonb({"outcome": "interrupted", "launcher": status["state"]}), target["id"]),
+        )
         change = conn.execute("SELECT * FROM changes WHERE id = %s FOR UPDATE", (r.job["change_id"],)).fetchone()
-        conn.execute("UPDATE hosts SET deployment_state = 'config_failed' WHERE deployment_id = %s "
-                     "AND deployment_state = 'enrolled'", (change["deployment_id"],))
-        transition(conn, change, "executing", reason_code="reconciled_configure", actor_type="worker",
-                   actor_id=r.worker_id)
-        queue.enqueue(conn, kind="verify", change=change, execution_id=target["execution_id"],
-                      idempotency_key=f"verify:reconcile:{target['id']}", payload={})
+        conn.execute(
+            "UPDATE hosts SET deployment_state = 'config_failed' WHERE deployment_id = %s "
+            "AND deployment_state = 'enrolled'",
+            (change["deployment_id"],),
+        )
+        transition(
+            conn, change, "executing", reason_code="reconciled_configure", actor_type="worker", actor_id=r.worker_id
+        )
+        queue.enqueue(
+            conn,
+            kind="verify",
+            change=change,
+            execution_id=target["execution_id"],
+            idempotency_key=f"verify:reconcile:{target['id']}",
+            payload={},
+        )
         r.fenced(conn, "state = 'succeeded', finished_at = now()")
 
 

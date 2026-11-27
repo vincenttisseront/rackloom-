@@ -140,7 +140,9 @@ watch(
       <p class="small">Motif serveur : {{ card.technical.service_reason || '—' }}</p>
       <ul class="small">
         <li v-for="h in card.technical.hosts" :key="h.id">
-          <NuxtLink :to="`/machines/${h.id}`">{{ h.name }}</NuxtLink> · {{ h.deployment_state }}
+          <NuxtLink :to="`/machines/${h.id}`">{{ h.name }}</NuxtLink>
+          <span v-if="h.composition_member" class="mono"> [{{ h.composition_member }}]</span>
+          · {{ h.deployment_state }}
         </li>
       </ul>
     </details>

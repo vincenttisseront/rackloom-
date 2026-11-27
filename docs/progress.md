@@ -11,7 +11,8 @@
 - **Lot C (F10–F14)** : fusionné (PR #24), migration Alembic `0014`, bundle `builtin@8` (R100, R140).
 - **F36–F40 (résilience)** : fusionné (PR #25), migration Alembic `0015`, bundle `builtin@9` (R115, R135).
 - **F41–F45 (identités et audit)** : fusionné (PR #26), migration Alembic `0016` (SCIM, revue d'accès, rotation, copie d'audit, certificats TLS).
-- **F58–F59 (agir sur le service livré)** : branche `cursor/f58-f59-actions-acces-6117`, migration Alembic `0017` (actions fiche, redémarrage simulé, demandes d'accès + faux IdP).
+- **F58–F59 (agir sur le service livré)** : fusionné (PR #27), migration Alembic `0017`.
+- **F02 + F04 (compositions multi-VM et graphe)** : branche `cursor/f02-f04-compositions-graphe-586c`, migration Alembic `0018`.
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -93,7 +94,9 @@
 | Registre certificats TLS (F45) | livré | testé localement | scan endpoint approuvé ; alerte `expiring_soon` au propriétaire ; TLS toujours vérifié |
 | Actions courantes depuis la fiche service (F58) | livré (redémarrage simulé) | testé localement | `test_f58_f59_service_actions.py` ; e2e `101-f58-f59-actions-acces.spec.ts` ; migration `0017` ; remplacement annoncé et plan bloqué ; L2 non fait |
 | Demande d'accès à un service (F59) | livré (faux IdP) | testé localement | correspondances approuvées ; `group` → 422 ; sync échouée visible ; relance idempotente ; IdP réel : non (D22) |
-| Fonctions F02 à F04, F06–F08, F15–F20, F22–F26, F29–F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
+| Compositions multi-VM (F02) | livré | testé localement | `test_f02_composition.py`, `test_f02_f04_light.py`, `test_f02_f04_compositions_graph.py` (lab) ; template `ubuntu-app-base` ; migration `0018` ; L2 non fait |
+| Graphe de dépendances (F04) | livré | testé localement | impact réseau filtré ; hors périmètre masqué/404 ; page `/dependances` ; e2e `102-f02-f04` ; L2 non fait |
+| Fonctions F06–F08, F15–F20, F22–F26, F29–F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6
 
@@ -396,9 +399,17 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Correctif UX : hub `/admin` (`pages/admin/index.vue`) + lien nav « Administration » — avant, `/admin` tombait en 404 Nuxt (main et branche) alors que Vincent signalait la section indisponible.
 - Correctif e2e F44 : volume Compose `audit-export` monté en écriture sur l’API (conteneur `read_only`) — sans lui, `POST /admin/audit-exports` échouait en silence côté UI.
 
+### F02 + F04 : compositions et graphe (2026-11-27, heure de Paris)
+
+- Branche `cursor/f02-f04-compositions-graphe-586c` depuis `main` (après F58–F59 / `0017`).
+- Migration `0018` : `hosts.composition_member` ; `dependency_graph_builds`, `dependency_nodes`, `dependency_edges` ; GRANT api/worker.
+- **F02** : bloc `composition.members` (dépendances + readiness) ; vagues topologiques ; composants Ansible par membre ; template `ubuntu-app-base` (socle Fail2ban → application Nginx) ; échec partiel → vague suivante bloquée, aucune suppression ; reprise ciblée existante.
+- **F04** : reconstruction lecture seule ; provenance confirmée/inférée/inconnue ; `GET /dependency-graph`, impact filtré (404 hors périmètre) ; UI `/dependances`.
+- Preuves locales : unitaires composition ; intégration légère (résolution + impact scopé) ; suite non-terraform verte. Recette labo terraform/ansible : CI. Labo réel : non (D2).
+
 ## Prochain jalon
 
-1. Fusionner **F58–F59 (`0017`)** après CI verte (Vincent).
-2. Ensuite selon le backlog (F02–F04, F06–F08, F15–F20, F22–F26, F29–F30, AT02–AT04).
+1. Fusionner **F02+F04 (`0018`)** après CI verte (Vincent).
+2. Ensuite selon le backlog (F06–F08, F15–F20, F22–F26, F29–F30, AT02–AT04).
 3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

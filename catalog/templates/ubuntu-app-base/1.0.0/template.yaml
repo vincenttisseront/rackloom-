@@ -1,0 +1,94 @@
+schema: rackloom.template/v1
+slug: ubuntu-app-base
+version: 1.0.0
+title: "Application + socle Ubuntu"
+description: >-
+  Composition multi-VM (F02) : un socle Fail2ban puis une application Nginx.
+  La configuration de l'application attend la readiness du socle ; un échec partiel
+  ne supprime aucune ressource déjà créée ; la reprise reprend les étapes en échec.
+creation_method:
+  kind: clone_image
+  image_filter: {os: ubuntu-24.04, layout_id: std-v1}
+system_profile:
+  os: ubuntu-24.04
+  layout: {source: image, layout_id: std-v1}
+  network: {role: app, addressing: lab_assigned}
+  security: {open_ports: [22, 80]}
+# Union des composants des membres (références catalogue).
+components:
+  - {component: fail2ban, version: 1.0.0, config: {jail_sshd: true}}
+  - {component: nginx, version: 1.0.0, config: {listen_port: 80, server_tokens: false}}
+composition:
+  members:
+    - id: base
+      title: "Socle (Fail2ban)"
+      quantity: 1
+      components:
+        - {component: fail2ban, version: 1.0.0, config: {jail_sshd: true}}
+      readiness:
+        - {type: package_installed, package: fail2ban}
+        - {type: service_active, unit: fail2ban, process: fail2ban-server}
+      health_checks:
+        - {type: package_installed, package: fail2ban}
+        - {type: service_active, unit: fail2ban, process: fail2ban-server}
+    - id: application
+      title: "Application (Nginx)"
+      quantity_from: quantity
+      components:
+        - {component: nginx, version: 1.0.0, config: {listen_port: 80, server_tokens: false}}
+      depends_on:
+        - {member: base, readiness: ready}
+      health_checks:
+        - {type: package_installed, package: nginx}
+        - {type: service_active, unit: nginx}
+        - {type: http_probe, port: 80, path: /, expect_status: 200}
+inputs:
+  quantity: {type: integer, min: 1, max: 1, default: 1, modifiable: false, label: "Nombre d'applications"}
+  size_tier:
+    type: enum
+    values: [test_leger, standard]
+    value_labels: {test_leger: "Test léger", standard: "Standard"}
+    per_environment: true
+    modifiable: true
+    label: "Niveau"
+  usage: {type: string, max_length: 80, required: false, label: "Usage"}
+  lifetime_until: {type: date, required_by: environment_policy, label: "Date de fin"}
+environments:
+  dev:
+    size_tiers:
+      test_leger: {vcpu: 2, memory_mb: 2048, disk_gb: 20}
+      standard: {vcpu: 2, memory_mb: 4096, disk_gb: 40}
+    default_size_tier: test_leger
+    placement: {cluster_tags: {env: dev}, datastore_tags: {tier: standard}, network_role: app, folder: "{project}/{environment}"}
+    tie_break: [rank, stable_id]
+    naming: "{project_code}-{environment}-{member}-{nn}"
+    backup: none
+  prod:
+    size_tiers:
+      standard: {vcpu: 2, memory_mb: 4096, disk_gb: 40}
+    default_size_tier: standard
+    placement: {cluster_tags: {env: prod}, datastore_tags: {tier: standard}, network_role: app, folder: "{project}/{environment}"}
+    tie_break: [rank, stable_id]
+    naming: "{project_code}-{environment}-{member}-{nn}"
+    backup: {policy: daily-14d, max_age_hours: 36}
+restore_profile:
+  network_role: quarantine
+  naming: "{project_code}-{environment}-rst-{nn}"
+  backup: {policy: restore-verify, max_age_hours: 24}
+secret_refs: []
+# Santé du service = contrôles de l'application (le socle est une dépendance interne).
+health_checks:
+  - {type: package_installed, package: nginx}
+  - {type: service_active, unit: nginx}
+  - {type: http_probe, port: 80, path: /, expect_status: 200}
+deployment_policy:
+  admissible_environment_kinds: [dev, prod]
+  approval: {required: true, distinct_approver: true}
+  waves: {mode: single}
+  stop_conditions: [any_host_configuration_failed]
+  retry: {strategy: failed_steps_only}
+terraform: {module: lab-vm, version: 1.0.0}
+outputs_allowlist: [name, vm_uuid]
+preview_limits:
+  - "Composition labo : le socle est Fail2ban (paquet local) ; une vraie base de données exige le lot 2."
+simulated_steps: [vm_inventory, guest_customization, ip_assignment]
