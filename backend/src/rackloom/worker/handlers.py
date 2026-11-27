@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from .. import admission, artifacts, drift, hosts, ipam, registry, secrets
+from .. import admission, artifacts, drift, hosts, ipam, registry, sshca
 from ..canonical import digest, file_tree_digest
 from ..changes.transitions import transition
 from ..db import Conn, Jsonb
@@ -639,13 +639,35 @@ def finish_apply(r: JobContext, run_id: str, status: dict[str, Any], *, job: dic
     return outcome
 
 
-def _lab_keys(conn: Conn, purpose: str) -> tuple[str, str]:
+def _perimeter_host_names(conn: Conn, targets: list[dict[str, Any]]) -> list[str]:
+    """Noms d'hôte du périmètre SSH (= hostname OpenSSH / entrée lab_nodes).
+
+    Les principals `identité@hôte` doivent correspondre à AuthorizedPrincipalsFile
+    sur le nœud (`identité@$(hostname)`), pas au nom logique de VM du déploiement.
+    """
+    row = conn.execute("SELECT value FROM platform_settings WHERE key = 'lab_nodes'").fetchone()
+    by_addr = {n["address"]: n["name"] for n in (row["value"] if row else [])}
+    names: list[str] = []
+    for h in targets:
+        mapped = by_addr.get(h["address"])
+        if mapped:
+            names.append(mapped)
+        else:
+            # Hors labo : le nom d'hôte inventorié doit être celui configuré sur la machine.
+            names.append(h["name"])
+    return names
+
+
+def _issue_ssh_cert(conn: Conn, job_id: UUID, purpose: str, targets: list[dict[str, Any]]) -> sshca.IssuedCredential:
+    """F15 : certificat court par job ; la clé de la CA ne quitte pas le worker."""
     identity = IDENTITIES[purpose]
-    pubs = conn.execute("SELECT value FROM platform_settings WHERE key = 'lab_ssh_public_keys'").fetchone()
-    if pubs is None or identity not in pubs["value"]:
-        raise RuntimeError(f"clé SSH de l'identité {identity} non importée (make lab-keys)")
-    private = secrets.reveal(conn, f"secret://lab/ssh/{identity}").decode()
-    return pubs["value"][identity], private
+    return sshca.issue_for_job(
+        conn,
+        job_id=job_id,
+        identity=identity,
+        host_names=_perimeter_host_names(conn, targets),
+        ttl_seconds=min(sshca.DEFAULT_TTL_SECONDS, 900 + 120),
+    )
 
 
 def _prepare_ansible(
@@ -708,14 +730,18 @@ def _prepare_ansible(
         "[defaults]\nhost_key_checking = True\nroles_path = roles\nretry_files_enabled = False\n"
         "interpreter_python = /usr/bin/python3\n[ssh_connection]\npipelining = True\n"
     )
-    pub, private = _lab_keys(conn, purpose)
-    r.redactor = type(r.redactor)([private, *r.redactor.known])
-    (work / "job.json").write_text(
-        json.dumps(
-            {"action": "ansible_play", "playbook": f"{purpose}.yml", "ssh_public_key": pub, "timeout_seconds": 900}
-        )
-    )
-    return work, json.dumps({"ssh_private_key": private})
+    issued = _issue_ssh_cert(conn, r.job["id"], purpose, targets)
+    # Masque clé privée et certificat dans les journaux ; jamais la CA (absente du payload).
+    r.redactor = type(r.redactor)([issued.private_key, issued.certificate, *r.redactor.known])
+    job_payload = {
+        "action": "ansible_play",
+        "playbook": f"{purpose}.yml",
+        "ssh_public_key": issued.public_key,
+        "ssh_certificate": issued.certificate,
+        "timeout_seconds": 900,
+    }
+    (work / "job.json").write_text(json.dumps(job_payload))
+    return work, json.dumps(issued.runner_secret())
 
 
 def _ansible_run(r: JobContext, run_id: str, kind: str, stdin: str) -> tuple[int | None, dict[str, Any]]:
@@ -1887,10 +1913,14 @@ def handle_lease_retire(r: JobContext) -> None:
         lease = leases.get_by_deployment(conn, dep["id"]) if dep else None
         names = [i["name"] for i in ((dep or {}).get("instances") or []) if i.get("name")]
         # Preuve : les ressources existent encore avant clôture du bail.
-        host_before = conn.execute(
-            "SELECT count(*) AS n FROM hosts WHERE deployment_id = %s",
-            (dep["id"],),
-        ).fetchone()["n"] if dep else 0
+        host_before = (
+            conn.execute(
+                "SELECT count(*) AS n FROM hosts WHERE deployment_id = %s",
+                (dep["id"],),
+            ).fetchone()["n"]
+            if dep
+            else 0
+        )
         r.step(
             conn,
             "Retrait enregistré (simulé)",
@@ -1912,10 +1942,14 @@ def handle_lease_retire(r: JobContext) -> None:
                 reason="Retrait exécuté (simulé) — aucune suppression réelle de VM",
             )
         # Les hôtes et fichiers labo restent ; seul le statut déploiement passe à abandoned.
-        still_hosts = conn.execute(
-            "SELECT count(*) AS n FROM hosts WHERE deployment_id = %s",
-            (dep["id"],),
-        ).fetchone()["n"] if dep else 0
+        still_hosts = (
+            conn.execute(
+                "SELECT count(*) AS n FROM hosts WHERE deployment_id = %s",
+                (dep["id"],),
+            ).fetchone()["n"]
+            if dep
+            else 0
+        )
         r.fenced(
             conn,
             "state = 'succeeded', finished_at = now(), result = %s",
@@ -1968,9 +2002,7 @@ def handle_tf_import(r: JobContext) -> None:
         payload = r.job.get("payload") or {}
         adoption_id = payload.get("adoption_id")
         if adoption_id:
-            adoption = conn.execute(
-                "SELECT * FROM vm_adoptions WHERE id = %s", (UUID(str(adoption_id)),)
-            ).fetchone()
+            adoption = conn.execute("SELECT * FROM vm_adoptions WHERE id = %s", (UUID(str(adoption_id)),)).fetchone()
             if adoption is not None:
                 ctx["env"] = conn.execute(
                     "SELECT * FROM environments WHERE id = %s", (adoption["environment_id"],)

@@ -201,26 +201,61 @@ def action_tf_inspect(job: dict, work: Path, out: Path, timeout: int, secret: di
     return 0
 
 
-def _start_agent(private_key: str) -> tuple[dict[str, str], int]:
-    """Agent SSH éphémère : la clé reçue sur stdin n'est jamais écrite sur disque."""
-    sock = Path(tempfile.mkdtemp(prefix="rl-agent-")) / "agent.sock"
+def _start_agent(private_key: str, certificate: str | None = None) -> tuple[dict[str, str], int, Path]:
+    """Agent SSH éphémère. F15 : charge aussi le certificat court ; jamais la clé de CA."""
+    agent_dir = Path(tempfile.mkdtemp(prefix="rl-agent-"))
+    sock = agent_dir / "agent.sock"
     proc = subprocess.run(["ssh-agent", "-s", "-a", str(sock)], capture_output=True, text=True, timeout=10,
                           check=True)
     pid = int(proc.stdout.split("SSH_AGENT_PID=", 1)[1].split(";", 1)[0])
     env = {"SSH_AUTH_SOCK": str(sock)}
+    key_path = agent_dir / "id_ed25519"
     key = private_key if private_key.endswith("\n") else private_key + "\n"
-    subprocess.run(["ssh-add", "-q", "-"], input=key, text=True, env={**os.environ, **env}, timeout=10,
-                   check=True, capture_output=True)
-    return env, pid
+    key_path.write_text(key, encoding="utf-8")
+    key_path.chmod(0o600)
+    cert_path = agent_dir / "id_ed25519-cert.pub"
+    if certificate:
+        cert = certificate if certificate.endswith("\n") else certificate + "\n"
+        cert_path.write_text(cert, encoding="utf-8")
+        cert_path.chmod(0o644)
+    try:
+        # ssh-add charge id_ed25519 et id_ed25519-cert.pub s'il est présent à côté.
+        subprocess.run(
+            ["ssh-add", "-q", str(key_path)],
+            text=True,
+            env={**os.environ, **env},
+            timeout=10,
+            check=True,
+            capture_output=True,
+        )
+    finally:
+        # La clé privée ne reste pas sur le disque du runner après chargement dans l'agent.
+        key_path.unlink(missing_ok=True)
+    return env, pid, cert_path if certificate else agent_dir
 
 
 def action_ansible_play(job: dict, work: Path, out: Path, timeout: int, secret: dict) -> int:
-    """Ansible Runner sur un playbook approuvé, inventaire limité, clé d'hôte ancrée."""
+    """Ansible Runner sur un playbook approuvé, inventaire limité, clé d'hôte ancrée.
+
+    F15 : certificat utilisateur à courte durée (CertificateFile) ; la CA ne voyage pas.
+    """
     private = work / "ansible"
     home = work / "home"
     home.mkdir(exist_ok=True)
     identity = home / "identity.pub"
     identity.write_text(job["ssh_public_key"] + "\n", encoding="utf-8")
+    certificate = secret.get("ssh_certificate") or job.get("ssh_certificate")
+    cert_file = home / "identity-cert.pub"
+    ssh_args = (
+        f"-o UserKnownHostsFile={private / 'env' / 'known_hosts'} -o StrictHostKeyChecking=yes "
+        f"-o GlobalKnownHostsFile=/dev/null -o ControlMaster=no -o IdentitiesOnly=yes "
+        f"-o IdentityFile={identity} -o ConnectTimeout=10"
+    )
+    if certificate:
+        cert_file.write_text(
+            certificate if certificate.endswith("\n") else certificate + "\n", encoding="utf-8"
+        )
+        ssh_args += f" -o CertificateFile={cert_file}"
     env = {
         "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
         "HOME": str(home),
@@ -228,15 +263,11 @@ def action_ansible_play(job: dict, work: Path, out: Path, timeout: int, secret: 
         "ANSIBLE_NOCOLOR": "1",
         "ANSIBLE_RETRY_FILES_ENABLED": "False",
         "ANSIBLE_LOCAL_TEMP": str(home / ".ansible-tmp"),
-        "ANSIBLE_SSH_ARGS": (
-            f"-o UserKnownHostsFile={private / 'env' / 'known_hosts'} -o StrictHostKeyChecking=yes "
-            f"-o GlobalKnownHostsFile=/dev/null -o ControlMaster=no -o IdentitiesOnly=yes "
-            f"-o IdentityFile={identity} -o ConnectTimeout=10"
-        ),
+        "ANSIBLE_SSH_ARGS": ssh_args,
     }
     agent_pid = None
     if secret.get("ssh_private_key"):
-        agent_env, agent_pid = _start_agent(secret["ssh_private_key"])
+        agent_env, agent_pid, _ = _start_agent(secret["ssh_private_key"], certificate)
         env.update(agent_env)
     cmd = [
         job.get("ansible_runner_bin", "ansible-runner"), "run", str(private),

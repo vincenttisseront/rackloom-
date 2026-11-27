@@ -69,7 +69,8 @@ $(sed 's/^/  /' "$LAB/demo-credentials.txt")
   - personnalisation invitée et attribution d'adresse (VM jouées par des conteneurs lab-node) ;
   - assistant : adaptateur fictif déterministe (aucun modèle Ollama démarré).
 Étapes réelles sur ressources locales jetables : plan et apply Terraform (provider local),
-SSH avec clé d'hôte ancrée, Ansible (nginx depuis un dépôt apt local signé), sonde HTTP.
+SSH avec clé d'hôte ancrée et certificats utilisateur courts (F15), Ansible (nginx depuis
+un dépôt apt local signé), sonde HTTP.
 
 Arrêt : make down   (conserve les volumes)   |   Remise à zéro : make demo-reset
 EOF
