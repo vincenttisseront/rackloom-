@@ -22,7 +22,7 @@ API = "/api/v1"
 
 
 def test_f10_bundle_builtin8():
-    assert BUILTIN_VERSION == "builtin@9"
+    assert BUILTIN_VERSION == "builtin@10"
     ids = {r["id"] for r in policy.BUILTIN_RULES["admission"]}
     assert {"R100", "R140"} <= ids
 
@@ -372,4 +372,4 @@ def test_f10_f11_api_routes(api, conn, demo):
     # Politique active.
     active = admin.get(f"{API}/admin/policies/active")
     assert active.status_code == 200
-    assert active.json()["version"] == "builtin@9"
+    assert active.json()["version"] == "builtin@10"

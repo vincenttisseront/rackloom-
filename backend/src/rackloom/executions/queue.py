@@ -54,10 +54,20 @@ class LeaseLost(Exception):
     """Le bail a expiré ou a été repris : le worker doit s'arrêter sans écrire."""
 
 
-def enqueue(conn: Conn, *, kind: str, idempotency_key: str, change: dict[str, Any] | None = None,
-            project_id: UUID | None = None, payload: dict[str, Any] | None = None,
-            stack_id: UUID | None = None, execution_id: UUID | None = None,
-            run_after: datetime | None = None, max_attempts: int = 3, priority: int | None = None) -> dict[str, Any]:
+def enqueue(
+    conn: Conn,
+    *,
+    kind: str,
+    idempotency_key: str,
+    change: dict[str, Any] | None = None,
+    project_id: UUID | None = None,
+    payload: dict[str, Any] | None = None,
+    stack_id: UUID | None = None,
+    execution_id: UUID | None = None,
+    run_after: datetime | None = None,
+    max_attempts: int = 3,
+    priority: int | None = None,
+) -> dict[str, Any]:
     """Idempotent : une même clé renvoie le job existant.
 
     F36 : la priorité par défaut suit le quota projet (plus petit = plus tôt).
@@ -70,34 +80,69 @@ def enqueue(conn: Conn, *, kind: str, idempotency_key: str, change: dict[str, An
     job_id = uuid7()
     pid = project_id or (change["project_id"] if change else None)
     prio = priority if priority is not None else fair.priority_for(conn, pid, JOB_CLASS[kind])
+    # F16 : zone requise dérivée de l'environnement (le demandeur ne la choisit pas).
+    from .. import runners as zone_runners
+
+    required_zone = zone_runners.required_zone_for_change(conn, change)
     row = conn.execute(
         """
         INSERT INTO jobs (id, change_id, project_id, execution_id, kind, class, state, stack_id, payload,
-                          idempotency_key, priority, run_after, max_attempts)
-        VALUES (%s, %s, %s, %s, %s, %s, 'queued', %s, %s, %s, %s, %s, %s) RETURNING *
+                          idempotency_key, priority, run_after, max_attempts, required_zone)
+        VALUES (%s, %s, %s, %s, %s, %s, 'queued', %s, %s, %s, %s, %s, %s, %s) RETURNING *
         """,
-        (job_id, change["id"] if change else None, pid, execution_id, kind, JOB_CLASS[kind], stack_id,
-         Jsonb(payload or {}), idempotency_key, prio, run_after or clock.now(), max_attempts),
+        (
+            job_id,
+            change["id"] if change else None,
+            pid,
+            execution_id,
+            kind,
+            JOB_CLASS[kind],
+            stack_id,
+            Jsonb(payload or {}),
+            idempotency_key,
+            prio,
+            run_after or clock.now(),
+            max_attempts,
+            required_zone,
+        ),
     ).fetchone()
-    events.emit(conn, type="job.queued", source="job", project_id=pid,
-                correlation_id=change["id"] if change else None, job_id=job_id,
-                data={"kind": kind, "label": JOB_LABELS[kind]}, dedupe_key=f"job.queued:{job_id}")
+    events.emit(
+        conn,
+        type="job.queued",
+        source="job",
+        project_id=pid,
+        correlation_id=change["id"] if change else None,
+        job_id=job_id,
+        data={"kind": kind, "label": JOB_LABELS[kind]},
+        dedupe_key=f"job.queued:{job_id}",
+    )
+    assert row is not None
     return row
 
 
-def claim(conn: Conn, worker_id: str, lease_seconds: int,
-          kinds: list[str] | None = None) -> dict[str, Any] | None:
+def claim(
+    conn: Conn,
+    worker_id: str,
+    lease_seconds: int,
+    kinds: list[str] | None = None,
+    *,
+    zone: str | None = None,
+    capabilities: list[str] | None = None,
+) -> dict[str, Any] | None:
     """Réclame un job en transaction courte. Renvoie le job avec sa nouvelle époque.
 
     F36 : saute les jobs dont le projet (ou l'environnement) a atteint son quota de
     concurrence ; un autre projet sous quota peut démarrer sans attendre.
+    F16 : si `zone` est fournie, saute les jobs dont `required_zone` diffère (un runner
+    de dev ne prend jamais un job de prod). `capabilities` borne les kinds acceptés.
     """
     from . import quotas as fair
 
     skipped: list[Any] = []
     for _ in range(64):
         query = """
-            SELECT j.id, j.project_id, j.class, j.change_id, j.priority, j.run_after
+            SELECT j.id, j.project_id, j.class, j.change_id, j.priority, j.run_after,
+                   j.kind, j.required_zone
             FROM jobs j
             WHERE j.state = 'queued' AND j.run_after <= now()
         """
@@ -105,6 +150,13 @@ def claim(conn: Conn, worker_id: str, lease_seconds: int,
         if kinds:
             query += " AND j.kind = ANY(%s)"
             params.append(kinds)
+        if capabilities is not None:
+            query += " AND j.kind = ANY(%s)"
+            params.append(capabilities)
+        if zone is not None:
+            # Jobs système sans zone requise : admissibles ; sinon zone exacte.
+            query += " AND (j.required_zone IS NULL OR j.required_zone = %s)"
+            params.append(zone)
         if skipped:
             query += " AND NOT (j.id = ANY(%s))"
             params.append(skipped)
@@ -114,9 +166,7 @@ def claim(conn: Conn, worker_id: str, lease_seconds: int,
             return None
         env_id = None
         if row["change_id"] is not None:
-            env = conn.execute(
-                "SELECT environment_id FROM changes WHERE id = %s", (row["change_id"],)
-            ).fetchone()
+            env = conn.execute("SELECT environment_id FROM changes WHERE id = %s", (row["change_id"],)).fetchone()
             env_id = env["environment_id"] if env else None
         ok, reason = fair.admits(conn, row, environment_id=env_id)
         if not ok:
@@ -150,8 +200,9 @@ def fenced_update(conn: Conn, job: dict[str, Any], sets: str, params: tuple = ()
 
 
 def heartbeat(conn: Conn, job: dict[str, Any], lease_seconds: int) -> dict[str, Any]:
-    return fenced_update(conn, job, "heartbeat_at = now(), lease_expires_at = now() + make_interval(secs => %s)",
-                         (lease_seconds,))
+    return fenced_update(
+        conn, job, "heartbeat_at = now(), lease_expires_at = now() + make_interval(secs => %s)", (lease_seconds,)
+    )
 
 
 def expired_leases(conn: Conn) -> list[dict[str, Any]]:
@@ -161,10 +212,14 @@ def expired_leases(conn: Conn) -> list[dict[str, Any]]:
     ).fetchall()
 
 
-def add_step(conn: Conn, job_id: UUID, name: str, state: str, *, simulated: bool = False,
-             summary: dict[str, Any] | None = None) -> None:
-    seq = conn.execute("SELECT coalesce(max(seq), 0) + 1 AS n FROM job_steps WHERE job_id = %s",
-                       (job_id,)).fetchone()["n"]
+def add_step(
+    conn: Conn, job_id: UUID, name: str, state: str, *, simulated: bool = False, summary: dict[str, Any] | None = None
+) -> None:
+    seq_row = conn.execute(
+        "SELECT coalesce(max(seq), 0) + 1 AS n FROM job_steps WHERE job_id = %s", (job_id,)
+    ).fetchone()
+    assert seq_row is not None
+    seq = seq_row["n"]
     conn.execute(
         "INSERT INTO job_steps (job_id, seq, name, state, simulated, summary, finished_at) "
         "VALUES (%s, %s, %s, %s, %s, %s, CASE WHEN %s <> 'running' THEN now() END)",

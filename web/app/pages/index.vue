@@ -48,6 +48,10 @@ onMounted(async () => {
       <dl class="kv">
         <dt>Profil</dt><dd>{{ status.profile }}</dd>
         <dt>Workers actifs</dt><dd>{{ status.workers_alive }}</dd>
+        <dt v-if="status.execution_zones?.length">Zones d'exécution</dt>
+        <dd v-if="status.execution_zones?.length">
+          {{ status.execution_zones.map((z: any) => `${z.slug} (${z.runners} runner${z.runners === 1 ? '' : 's'})`).join(' · ') }}
+        </dd>
         <dt>Jobs</dt><dd>{{ Object.entries(status.jobs).map(([k, v]) => `${JOB_STATES[k] || k} : ${v}`).join(' · ') || 'aucun' }}</dd>
         <dt>Inventaire</dt>
         <dd>observé le {{ dateTime(status.inventory?.observed_at) }}

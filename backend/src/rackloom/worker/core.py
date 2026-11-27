@@ -160,8 +160,9 @@ class JobContext:
 
     def run(self, spec: dict[str, Any], poll: float = 0.5) -> dict[str, Any]:
         """Démarre (ou retrouve) le run et attend sa fin en relayant étapes et annulation."""
+        zone = self.job.get("required_zone") or self.settings.runner_zone or "local"
         spec = {"correlation_id": str(self.job["change_id"] or self.job["id"]), "job_id": str(self.job["id"]),
-                "zone": "local", **spec}
+                "zone": zone, **spec}
         spec.setdefault("workspace", spec["run_id"])
         status = self.launcher.status(spec["run_id"])
         if status["state"] == "missing":

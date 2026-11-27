@@ -27,7 +27,8 @@ class RunSpec(BaseModel):
     workspace: str = Field(pattern=RUN_ID)
     stack: str | None = Field(default=None, pattern=SLUG)
     timeout_seconds: int = Field(default=600, ge=10, le=3600)
-    zone: Literal["local"] = "local"
+    # F16 : slug de zone (dev, prod, local, …). Borné ; le launcher n'ouvre pas de réseau libre.
+    zone: str = Field(default="local", pattern=r"^[a-z][a-z0-9-]{0,40}$")
     # Transmis sur l'entrée standard du runner puis oublié ; jamais écrit sur disque ni journalisé.
     stdin_secret: str | None = Field(default=None, max_length=65536, repr=False)
 

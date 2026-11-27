@@ -59,7 +59,7 @@ def _active_deployment(conn, demo):
 
 
 def test_f40_resolution_quarantaine_et_nom_distinct(conn, demo):
-    assert BUILTIN_VERSION == "builtin@9"
+    assert BUILTIN_VERSION == "builtin@10"
     dep = _active_deployment(conn, demo)
     # Preuve de sauvegarde pour R115 (restauration sensible).
     backups.set_proof(

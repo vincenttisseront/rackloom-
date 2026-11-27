@@ -8,7 +8,7 @@ une version antérieure est refusé à l'admission (`policy_changed`) et doit ê
 Historique : `builtin@1` (lot 1), `builtin@2` (F28 : R080), `builtin@3` (F27 : R090 ;
 R065 AT01), `builtin@4` (F37 : R095), `builtin@5` (F05 : R110), `builtin@6` (F03 : R120 IPAM),
 `builtin@7` (F34 : R125 licences), `builtin@8` (Lot C : R100 F11, R140 F10),
-`builtin@9` (F36 file ; F38 R135 ; F39 R115).
+`builtin@9` (F36 file ; F38 R135 ; F39 R115), `builtin@10` (F16 : R130 zone runner).
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from typing import Any
 from ..canonical import digest
 from ..db import Conn, Jsonb
 
-BUILTIN_VERSION = "builtin@9"
+BUILTIN_VERSION = "builtin@10"
 
 BUILTIN_RULES: dict[str, Any] = {
     "admission": [
@@ -92,6 +92,13 @@ BUILTIN_RULES: dict[str, Any] = {
             "title": "licences disponibles selon la politique",
         },
         {
+            "id": "R130",
+            "order": 130,
+            "class": "all",
+            "stages": ["start", "dispatch"],
+            "title": "zone du runner autorisée pour l'environnement (F16)",
+        },
+        {
             "id": "R135",
             "order": 135,
             "class": "write",
@@ -107,8 +114,7 @@ BUILTIN_RULES: dict[str, Any] = {
         },
         {"id": "R900", "order": 900, "class": "write", "title": "verrou de stack acquis"},
     ],
-    # Emplacements réservés au backlog, documentés mais non encore enregistrés.
-    "reserved": {"130": "F16"},
+    "reserved": {},
     "platform": {
         "production_requires_explicit_environment": True,
         "production_requires_distinct_approver": True,

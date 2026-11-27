@@ -365,7 +365,7 @@ Chaque type de job déclare une classe `read` ou `write`. Les règles d'écritur
 | 115 | sauvegarde vérifiée pour un changement sensible | write | F39 (`builtin@9`) |
 | 120 | réservations IPAM/DNS confirmées | write | F03 (`builtin@6`) |
 | 125 | licences disponibles | write | F34 (`builtin@7`) |
-| 130 | zone du runner autorisée pour l'environnement | toutes | réservé F16 |
+| 130 | zone du runner autorisée pour l'environnement | toutes | F16 (`builtin@10`) |
 | 135 | combinaison de versions compatible | write | F38 (`builtin@9`) |
 | 140 | politiques versionnées de l'organisation | write | F10 (`builtin@8`) |
 | 900 | verrou de stack acquis | write | 1 |
@@ -376,7 +376,7 @@ Ils sont présents au lot 1 parce qu'ils coûtent peu et évitent une migration 
 
 | Point | Présent au lot 1 | Servira à |
 |---|---|---|
-| Registre d'admission ordonné, classes `read`/`write`, décisions enregistrées (étape `start` et, pour les règles sensibles au temps, `dispatch`) | oui (`builtin@9` : R010–R115, R120, R125, R135, R140, R900) | F27, F37, F34, F11, F05, F39, F03, F16, F38, F10, F36 |
+| Registre d'admission ordonné, classes `read`/`write`, décisions enregistrées (étape `start` et, pour les règles sensibles au temps, `dispatch`) | oui (`builtin@10` : R010–R140, R900, dont R130 F16) | F27, F37, F34, F11, F05, F39, F03, F16, F38, F10, F36 |
 | Étape « préférence de projet » dans l'ordre de résolution | oui (`project_preference_versions`, provenance `project_preference`) | F50 |
 | Départage du résolveur isolé dans une fonction remplaçable | oui (rang, puis identifiant) | F32 |
 | Source `ci` acceptée par le même schéma et le même résolveur | oui (client simulé) | F35 |
@@ -391,7 +391,7 @@ Ils sont présents au lot 1 parce qu'ils coûtent peu et évitent une migration 
 | `jobs.run_after` et revalidation complète à l'admission | oui | F27, F36 |
 | Contexte d'authentification de l'approbateur | oui | F12 |
 | Fraîcheur des instantanés d'inventaire dans chaque révision | oui | F05, F09, F32 |
-| Champ `zone` dans la spécification du launcher | oui (`local`) | F16 |
+| Champ `zone` dans la spécification du launcher | oui (slugs `dev`/`prod`/… ; défaut `local`) | F16 |
 | Secrets en écriture seule côté API, références dans les contrats | oui | F13, F43 |
 | Contrat de connecteur à capacités et suite de contrat | oui (connecteurs du lot 1) | F30 |
 | Adaptateurs de modèle interchangeables, constructeur de contexte filtré, scénarios fictifs rejouables, banc d'évaluation (`chat_eval_reports`, prompt `rackloom.chat-prompt/v1`), routage des modèles, aperçu de contexte, runbooks | oui | F46, F47, F48, F49 |

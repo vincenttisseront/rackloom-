@@ -57,7 +57,7 @@ def test_f39_snapshot_refuse(conn, demo):
     verdict = fn(_ctx(demo, conn, _sensitive()))
     assert not verdict.ok
     assert verdict.code == "backup_snapshot_not_proof"
-    assert BUILTIN_VERSION == "builtin@9"
+    assert BUILTIN_VERSION == "builtin@10"
 
 
 def test_f39_perimee_et_absente(conn, demo):

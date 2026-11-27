@@ -60,6 +60,8 @@ ALLOWED = {
         "SELECT state_id FROM terraform_resource_claims",
         "SELECT fingerprint FROM ssh_cas",
         "SELECT serial FROM ssh_certificate_issues",
+        "SELECT slug FROM execution_zones",
+        "SELECT status FROM site_runners",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -110,6 +112,8 @@ ALLOWED = {
         "SELECT state_id FROM terraform_resource_claims",
         "SELECT fingerprint FROM ssh_cas",
         "SELECT serial FROM ssh_certificate_issues",
+        "SELECT slug FROM execution_zones",
+        "SELECT status FROM site_runners",
     ],
 }
 

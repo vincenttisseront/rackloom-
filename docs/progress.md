@@ -16,7 +16,8 @@
 - **F06 (baux temporaires)** : fusionné (PR #28), migration Alembic `0019`.
 - **F07 (fabrique d'images)** : fusionné (PR #30), migration Alembic `0020`.
 - **F08 (adoption de VM)** : fusionné (PR #29), migration Alembic **`0021`**.
-- **F15 (certificats SSH courts)** : PR en cours (`cursor/f15-ssh-certs-fa51`), migration Alembic **`0022`** (`down_revision=0021`).
+- **F15 (certificats SSH courts)** : fusionné (PR #36), migration Alembic **`0022`** (`down_revision=0021`).
+- **F16 (runners par zone)** : PR #33 (`cursor/f16-runners-zones-24cb`), migration Alembic **`0023`** (`down_revision=0022`), bundle **`builtin@10`** (R130).
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -440,15 +441,23 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F15 : certificats SSH à courte durée (Lot E, 2026-11-27, heure de Paris)
 
-- Branche `cursor/f15-ssh-certs-fa51` depuis `main` (après F08 / `0021`). Migration Alembic **`0022`** (`down_revision=0021`). Tables `ssh_cas`, `ssh_certificate_issues` ; séquence `ssh_certificate_serial` ; GRANT SELECT/INSERT/UPDATE/DELETE `rackloom_api` / `rackloom_worker`.
+- Fusionné (PR #36). Migration Alembic **`0022`** (`down_revision=0021`). Tables `ssh_cas`, `ssh_certificate_issues` ; séquence `ssh_certificate_serial` ; GRANT SELECT/INSERT/UPDATE/DELETE `rackloom_api` / `rackloom_worker`.
 - Module `sshca` : CA ed25519 scellée (`secret://lab/ssh-ca/signing`) ; émission par job (principals `identité@hôte`, TTL ~20 min) ; clé de signature jamais dans le payload runner.
 - Lab-node : `TrustedUserCAKeys` + `AuthorizedPrincipalsFile` lorsque `ca.pub` est monté ; `AuthorizedKeysFile none`.
 - Runner Ansible : `CertificateFile` + agent SSH éphémère (clé privée effacée après `ssh-add`).
 - Preuves : `test_f15_ssh_certs.py` (émission, expiration, mauvais périmètre, `lab keys`) ; `test_f15_ssh_lab.py` (SSH réel docker) ; `test_db_roles`. CA d'entreprise : non (D11).
 
+### F16 : runners par site ou zone (Lot E, 2026-11-27, heure de Paris)
+
+- Branche `cursor/f16-runners-zones-24cb` rebasée sur `main` après F15. Migration Alembic **`0023`** (`down_revision=0022`). Bundle **`builtin@10`** (R130).
+- Tables `execution_zones`, `site_runners` ; colonne `jobs.required_zone` ; GRANT `rackloom_api` / `rackloom_worker`.
+- Enrôlement mTLS (CA locale sous `keys_dir`, empreinte SHA-256) ; le runner initie `POST /runners/me/heartbeat` et `POST /runners/me/claim` ; filtre de zone à la claim ; R130 à l'admission.
+- Heartbeat perdu → runner `stale`, écritures déjà envoyées → `uncertain` + job `reconcile` (pas de seconde écriture).
+- Preuves : `test_f16_runners_zones.py`. Site distant réel : non.
+
 ## Prochain jalon
 
-1. Fusionner **F15 (`0022`)** après CI verte.
-2. Ensuite selon le backlog (F16–F20, F22–F26, F29–F30, AT02–AT04).
+1. Fusionner **F16 (`0023`)** (PR #33) après CI verte post-rebase.
+2. Ensuite selon le backlog (F17, F26, F29, F18–F20, F22–F25, F30, AT02–AT04).
 3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

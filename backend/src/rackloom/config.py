@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     worker_slots: int = 2
     worker_poll_seconds: float = 1.0
     worker_id: str | None = None
+    # F16 : zone du worker local (filtre de claim). None = pas de filtre (compat lot 1).
+    runner_zone: str | None = None
+    # Délai sans heartbeat avant de marquer un site_runner stale (secondes).
+    runner_stale_seconds: int = 90
 
     launcher_socket: Path = Path("/run/rackloom/launcher.sock")
     # "socket" en Compose ; "inprocess" pour les tests et le développement natif.
