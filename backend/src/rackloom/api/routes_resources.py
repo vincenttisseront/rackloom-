@@ -470,3 +470,30 @@ def get_artifact(artifact_id: UUID, request: Request) -> Response:
             "Cache-Control": "no-store",
         },
     )
+
+
+@router.get("/diagnostic-packs/{pack_id}")
+def get_diagnostic_pack(pack_id: UUID, request: Request) -> dict[str, Any]:
+    """F22 : métadonnées d'un dossier ; hors périmètre → 404."""
+    from .. import diagnostics
+
+    with unit_of_work(request) as u:
+        return diagnostics.get_pack(u.conn, u.p, pack_id)
+
+
+@router.get("/diagnostic-packs/{pack_id}/download")
+def download_diagnostic_pack(pack_id: UUID, request: Request) -> Response:
+    """F22 : téléchargement de l'export filtré ; droits revérifiés ; hors projet → 404."""
+    from .. import diagnostics
+
+    with unit_of_work(request) as u:
+        meta, content = diagnostics.download_pack(u.conn, u.p, pack_id, request_id=u.request_id)
+    return Response(
+        content,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="diagnostic-{meta["id"]}.json"',
+            "Cache-Control": "no-store",
+            "X-Rackloom-Digest": meta["digest"],
+        },
+    )

@@ -20,6 +20,9 @@ const explain = ref<string | null>(null)
 const diagnosis = ref<any | null>(null)
 const contextPreview = ref<any | null>(null)
 const excludedExtracts = ref<number[]>([])
+const diagnosticPacks = ref<any[]>([])
+const diagnosticBusy = ref(false)
+const diagnosticNotice = ref<string | null>(null)
 
 const actions = computed<string[]>(() => (change.value?.allowed_actions || []).map((a: any) => a.action))
 const label = (a: string) => change.value?.allowed_actions?.find((x: any) => x.action === a)?.label || a
@@ -56,6 +59,7 @@ const stream = useEventStream(`/changes/${id.value}/events/stream`, (e) => {
 
 onMounted(async () => {
   await refresh()
+  await loadDiagnosticPacks()
   try {
     const past = await api.get<RackloomEvent[]>(`/changes/${id.value}/events`)
     events.value = past
@@ -157,6 +161,47 @@ function toggleExtract(id: number) {
     excludedExtracts.value = excludedExtracts.value.filter(x => x !== id)
   } else {
     excludedExtracts.value = [...excludedExtracts.value, id]
+  }
+}
+
+async function loadDiagnosticPacks() {
+  try {
+    diagnosticPacks.value = await api.get(`/changes/${id.value}/diagnostic-packs`)
+  } catch {
+    diagnosticPacks.value = []
+  }
+}
+
+async function createDiagnosticPack() {
+  diagnosticBusy.value = true
+  diagnosticNotice.value = null
+  error.value = null
+  try {
+    const pack = await api.post(`/changes/${id.value}/diagnostic-packs`, { include_summary: true })
+    diagnosticNotice.value = `Dossier généré (${pack.event_count} événements, ${pack.evidence_count} preuves). Secrets et hors périmètre exclus.`
+    await loadDiagnosticPacks()
+  } catch (e) {
+    error.value = errorText(e)
+  } finally {
+    diagnosticBusy.value = false
+  }
+}
+
+async function downloadDiagnosticPack(packId: string) {
+  diagnosticBusy.value = true
+  error.value = null
+  try {
+    const blob = await api.download(`/diagnostic-packs/${packId}/download`)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `diagnostic-${packId}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    error.value = errorText(e)
+  } finally {
+    diagnosticBusy.value = false
   }
 }
 
@@ -299,6 +344,28 @@ const serviceCard = computed(() => deployment.value?.service_card || service.val
         <DeliveryEstimate :estimate="estimate" />
         <HandoffPanel :change-id="id" />
         <EventTimeline :events="events" :live="stream.connected.value && !finished" />
+        <section class="card" data-testid="diagnostic-pack" aria-labelledby="diag-title">
+          <h2 id="diag-title">Dossier de diagnostic</h2>
+          <p class="small muted">
+            Export filtré (période, symptômes, preuves, événements, données manquantes).
+            Les secrets et les données hors périmètre n'y figurent pas. Droits revérifiés au téléchargement.
+          </p>
+          <div class="actions" style="margin-bottom: 0.75rem">
+            <button type="button" class="primary" data-testid="create-diagnostic" :disabled="diagnosticBusy" @click="createDiagnosticPack">
+              Générer un dossier
+            </button>
+          </div>
+          <p v-if="diagnosticNotice" class="banner info small" role="status" data-testid="diagnostic-notice">{{ diagnosticNotice }}</p>
+          <ul v-if="diagnosticPacks.length" class="small" data-testid="diagnostic-list">
+            <li v-for="p in diagnosticPacks" :key="p.id" :data-testid="`diagnostic-item-${p.id}`">
+              {{ dateTime(p.created_at) }} · {{ p.event_count }} évén. · {{ p.evidence_count }} preuves
+              <button type="button" :disabled="diagnosticBusy" data-testid="download-diagnostic" @click="downloadDiagnosticPack(p.id)">
+                Télécharger
+              </button>
+            </li>
+          </ul>
+          <p v-else class="small muted">Aucun dossier généré pour cette demande.</p>
+        </section>
         <section v-if="jobs.length" class="card" data-testid="job-explain">
           <h2>Comprendre ce job</h2>
           <p class="small muted">L'assistant explique à partir des événements et des runbooks approuvés. Il ne relance ni n'approuve rien.</p>

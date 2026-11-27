@@ -63,10 +63,25 @@ export function useApi() {
     return data as T
   }
 
+  async function download(path: string): Promise<Blob> {
+    const headers: Record<string, string> = { Accept: 'application/json, application/octet-stream' }
+    const res = await fetch(`/api/v1${path}`, { method: 'GET', headers, credentials: 'same-origin' })
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      if (res.status === 401) {
+        session.value = null
+        await navigateTo('/connexion')
+      }
+      throw new ApiError(res.status, data)
+    }
+    return res.blob()
+  }
+
   return {
     get: <T = any>(path: string) => request<T>('GET', path),
     post: <T = any>(path: string, body: unknown = {}) => request<T>('POST', path, body),
     put: <T = any>(path: string, body: unknown = {}) => request<T>('PUT', path, body),
+    download,
   }
 }
 
