@@ -143,9 +143,15 @@ def clear_waiting(conn: Conn, job_id: UUID) -> None:
 def waiting_reason_label(code: str | None) -> str | None:
     if not code:
         return None
+    from ..recovery import WAIT_DISPATCH_PAUSED
+
     labels = {
         WAIT_QUOTA: "quota de concurrence du projet saturé ; un autre projet peut démarrer",
         WAIT_ENV_QUOTA: "quota de concurrence de l'environnement saturé",
+        WAIT_DISPATCH_PAUSED: (
+            "envois vers le parc suspendus (restauration ou maintenance) ; "
+            "aucune écriture relancée tant que l'interrupteur reste actif"
+        ),
     }
     return labels.get(code, code)
 

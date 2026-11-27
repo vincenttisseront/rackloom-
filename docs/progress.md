@@ -107,7 +107,8 @@
 | Certificats SSH à courte durée (F15) | livré | testé localement | `test_f15_ssh_certs.py` ; `test_f15_ssh_lab.py` (docker) ; CA entreprise : non |
 | Runners par site ou zone (F16) | livré | testé localement | `test_f16_runners_zones.py` ; R130 ; `builtin@10` ; migration `0023` ; site distant : non |
 | Bundles pour sites déconnectés (F17) | livré (lots fictifs signés) | testé localement | `test_f17_offline_bundles.py` ; e2e `103-f17-bundles.spec.ts` ; migration `0024` ; Ed25519 ; octet altéré → `bundle_tampered` ; VM QEMU isolée : non (lot 3) |
-| Fonctions F18–F20, F22–F26, F29–F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
+| Exercices de restauration (F26) | livré (filesystem isolé) | testé localement | `test_f26_restore.py` ; `dispatch_paused` ; migration `0025` (`down_revision=0024`) ; `docs/restore-exercises.md` ; VM QEMU / state distant : non |
+| Fonctions F18–F20, F22–F25, F29–F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6
 
@@ -459,16 +460,23 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F17 : bundles pour sites déconnectés (Lot E, 2026-11-27, heure de Paris)
 
-- Branche `cursor/f17-bundles-sites-deconnectes-932b` rebasée sur `main` après F16. Migration Alembic **`0024`** (`down_revision=0023`).
+- Fusionné (PR #35). Migration Alembic **`0024`** (`down_revision=0023`).
 - Tables `offline_bundle_trust_keys`, `offline_bundles`, `offline_bundle_items`, `offline_bundle_imports` ; GRANT `rackloom_api` (SELECT/INSERT/UPDATE) / `rackloom_worker` (SELECT).
 - Format `RLB1` signé Ed25519 ; kinds image / dependency / terraform_provider / ansible_collection / model.
 - API admin : inspect (contenu exact), import après vérif, build-demo ; refus `bundle_tampered` / `bundle_incompatible` / `bundle_untrusted`.
 - CLI `rackloom bundle {build,verify,import}` ; UI `/admin/bundles`. Aucun job créé. Clés via `keys init` ; volume `offline-bundles`.
 - Preuves : `test_f17_offline_bundles.py` (5) ; e2e `103-f17-bundles.spec.ts`. VM QEMU sans réseau : non (lot 3).
 
+### F26 : exercices de restauration (Lot E, 2026-11-27, heure de Paris)
+
+- Branche `cursor/f26-exercices-restauration-61ff` rebasée sur `main` après F17. Migration Alembic **`0025`** (`down_revision=0024`).
+- Interrupteur global `dispatch_paused` (`platform_settings`) : les jobs d'écriture en file ne sont pas réclamés (`wait_reason=dispatch_paused`) ; lectures OK ; défense worker si déjà loué.
+- Module `recovery` : backup (base + artefacts + refs secrets) ; clés et state en dossiers / procédures séparés ; exercice isolé chronométré (`restore_exercises`) ; CLI `rackloom recovery` ; API admin ; `docs/restore-exercises.md`.
+- Preuves : `test_f26_restore.py` ; `test_db_roles` (GRANT). VM QEMU neuve (L3) et state distant (L2) : non.
+
 ## Prochain jalon
 
-1. Fusionner **F17 (`0024`)** (PR #35) après CI verte post-rebase.
-2. Suite lot E : F26, F29 ; puis F18–F20, F22–F25, F30, AT02–AT04.
+1. Fusionner **F26 (`0025`)** (PR #32) après CI verte post-rebase.
+2. Suite lot E : F29 ; puis F18–F20, F22–F25, F30, AT02–AT04.
 3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
