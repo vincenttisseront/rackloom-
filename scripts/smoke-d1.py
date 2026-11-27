@@ -56,11 +56,18 @@ def credentials() -> dict[str, str]:
     return out
 
 
-def session(email: str, password: str) -> httpx.Client:
+def session(email: str, password: str, *, step_up: bool = False) -> httpx.Client:
     c = httpx.Client(verify=str(ROOT / ".lab" / "ca.crt"), headers={"Origin": BASE}, timeout=30)
     r = c.post(f"{API}/auth/login", json={"email": email, "password": password})
     r.raise_for_status()
     c.headers["X-CSRF-Token"] = r.json()["csrf_token"]
+    if step_up:
+        # F12 : approbation et autres actions sensibles exigent une preuve fraîche.
+        up = c.post(f"{API}/auth/reauth", json={"password": password},
+                    headers={"Idempotency-Key": str(uuid.uuid4())})
+        if up.status_code != 200:
+            sys.exit(f"POST /auth/reauth → {up.status_code} {up.text}")
+        c.headers["X-CSRF-Token"] = up.json()["csrf_token"]
     return c
 
 
@@ -107,7 +114,7 @@ def main() -> int:
     args = parser.parse_args()
     creds = credentials()
     alice = session("alice@demo.invalid", creds["alice@demo.invalid"])
-    bruno = session("bruno@demo.invalid", creds["bruno@demo.invalid"])
+    bruno = session("bruno@demo.invalid", creds["bruno@demo.invalid"], step_up=True)
 
     need = {"schema": "rackloom.need/v1", "service": {"template": "ubuntu-web"}, "environment": None,
             "confirm_production": False,

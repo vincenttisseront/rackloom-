@@ -5,7 +5,7 @@ Niveau de preuve : testé localement. IdP d'entreprise : non (preuve simulée / 
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from uuid import UUID
 
 import pytest
@@ -14,9 +14,9 @@ import flows
 from rackloom import admission, clock, policy
 from rackloom.identity import emergency, temporary
 from rackloom.ids import uuid7
-from rackloom.policy import BUILTIN_VERSION, exceptions as policy_exc
+from rackloom.policy import BUILTIN_VERSION
+from rackloom.policy import exceptions as policy_exc
 from rackloom.policy import simulate as policy_sim
-
 
 API = "/api/v1"
 
@@ -85,8 +85,14 @@ def test_f10_exception_expiree_sans_effet(conn, demo):
     env = demo.env("vitrine", "prod")
     ctx = admission.Context(
         conn=conn,
-        job={"kind": "tf_apply", "class": "write", "id": uuid7(), "cancel_requested_at": None,
-             "stack_id": None, "payload": {}},
+        job={
+            "kind": "tf_apply",
+            "class": "write",
+            "id": uuid7(),
+            "cancel_requested_at": None,
+            "stack_id": None,
+            "payload": {},
+        },
         change={"id": uuid7(), "project_id": project_id},
         environment=env,
         execution=None,
@@ -158,10 +164,15 @@ def test_f11_droit_expire_bloque_admission(conn, demo):
     with clock.frozen_at(expires + timedelta(seconds=5)):
         ctx = admission.Context(
             conn=conn,
-            job={"kind": "tf_apply", "class": "write", "id": uuid7(), "cancel_requested_at": None,
-                 "stack_id": None, "payload": {}},
-            change={"id": uuid7(), "project_id": project_id, "current_version_no": 1,
-                    "created_by": alice["id"]},
+            job={
+                "kind": "tf_apply",
+                "class": "write",
+                "id": uuid7(),
+                "cancel_requested_at": None,
+                "stack_id": None,
+                "payload": {},
+            },
+            change={"id": uuid7(), "project_id": project_id, "current_version_no": 1, "created_by": alice["id"]},
             environment=env,
             execution=None,
             approval=None,
@@ -175,9 +186,10 @@ def test_f11_droit_expire_bloque_admission(conn, demo):
         assert verdict.field == "/authorization/temporary_grant"
     temporary.revoke(conn, admin, UUID(grant["id"]), "fin de mission")
     conn.commit()
-    actions = {a["action"] for a in conn.execute(
-        "SELECT action FROM audit_log WHERE action LIKE 'temporary_grant.%'"
-    ).fetchall()}
+    actions = {
+        a["action"]
+        for a in conn.execute("SELECT action FROM audit_log WHERE action LIKE 'temporary_grant.%'").fetchall()
+    }
     assert actions >= {"temporary_grant.create", "temporary_grant.revoke"}
 
 

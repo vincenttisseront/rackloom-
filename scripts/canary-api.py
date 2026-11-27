@@ -90,11 +90,17 @@ class Crawler:
 
 def plant(canary: str) -> None:
     """Le canari devient le mot de passe du connecteur vSphere fictif, saisi par l'administrateur."""
+    password = credentials()["admin@demo.invalid"]
     c = httpx.Client(verify=str(ROOT / ".lab" / "ca.crt"), headers={"Origin": BASE}, timeout=30)
-    r = c.post(f"{API}/auth/login", json={"email": "admin@demo.invalid",
-                                         "password": credentials()["admin@demo.invalid"]})
+    r = c.post(f"{API}/auth/login", json={"email": "admin@demo.invalid", "password": password})
     r.raise_for_status()
     c.headers["X-CSRF-Token"] = r.json()["csrf_token"]
+    # F12 : saisie d'un secret de connecteur exige une preuve fraîche (step-up).
+    up = c.post(f"{API}/auth/reauth", json={"password": password},
+                headers={"Idempotency-Key": str(uuid.uuid4())})
+    if up.status_code != 200:
+        sys.exit(f"POST /auth/reauth → {up.status_code} {up.text}")
+    c.headers["X-CSRF-Token"] = up.json()["csrf_token"]
     connector = next(x for x in c.get(f"{API}/connectors").json() if x["slug"] == "vsphere-fake")
     for method, path, body in (("PUT", f"/connectors/{connector['id']}/secrets/password", {"value": canary}),
                                ("POST", f"/connectors/{connector['id']}/test", None)):
