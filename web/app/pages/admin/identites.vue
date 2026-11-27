@@ -4,7 +4,7 @@ const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
 const campaigns = ref<any[]>([])
 const campaign = ref<any | null>(null)
-const exports = ref<any[]>([])
+const destinations = ref<any[]>([])
 const tlsAlerts = ref<any[]>([])
 const scimToken = ref<string | null>(null)
 const busy = ref(false)
@@ -13,7 +13,7 @@ async function load() {
   error.value = null
   try {
     campaigns.value = await api.get('/admin/access-reviews') as any[]
-    exports.value = await api.get('/admin/audit-exports') as any[]
+    destinations.value = await api.get('/admin/audit-exports') as any[]
     tlsAlerts.value = await api.get('/admin/tls-certificates/alerts') as any[]
     if (campaigns.value[0]) {
       campaign.value = await api.get(`/admin/access-reviews/${campaigns.value[0].id}`)
@@ -79,7 +79,7 @@ async function createExport() {
   try {
     const slug = `audit-${Date.now().toString(36).slice(-6)}`
     await api.post('/admin/audit-exports', { slug, relative_path: slug, object_lock: true })
-    exports.value = await api.get('/admin/audit-exports') as any[]
+    destinations.value = await api.get('/admin/audit-exports') as any[]
     notice.value = 'Destination d’export créée (verrouillage d’objets).'
   } catch (e) {
     error.value = errorText(e)
@@ -94,7 +94,7 @@ async function runExport(id: string) {
   try {
     const r = await api.post(`/admin/audit-exports/${id}/run`, {}) as any
     notice.value = `Export : ${r.delivered} livré(s), ${r.already_present || 0} déjà présent(s).`
-    exports.value = await api.get('/admin/audit-exports') as any[]
+    destinations.value = await api.get('/admin/audit-exports') as any[]
   } catch (e) {
     error.value = errorText(e)
   } finally {
@@ -143,7 +143,7 @@ async function runExport(id: string) {
       <h2>Copie d’audit</h2>
       <button type="button" data-testid="export-create" :disabled="busy" @click="createExport">Créer une destination verrouillée</button>
       <ul>
-        <li v-for="d in exports" :key="d.id">
+        <li v-for="d in destinations" :key="d.id">
           {{ d.slug }} — verrou {{ d.object_lock ? 'oui' : 'non' }} — curseur {{ d.last_audit_id }}
           <button type="button" :data-testid="`export-run-${d.id}`" :disabled="busy" @click="runExport(d.id)">Exporter</button>
         </li>

@@ -40,7 +40,11 @@ test('F41–F45 — identités et audit : SCIM, revue, export', async ({ page })
   })
   expect(patch.status(), await patch.text()).toBe(200)
 
-  await page.goto('/admin/identites')
+  // Hub /admin (évite le 404 Nuxt sur la section « Administration »).
+  await page.goto('/admin')
+  await expect(page.getByRole('heading', { level: 1, name: /^Administration$/ })).toBeVisible()
+  await expect(page.getByTestId('admin-hub')).toBeVisible()
+  await page.getByTestId('admin-link-identites').click()
   await expect(page.getByRole('heading', { level: 1, name: /Identités et audit/ })).toBeVisible()
   await expect(page.getByTestId('scim-panel')).toBeVisible()
   await expect(page.getByTestId('review-panel')).toBeVisible()

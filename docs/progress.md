@@ -383,6 +383,7 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - **F44** : stockage local à verrouillage d'objets ; `dedupe_key` = hash d'audit ; reprise sans doublon.
 - **F45** : scan TLS des endpoints approuvés ; alerte d'expiration ; aucune clé privée.
 - Preuves : `test_f41_f45_identity_audit.py` ; e2e `100-f41-f45-identites.spec.ts` ; page `/admin/identites`. Annuaire / stockage / vCenter réels : non (D2).
+- Correctif UX : hub `/admin` (`pages/admin/index.vue`) + lien nav « Administration » — avant, `/admin` tombait en 404 Nuxt (main et branche) alors que Vincent signalait la section indisponible.
 
 ## Prochain jalon
 
