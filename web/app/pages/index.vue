@@ -6,6 +6,7 @@ const status = ref<any>(null)
 const recent = ref<Record<string, any[]>>({})
 const inbox = ref<any>(null)
 const examples = ref<any>(null)
+const notifications = ref<any>(null)
 const error = ref<string | null>(null)
 const isAdmin = computed(() => hasRole(session.value, 'platform_admin'))
 const isAuthor = computed(() => hasRole(session.value, 'template_author'))
@@ -15,6 +16,11 @@ onMounted(async () => {
   try {
     inbox.value = await api.get('/inbox')
     examples.value = await api.get('/examples')
+    try {
+      notifications.value = await api.get('/notifications?unread=true')
+    } catch {
+      notifications.value = null
+    }
     projects.value = await api.get('/projects')
     for (const p of projects.value) {
       recent.value[p.slug] = (await api.get(`/projects/${p.slug}/changes`)).slice(0, 5)
@@ -37,6 +43,22 @@ onMounted(async () => {
     <div v-if="error" class="banner bad" role="alert">{{ error }}</div>
 
     <InboxBox :inbox="inbox" />
+
+    <section
+      v-if="notifications?.items?.length"
+      class="card"
+      aria-labelledby="notif-title"
+      data-testid="notifications-panel"
+    >
+      <h2 id="notif-title">Notifications</h2>
+      <p class="small muted">Liens vers les pages authentifiées de Rackloom — aucune approbation depuis une notification.</p>
+      <ul class="small">
+        <li v-for="n in notifications.items" :key="n.id" data-testid="notification-item">
+          <NuxtLink :to="n.href">{{ n.title }}</NuxtLink>
+          <span class="muted"> — {{ n.body }}</span>
+        </li>
+      </ul>
+    </section>
 
     <RequestExamples
       :examples="examples?.examples || []"

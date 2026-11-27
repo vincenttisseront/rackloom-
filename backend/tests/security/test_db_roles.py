@@ -81,6 +81,11 @@ ALLOWED = {
         "SELECT slug FROM compliance_profiles",
         "SELECT status FROM compliance_scans",
         "SELECT rule_id FROM compliance_findings",
+        "SELECT slug FROM itsm_adapters",
+        "SELECT external_key FROM itsm_tickets",
+        "SELECT dedupe_key FROM itsm_deliveries",
+        "SELECT outcome FROM itsm_inbound_events",
+        "SELECT href FROM notifications",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -152,6 +157,11 @@ ALLOWED = {
         "SELECT slug FROM compliance_profiles",
         "SELECT status FROM compliance_scans",
         "SELECT rule_id FROM compliance_findings",
+        "SELECT slug FROM itsm_adapters",
+        "SELECT external_key FROM itsm_tickets",
+        "SELECT dedupe_key FROM itsm_deliveries",
+        "SELECT outcome FROM itsm_inbound_events",
+        "SELECT href FROM notifications",
     ],
 }
 

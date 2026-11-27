@@ -1875,6 +1875,55 @@
         ]
       }
     },
+    "/api/v1/admin/itsm/adapters": {
+      "get": {
+        "operationId": "list_adapters_api_v1_admin_itsm_adapters_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Adapters Api V1 Admin Itsm Adapters Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Adapters",
+        "tags": [
+          "itsm"
+        ]
+      }
+    },
+    "/api/v1/admin/itsm/deliver": {
+      "post": {
+        "operationId": "flush_deliveries_api_v1_admin_itsm_deliver_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Flush Deliveries Api V1 Admin Itsm Deliver Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Flush Deliveries",
+        "tags": [
+          "itsm"
+        ]
+      }
+    },
     "/api/v1/admin/offline-bundles": {
       "get": {
         "description": "F17 : lots inspectés / importés pour sites déconnectés.",
@@ -4250,6 +4299,107 @@
         "summary": "History",
         "tags": [
           "demandes"
+        ]
+      }
+    },
+    "/api/v1/changes/{change_id}/itsm": {
+      "get": {
+        "operationId": "change_itsm_api_v1_changes__change_id__itsm_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Change Itsm Api V1 Changes  Change Id  Itsm Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Itsm",
+        "tags": [
+          "itsm"
+        ]
+      }
+    },
+    "/api/v1/changes/{change_id}/itsm/sync": {
+      "post": {
+        "operationId": "sync_itsm_api_v1_changes__change_id__itsm_sync_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Sync Itsm Api V1 Changes  Change Id  Itsm Sync Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Itsm",
+        "tags": [
+          "itsm"
         ]
       }
     },
@@ -7532,6 +7682,106 @@
         ]
       }
     },
+    "/api/v1/itsm/webhooks/{adapter_slug}": {
+      "post": {
+        "operationId": "inbound_webhook_api_v1_itsm_webhooks__adapter_slug__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "adapter_slug",
+            "required": true,
+            "schema": {
+              "title": "Adapter Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Inbound Webhook Api V1 Itsm Webhooks  Adapter Slug  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inbound Webhook",
+        "tags": [
+          "itsm-webhooks"
+        ]
+      }
+    },
+    "/api/v1/itsm/webhooks/{adapter_slug}/demo-token": {
+      "get": {
+        "description": "Indique le jeton de démo uniquement en profil demo (jamais en production).",
+        "operationId": "demo_token_hint_api_v1_itsm_webhooks__adapter_slug__demo_token_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "adapter_slug",
+            "required": true,
+            "schema": {
+              "title": "Adapter Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Demo Token Hint Api V1 Itsm Webhooks  Adapter Slug  Demo Token Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Token Hint",
+        "tags": [
+          "itsm-webhooks"
+        ]
+      }
+    },
     "/api/v1/jobs/{job_id}": {
       "get": {
         "operationId": "get_job_api_v1_jobs__job_id__get",
@@ -7619,6 +7869,131 @@
         "summary": "Cancel Job",
         "tags": [
           "suivi"
+        ]
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "operationId": "list_notifications_api_v1_notifications_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Notifications Api V1 Notifications Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Notifications",
+        "tags": [
+          "itsm"
+        ]
+      }
+    },
+    "/api/v1/notifications/{notification_id}/read": {
+      "post": {
+        "operationId": "read_notification_api_v1_notifications__notification_id__read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notification_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Notification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Notification Api V1 Notifications  Notification Id  Read Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Notification",
+        "tags": [
+          "itsm"
+        ]
+      }
+    },
+    "/api/v1/notifications/{notification_id}/respond": {
+      "post": {
+        "description": "Canal explicite : toute tentative d'approbation via notification est refusée.",
+        "operationId": "respond_notification_api_v1_notifications__notification_id__respond_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notification_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Notification Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Respond Notification Api V1 Notifications  Notification Id  Respond Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Respond Notification",
+        "tags": [
+          "itsm"
         ]
       }
     },

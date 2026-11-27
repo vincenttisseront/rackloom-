@@ -307,6 +307,9 @@ def change_view(conn: Conn, principal: Principal, change: dict[str, Any]) -> dic
                                  "WHERE change_id = %s AND status = 'pending' ORDER BY requested_at DESC LIMIT 1",
                                  (change["id"],)).fetchone()
     creator = conn.execute("SELECT display_name FROM users WHERE id = %s", (change["created_by"],)).fetchone()
+    from .. import itsm as itsm_mod
+
+    itsm_tickets = itsm_mod.list_tickets_for_change(conn, change["id"])
     return {
         **change_summary(conn, change),
         "project": {"id": str(project["id"]), "slug": project["slug"], "name": project["name"]},
@@ -330,6 +333,10 @@ def change_view(conn: Conn, principal: Principal, change: dict[str, Any]) -> dic
                           "requested_at": iso(pending_retry["requested_at"])} if pending_retry else None,
         "environment_freeze": freeze_view(freezes.active(conn, change["environment_id"]))
         if change["environment_id"] else None,
+        "itsm": {
+            "tickets": itsm_tickets,
+            "simulated": True,
+        },
         "allowed_actions": workflow.available_actions(conn, principal, "change", change),
     }
 
