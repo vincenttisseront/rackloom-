@@ -195,6 +195,10 @@ class Worker:
                 with transaction() as conn:
                     conn.execute("UPDATE workers SET heartbeat_at = now() WHERE id = %s", (self.worker_id,))
                     self._expire_plans(conn)
+                    # F06 : rappels / expiration des baux (signalement + plan de retrait, sans destroy).
+                    from .. import leases
+
+                    leases.sweep(conn)
             except Exception:  # noqa: BLE001
                 log.exception("faucheuse en erreur")
 

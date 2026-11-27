@@ -60,6 +60,59 @@ def get_service_card(deployment_id: UUID, request: Request) -> dict[str, Any]:
         return service_card.for_principal(u.conn, u.p, deployment_id)
 
 
+@router.get("/deployments/{deployment_id}/lease")
+def get_deployment_lease(deployment_id: UUID, request: Request) -> dict[str, Any]:
+    """F06 : bail du déploiement (durée de vie, propriétaire, état)."""
+    from .. import leases
+
+    with unit_of_work(request) as u:
+        lease = leases.for_deployment(u.conn, u.p, deployment_id)
+        if lease is None:
+            raise not_found("bail")
+        return lease
+
+
+@router.post("/deployments/{deployment_id}/lease/renew")
+def renew_deployment_lease(
+    deployment_id: UUID, request: Request, body: dict[str, Any] = Body(default={})
+) -> dict[str, Any]:
+    """F06 : renouveler un bail (aucune écriture fournisseur)."""
+    from .. import leases
+
+    _only(body, {"expires_on", "days", "reason"})
+    with unit_of_work(request, write=True) as u:
+
+        def act() -> dict[str, Any]:
+            return leases.renew(u.conn, u.p, deployment_id, body, request_id=u.request_id)
+
+        return idempotent(u, request, body, act)
+
+
+@router.post("/deployments/{deployment_id}/lease/propose-retirement")
+def propose_lease_retirement(
+    deployment_id: UUID, request: Request, body: dict[str, Any] = Body(default={})
+) -> dict[str, Any]:
+    """F06 : proposer un plan de retrait (labo intact jusqu'à approbation + exécution)."""
+    from .. import leases
+
+    _only(body, {"reason"})
+    with unit_of_work(request, write=True) as u:
+
+        def act() -> dict[str, Any]:
+            reason = str(body.get("reason") or "Plan de retrait demandé par l'opérateur")
+            result = leases.propose_retirement(
+                u.conn, u.p, deployment_id, reason=reason, request_id=u.request_id, auto=False
+            )
+            change_id = result.get("change_id")
+            change = service.get_change(u.conn, u.p, UUID(change_id)) if change_id else None
+            return {
+                **{k: v for k, v in result.items() if k != "change"},
+                "change": change_view(u.conn, u.p, change) if change else None,
+            }
+
+        return idempotent(u, request, body, act)
+
+
 @router.post("/deployments/{deployment_id}/actions/{action_id}")
 def start_service_action(
     deployment_id: UUID, action_id: str, request: Request, body: dict[str, Any] = Body(default={})

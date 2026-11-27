@@ -103,6 +103,48 @@ async function onRetryAccess(id: string) {
     busy.value = false
   }
 }
+
+async function onRenewLease() {
+  busy.value = true
+  error.value = null
+  notice.value = null
+  try {
+    const res = await api.post(`/deployments/${route.params.id}/lease/renew`, {
+      days: 14,
+      reason: 'Renouvellement depuis la fiche service',
+    })
+    notice.value = `Bail renouvelé jusqu'au ${res.expires_on}`
+    await load()
+  } catch (e) {
+    error.value = errorText(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function onProposeRetirement() {
+  busy.value = true
+  error.value = null
+  notice.value = null
+  try {
+    const res = await api.post(`/deployments/${route.params.id}/lease/propose-retirement`, {
+      reason: 'Retrait demandé depuis la fiche service',
+    })
+    const changeId = res.change?.id || res.change_id
+    if (changeId) {
+      await router.push(
+        `/projets/${deployment.value?.service_card?.project?.slug || 'vitrine'}/nouvelle?change=${changeId}&etape=2`,
+      )
+      return
+    }
+    notice.value = res.notice || 'Plan de retrait proposé'
+    await load()
+  } catch (e) {
+    error.value = errorText(e)
+  } finally {
+    busy.value = false
+  }
+}
 </script>
 
 <template>
@@ -129,6 +171,8 @@ async function onRetryAccess(id: string) {
       @approve-access="onApproveAccess"
       @reject-access="onRejectAccess"
       @retry-access="onRetryAccess"
+      @renew-lease="onRenewLease"
+      @propose-retirement="onProposeRetirement"
     />
     <section
       v-if="deployment?.composition"

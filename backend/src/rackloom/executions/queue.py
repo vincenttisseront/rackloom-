@@ -28,6 +28,7 @@ JOB_CLASS = {
     "drift_scan": "read",
     "vm_restore": "write",
     "service_restart": "write",
+    "lease_retire": "write",
 }
 
 JOB_LABELS = {
@@ -43,6 +44,7 @@ JOB_LABELS = {
     "drift_scan": "Détection de dérive (lecture seule)",
     "vm_restore": "Restauration VM (réseau isolé)",
     "service_restart": "Redémarrage de service (simulé)",
+    "lease_retire": "Retrait de labo (simulé)",
 }
 
 
