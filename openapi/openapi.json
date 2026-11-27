@@ -3885,6 +3885,111 @@
         ]
       }
     },
+    "/api/v1/changes/{change_id}/diagnostic-packs": {
+      "get": {
+        "description": "F22 : dossiers de diagnostic déjà générés pour cette demande.",
+        "operationId": "list_diagnostic_packs_api_v1_changes__change_id__diagnostic_packs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Diagnostic Packs Api V1 Changes  Change Id  Diagnostic Packs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Diagnostic Packs",
+        "tags": [
+          "demandes"
+        ]
+      },
+      "post": {
+        "description": "F22 : génère un export filtré (classe B) + résumé ; droits revérifiés.",
+        "operationId": "create_diagnostic_pack_api_v1_changes__change_id__diagnostic_packs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Change Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Diagnostic Pack Api V1 Changes  Change Id  Diagnostic Packs Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Diagnostic Pack",
+        "tags": [
+          "demandes"
+        ]
+      }
+    },
     "/api/v1/changes/{change_id}/duplicate": {
       "post": {
         "operationId": "duplicate_api_v1_changes__change_id__duplicate_post",
@@ -6367,6 +6472,94 @@
           }
         },
         "summary": "Get Service Card",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/diagnostic-packs/{pack_id}": {
+      "get": {
+        "description": "F22 : métadonnées d'un dossier ; hors périmètre → 404.",
+        "operationId": "get_diagnostic_pack_api_v1_diagnostic_packs__pack_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pack_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pack Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Diagnostic Pack Api V1 Diagnostic Packs  Pack Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Diagnostic Pack",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/diagnostic-packs/{pack_id}/download": {
+      "get": {
+        "description": "F22 : téléchargement de l'export filtré ; droits revérifiés ; hors projet → 404.",
+        "operationId": "download_diagnostic_pack_api_v1_diagnostic_packs__pack_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pack_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pack Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Diagnostic Pack",
         "tags": [
           "ressources"
         ]

@@ -1398,6 +1398,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/changes/{change_id}/diagnostic-packs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Diagnostic Packs
+         * @description F22 : dossiers de diagnostic déjà générés pour cette demande.
+         */
+        get: operations["list_diagnostic_packs_api_v1_changes__change_id__diagnostic_packs_get"];
+        put?: never;
+        /**
+         * Create Diagnostic Pack
+         * @description F22 : génère un export filtré (classe B) + résumé ; droits revérifiés.
+         */
+        post: operations["create_diagnostic_pack_api_v1_changes__change_id__diagnostic_packs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/changes/{change_id}/duplicate": {
         parameters: {
             query?: never;
@@ -2247,6 +2271,46 @@ export interface paths {
          * @description F57 : fiche courte « Votre service est prêt » (périmètre projet, sorties allowlist).
          */
         get: operations["get_service_card_api_v1_deployments__deployment_id__service_card_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/diagnostic-packs/{pack_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Diagnostic Pack
+         * @description F22 : métadonnées d'un dossier ; hors périmètre → 404.
+         */
+        get: operations["get_diagnostic_pack_api_v1_diagnostic_packs__pack_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/diagnostic-packs/{pack_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Diagnostic Pack
+         * @description F22 : téléchargement de l'export filtré ; droits revérifiés ; hors projet → 404.
+         */
+        get: operations["download_diagnostic_pack_api_v1_diagnostic_packs__pack_id__download_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6103,6 +6167,78 @@ export interface operations {
             };
         };
     };
+    list_diagnostic_packs_api_v1_changes__change_id__diagnostic_packs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_diagnostic_pack_api_v1_changes__change_id__diagnostic_packs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                change_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     duplicate_api_v1_changes__change_id__duplicate_post: {
         parameters: {
             query?: never;
@@ -7804,6 +7940,70 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_diagnostic_pack_api_v1_diagnostic_packs__pack_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_diagnostic_pack_api_v1_diagnostic_packs__pack_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

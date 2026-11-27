@@ -279,3 +279,43 @@ def restore_deployment(deployment_id: UUID, request: Request,
 
         return idempotent(u, request, body, act)
 
+
+@router.get("/changes/{change_id}/diagnostic-packs")
+def list_diagnostic_packs(change_id: UUID, request: Request) -> list[dict[str, Any]]:
+    """F22 : dossiers de diagnostic déjà générés pour cette demande."""
+    from .. import diagnostics
+
+    with unit_of_work(request) as u:
+        return diagnostics.list_packs(u.conn, u.p, change_id)
+
+
+@router.post("/changes/{change_id}/diagnostic-packs")
+def create_diagnostic_pack(
+    change_id: UUID, request: Request, body: dict[str, Any] = Body(default={})
+) -> dict[str, Any]:
+    """F22 : génère un export filtré (classe B) + résumé ; droits revérifiés."""
+    from .. import diagnostics
+
+    _only(body, {"period_start", "period_end", "symptoms", "include_summary"})
+    symptoms = body.get("symptoms")
+    if symptoms is not None and not isinstance(symptoms, list):
+        raise ApiError(422, "invalid_input", "symptoms doit être une liste de textes", field="/symptoms")
+    include_summary = body.get("include_summary", True)
+    if not isinstance(include_summary, bool):
+        raise ApiError(422, "invalid_input", "include_summary booléen attendu", field="/include_summary")
+    with unit_of_work(request, write=True) as u:
+
+        def act() -> dict[str, Any]:
+            return diagnostics.create_pack(
+                u.conn,
+                u.p,
+                change_id,
+                period_start=body.get("period_start"),
+                period_end=body.get("period_end"),
+                symptoms=[str(s) for s in (symptoms or [])],
+                include_summary=include_summary,
+                request_id=u.request_id,
+            )
+
+        return idempotent(u, request, body, act)
+

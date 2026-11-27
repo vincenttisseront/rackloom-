@@ -77,6 +77,7 @@ ALLOWED = {
         "SELECT advisory_id FROM software_advisories",
         "SELECT end_of_support FROM software_eol_products",
         "SELECT content_digest FROM software_inventory_exports",
+        "SELECT digest FROM diagnostic_packs",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -144,6 +145,7 @@ ALLOWED = {
         "SELECT advisory_id FROM software_advisories",
         "SELECT end_of_support FROM software_eol_products",
         "SELECT content_digest FROM software_inventory_exports",
+        "SELECT digest FROM diagnostic_packs",
     ],
 }
 
@@ -175,6 +177,8 @@ DENIED = {
         # F26 : le worker lit les exercices ; seule l'API (ou la CLI via migrator/owner) écrit.
         "INSERT INTO restore_exercises (id) VALUES (gen_random_uuid())",
         "UPDATE restore_exercises SET status = 'failed'",
+        # F22 : le worker lit les dossiers ; seule l'API génère / télécharge.
+        "INSERT INTO diagnostic_packs (id) VALUES (gen_random_uuid())",
     ],
 }
 
