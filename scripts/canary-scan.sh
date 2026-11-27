@@ -31,7 +31,7 @@ scan "journaux Compose (appliance et nœuds)" "$TMP/logs"
 "${COMPOSE[@]}" exec -T postgres pg_dump -U rackloom_owner -d rackloom --data-only > "$TMP/db" 2>/dev/null
 scan "base de données (toutes les tables, données seules)" "$TMP/db"
 
-for vol in workspaces tfstate demo_infra artifacts lab_keys; do
+for vol in workspaces tfstate demo_infra artifacts audit_export lab_keys; do
   docker run --rm -i --network none --entrypoint sh -v "rackloom_$vol:/v:ro" rackloom/backend:dev \
     -c 'find /v -type f -exec cat {} + 2>/dev/null; true' > "$TMP/vol" 2>/dev/null </dev/null
   scan "volume rackloom_$vol (brut)" "$TMP/vol"

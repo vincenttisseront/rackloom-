@@ -76,6 +76,7 @@ async function mintScim() {
 async function createExport() {
   busy.value = true
   error.value = null
+  notice.value = null
   try {
     const slug = `audit-${Date.now().toString(36).slice(-6)}`
     await api.post('/admin/audit-exports', { slug, relative_path: slug, object_lock: true })
@@ -110,7 +111,7 @@ async function runExport(id: string) {
       SCIM (arrivées/départs), revue périodique des accès, copie d’audit hors appliance et alertes certificats TLS.
       Aucun secret ni clé privée n’est affiché.
     </p>
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
+    <p v-if="error" class="error" role="alert" data-testid="error">{{ error }}</p>
     <p v-if="notice" class="notice" data-testid="notice">{{ notice }}</p>
 
     <section data-testid="scim-panel">

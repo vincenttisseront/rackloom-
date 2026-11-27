@@ -60,8 +60,15 @@ def create_destination(
         (dest_id,),
     )
     root = _root(rel)
-    root.mkdir(parents=True, exist_ok=True)
-    (root / ".object-lock").write_text("locked\n" if object_lock else "unlocked\n", encoding="utf-8")
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / ".object-lock").write_text("locked\n" if object_lock else "unlocked\n", encoding="utf-8")
+    except OSError as exc:
+        raise ApiError(
+            503,
+            "storage_unavailable",
+            "stockage d'export d'audit indisponible (volume non monté ou non inscriptible)",
+        ) from exc
     audit_record(
         conn,
         actor_type="user",

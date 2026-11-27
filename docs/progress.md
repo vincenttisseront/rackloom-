@@ -384,6 +384,7 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - **F45** : scan TLS des endpoints approuvés ; alerte d'expiration ; aucune clé privée.
 - Preuves : `test_f41_f45_identity_audit.py` ; e2e `100-f41-f45-identites.spec.ts` ; page `/admin/identites`. Annuaire / stockage / vCenter réels : non (D2).
 - Correctif UX : hub `/admin` (`pages/admin/index.vue`) + lien nav « Administration » — avant, `/admin` tombait en 404 Nuxt (main et branche) alors que Vincent signalait la section indisponible.
+- Correctif e2e F44 : volume Compose `audit-export` monté en écriture sur l’API (conteneur `read_only`) — sans lui, `POST /admin/audit-exports` échouait en silence côté UI.
 
 ## Prochain jalon
 
