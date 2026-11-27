@@ -76,17 +76,22 @@ test('F27 — gel calendaire : job en file bloqué à l\'admission, lecture disp
         `UPDATE jobs SET run_after = now() - interval '1 second' WHERE change_id = '${planned.id}' AND kind = 'tf_apply' AND state = 'queued';`,
       )
     } finally {
-      compose('start', 'worker')
+      // --wait : worker prêt avant le poll d'admission (évite 180s sur « Approuvée », comme F37).
+      compose('up', '-d', '--wait', 'worker')
     }
 
+    // Preuve serveur d'abord (indépendante du SSE UI), puis badge.
+    await expect.poll(async () => {
+      const jobs = (await alice.call('GET', `/changes/${planned.id}/jobs`)).body
+      const job = jobs.find((j: any) => j.kind === 'tf_apply')
+      return job ? [job.state, job.blocked_reason, job.dispatched_at] : null
+    }, { timeout: 120_000, intervals: [1000] }).toEqual(['blocked', 'calendar_frozen', null])
+
     await page.goto(`/demandes/${planned.id}`)
-    await waitState(page, "Bloquée à l'admission")
+    await waitState(page, "Bloquée à l'admission", 60_000)
     const apply = page.getByTestId('job').filter({ hasText: 'Application du plan' })
-    await expect(apply).toContainText('Bloqué')
+    await expect(apply).toContainText('Bloqué', { timeout: 30_000 })
     await expect(page.getByTestId('timeline')).toContainText(/R090|période de gel|calendrier/i)
-    const jobs = (await alice.call('GET', `/changes/${planned.id}/jobs`)).body
-    const job = jobs.find((j: any) => j.kind === 'tf_apply')
-    expect([job.state, job.blocked_reason, job.dispatched_at]).toEqual(['blocked', 'calendar_frozen', null])
     await beat(page)
 
     const admin = await session('admin')
