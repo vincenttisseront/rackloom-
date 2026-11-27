@@ -15,8 +15,7 @@ from ..errors import ApiError
 from ..identity.authz import Principal
 from . import validate_need
 
-# Critères affichés seulement si une source vérifiée existe (F05/F29/F32 pas encore livrés).
-VERIFIED_CRITERIA: frozenset[str] = frozenset()  # coût, capacité, dispo : omis jusqu'à données vérifiées
+# Critères chiffrés seulement si une source vérifiée existe (F29 tarifs, F05 capacité, …).
 MAX_OPTIONS = 3
 
 
@@ -134,12 +133,63 @@ def _tier_options(
     return out
 
 
-def _attach_criteria(option: dict[str, Any]) -> dict[str, Any]:
+def _cost_for_tier(
+    conn: Conn,
+    project: dict[str, Any],
+    template: str,
+    environment_slug: str,
+    tier: str,
+) -> dict[str, Any] | None:
+    """Coût estimé F29 si des tarifs existent ; sinon None (critère omis)."""
+    from .. import consumption
+
+    env_row = next(
+        (e for e in projects.environments(conn, project["id"]) if e["slug"] == environment_slug),
+        None,
+    )
+    if env_row is None:
+        return None
+    tpl = registry.latest_promoted(conn, template, env_row["kind"]) or registry.latest_published(conn, template)
+    if tpl is None:
+        return None
+    params = (tpl["contract"].get("environments") or {}).get(env_row["kind"]) or {}
+    sizes = (params.get("size_tiers") or {}).get(tier)
+    if not isinstance(sizes, dict):
+        return None
+    billing = consumption.estimate_cost_for_demand(
+        conn,
+        project["id"],
+        [{"vcpu": sizes.get("vcpu"), "memory_mb": sizes.get("memory_mb"), "disk_gb": sizes.get("disk_gb")}],
+    )
+    if billing is None:
+        return None
+    return {
+        "total_minor": billing["total_minor"],
+        "currency": billing["currency"],
+        "period": billing["period"],
+        "kind": "estimation",
+        "basis": "allocation",
+    }
+
+
+def _attach_criteria(option: dict[str, Any], *, cost: dict[str, Any] | None = None) -> dict[str, Any]:
     """N'ajoute que des critères avec données vérifiées ; le reste est omis (U9)."""
     criteria: dict[str, Any] = {}
-    # Pas de F05/F29/F32 : aucun critère chiffré inventé.
-    omitted = ["cost", "capacity", "availability", "duration"]
+    omitted = ["capacity", "availability", "duration"]
+    if cost is not None:
+        criteria["cost"] = cost
+    else:
+        omitted = ["cost", *omitted]
     return {**option, "criteria": criteria, "omitted_criteria": omitted}
+
+
+def _omitted_union(options: list[dict[str, Any]]) -> list[str]:
+    base = ["cost", "capacity", "availability", "duration"]
+    present: set[str] = set()
+    for opt in options:
+        for key in opt.get("criteria") or {}:
+            present.add(key)
+    return [c for c in base if c not in present]
 
 
 def compare(
@@ -153,8 +203,10 @@ def compare(
     template = (raw.get("service") or {}).get("template") if isinstance(raw.get("service"), dict) else None
     options: list[dict[str, Any]] = []
     dimension: str | None = None
+    env_for_cost: str | None = None
 
     # Ordre : service (si plusieurs profils) → environnement → niveau.
+    need: dict[str, Any]
     if not isinstance(template, str) or not template:
         options = _service_options(conn, principal, project)
         dimension = "service"
@@ -165,14 +217,15 @@ def compare(
         env = need.get("environment")
         confirm = bool(need.get("confirm_production"))
         inputs = need.get("inputs") or {}
-        if template not in registry.granted_services(conn, project["id"]):
+        if not isinstance(template, str) or template not in registry.granted_services(conn, project["id"]):
             raise ApiError(404, "not_found", "service introuvable")
-        if not env:
+        if not isinstance(env, str) or not env:
             options = _env_options(conn, principal, project, template, confirm_production=confirm)
             dimension = "environment"
         elif "size_tier" not in inputs:
             options = _tier_options(conn, project, template, env)
             dimension = "size_tier"
+            env_for_cost = env
         else:
             return {
                 "mode": "auto",
@@ -183,7 +236,19 @@ def compare(
                 "notice": "Les choix métier sont déjà fixés ; aucune comparaison.",
             }
 
-    options = [_attach_criteria(o) for o in options[:MAX_OPTIONS]]
+    enriched: list[dict[str, Any]] = []
+    for opt in options[:MAX_OPTIONS]:
+        cost = None
+        if dimension == "size_tier" and env_for_cost and template:
+            tier = next(
+                (p["value"] for p in opt.get("need_patch") or [] if p.get("path") == "/inputs/size_tier"),
+                None,
+            )
+            if isinstance(tier, str):
+                cost = _cost_for_tier(conn, project, template, env_for_cost, tier)
+        enriched.append(_attach_criteria(opt, cost=cost))
+    options = enriched
+    omitted = _omitted_union(options)
 
     if len(options) <= 1:
         chosen = options[0] if options else None
@@ -197,7 +262,7 @@ def compare(
             }
             if chosen
             else None,
-            "omitted_criteria": ["cost", "capacity", "availability", "duration"],
+            "omitted_criteria": omitted,
             "notice": "Une seule option valable : pas de comparateur affiché.",
         }
 
@@ -221,14 +286,17 @@ def compare(
             "Aucun coût ni capacité non vérifié n'est affiché."
         )
 
+    notice = "Comparaison limitée aux options autorisées."
+    if "cost" in omitted:
+        notice += " Capacité, disponibilité et coût omis faute de données vérifiées."
+    else:
+        notice += " Coût estimé à partir des tarifs déclarés (F29) ; capacité et disponibilité omises."
+
     return {
         "mode": "compare",
         "dimension": dimension,
         "options": options,
         "recommendation": {"key": preferred["key"], "rationale": rationale},
-        "omitted_criteria": ["cost", "capacity", "availability", "duration"],
-        "notice": (
-            "Comparaison limitée aux options autorisées. "
-            "Capacité, disponibilité et coût omis faute de données vérifiées."
-        ),
+        "omitted_criteria": omitted,
+        "notice": notice,
     }

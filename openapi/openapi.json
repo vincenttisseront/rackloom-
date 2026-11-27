@@ -7657,6 +7657,51 @@
         ]
       }
     },
+    "/api/v1/projects/{project}/consumption": {
+      "get": {
+        "description": "F29 : allocation / mesure / estimation par projet ; aucun montant sans tarif.",
+        "operationId": "project_consumption_api_v1_projects__project__consumption_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Consumption Api V1 Projects  Project  Consumption Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Consumption",
+        "tags": [
+          "projets"
+        ]
+      }
+    },
     "/api/v1/projects/{project}/conversations": {
       "post": {
         "operationId": "create_conversation_api_v1_projects__project__conversations_post",
