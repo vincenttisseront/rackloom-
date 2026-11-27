@@ -24,6 +24,7 @@ from rackloom.api import (
     routes_chat,
     routes_environments,
     routes_follow,
+    routes_identity_audit,
     routes_projects,
     routes_resources,
     routes_studio,
@@ -41,6 +42,7 @@ MODULES = (
     routes_resources,
     routes_chat,
     routes_admin,
+    routes_identity_audit,
     routes_studio,
 )
 

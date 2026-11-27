@@ -32,10 +32,12 @@ async function logout() {
         <nav v-if="session" aria-label="Navigation principale">
           <NuxtLink to="/">Accueil</NuxtLink>
           <NuxtLink v-if="isAuthor || isPublisher || isAdmin" to="/atelier">Atelier</NuxtLink>
+          <NuxtLink v-if="isPublisher || canConnectors || isAdmin" to="/admin">Administration</NuxtLink>
           <NuxtLink v-if="isPublisher" to="/admin/templates">Administration › Templates</NuxtLink>
           <NuxtLink v-if="canConnectors" to="/admin/connecteurs">Administration › Connecteurs</NuxtLink>
           <NuxtLink v-if="isAdmin" to="/admin/environnements">Administration › Environnements</NuxtLink>
           <NuxtLink v-if="isAdmin" to="/admin/gouvernance">Administration › Gouvernance</NuxtLink>
+          <NuxtLink v-if="isAdmin" to="/admin/identites">Administration › Identités</NuxtLink>
           <NuxtLink v-if="isAuditor || isAdmin" to="/audit">Audit</NuxtLink>
         </nav>
         <div v-if="session" class="who">

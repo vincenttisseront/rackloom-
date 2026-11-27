@@ -120,6 +120,15 @@ def requester_rights(ctx: Context) -> Verdict:
         (ctx.change["id"], ctx.change["current_version_no"]),
     ).fetchone()
     author = version["created_by"] if version else ctx.change["created_by"]
+    # F41 : identité désactivée (SCIM) — motif distinct de la simple révocation de rôle.
+    user = ctx.conn.execute("SELECT status FROM users WHERE id = %s", (author,)).fetchone()
+    if user is not None and user["status"] != "active":
+        return Verdict(
+            False,
+            "le demandeur est désactivé (annuaire / SCIM)",
+            "identity_disabled",
+            field="/authorization/identity",
+        )
     return _revoked_or_expired(
         ctx,
         author,
