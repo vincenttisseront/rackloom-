@@ -396,7 +396,7 @@ Ils sont présents au lot 1 parce qu'ils coûtent peu et évitent une migration 
 | Contrat de connecteur à capacités et suite de contrat | oui (connecteurs du lot 1) | F30 |
 | Adaptateurs de modèle interchangeables, constructeur de contexte filtré, scénarios fictifs rejouables, banc d'évaluation (`chat_eval_reports`, prompt `rackloom.chat-prompt/v1`), routage des modèles, aperçu de contexte, runbooks | oui | F46, F47, F48, F49 |
 | Date de fin capturée | appliquée : bail (`deployment_leases`), rappels, renouvellement, plan de retrait (exécution locale simulée) | F06 |
-| Interrupteur global de suspension des envois (`dispatch_paused`) | non | F26, maintenance |
+| Interrupteur global de suspension des envois (`dispatch_paused`) | oui (`platform_settings`, file + exercices F26) | F26, maintenance |
 | État du service distinct de l'état des jobs, preuves et heure par contrôle de santé (§8) | oui | F57, F58 |
 | Actions disponibles calculées côté serveur (`allowed_actions`) et revérifiées à l'appel | oui | F55, F58, F51 |
 | Collecte en lecture seule par playbook approuvé, identité sans élévation, observations filtrées par type | oui | F60, F24 |

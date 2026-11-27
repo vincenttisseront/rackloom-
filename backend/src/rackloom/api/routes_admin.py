@@ -9,13 +9,14 @@ import base64
 import binascii
 import os
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Request
 from pydantic import ValidationError
 
-from .. import audit, factory, inventory, offline_bundles, projects, registry, secrets, studio
+from .. import audit, factory, inventory, offline_bundles, projects, recovery, registry, secrets, studio
 from ..config import get_settings
 from ..connectors import MATRIX, circuit, vsphere
 from ..db import Conn, Jsonb, get_pool
@@ -946,6 +947,82 @@ def build_demo_offline_bundle(request: Request, body: dict[str, Any] | None = Bo
         }
 
 
+@router.get("/admin/dispatch")
+def get_dispatch(request: Request) -> dict[str, Any]:
+    """F26 : état de l'interrupteur global de suspension des envois."""
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        return recovery.status(u.conn)
+
+
+@router.post("/admin/dispatch/pause")
+def pause_dispatch(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F26 : suspend les nouvelles écritures vers le parc (maintenance / avant reprise)."""
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        _only(body, {"reason", "source"})
+        return recovery.pause(
+            u.conn,
+            reason=body.get("reason"),
+            actor=str(u.p.user_id),
+            source=str(body.get("source") or "maintenance"),
+        )
+
+
+@router.post("/admin/dispatch/resume")
+def resume_dispatch(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F26 : reprend les envois après réconciliation (action humaine explicite)."""
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        _only(body, {"reason"})
+        return recovery.resume(u.conn, reason=body.get("reason"), actor=str(u.p.user_id))
+
+
+@router.get("/admin/restore-exercises")
+def list_restore_exercises(request: Request, limit: int = 50) -> dict[str, Any]:
+    """F26 : historiques des exercices de restauration isolés."""
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        return {"exercises": recovery.list_exercises(u.conn, limit=limit)}
+
+
+@router.get("/admin/restore-exercises/{exercise_id}")
+def get_restore_exercise(exercise_id: UUID, request: Request) -> dict[str, Any]:
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        return recovery.get_exercise(u.conn, exercise_id)
+
+
+@router.post("/admin/restore-exercises")
+def start_restore_exercise(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F26 : lance un exercice de restauration dans un répertoire isolé (chronométré).
+
+    Le paquet principal (base, artefacts, refs secrets) est restauré en isolé ; clés et
+    state sont vérifiés séparément. Les envois vers le parc sont suspendus pendant l'exercice.
+    """
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        _only(body, {"reason", "backup_dir", "isolated_root", "verify_keys", "verify_state"})
+        backup = body.get("backup_dir")
+        isolated = body.get("isolated_root")
+        if not backup or not isolated:
+            raise ApiError(
+                422,
+                "paths_required",
+                "backup_dir et isolated_root sont obligatoires",
+                field="/backup_dir",
+            )
+        return recovery.run_exercise(
+            u.conn,
+            backup_dir=Path(str(backup)),
+            isolated_root=Path(str(isolated)),
+            reason=body.get("reason"),
+            actor=str(u.p.user_id),
+            verify_keys_from_backup=body.get("verify_keys", True) is not False,
+            verify_state_from_backup=body.get("verify_state", True) is not False,
+        )
+
+
 @router.get("/platform/status")
 def platform_status(request: Request) -> dict[str, Any]:
     with unit_of_work(request) as u:
@@ -971,19 +1048,38 @@ def platform_status(request: Request) -> dict[str, Any]:
             "FROM site_runners r JOIN execution_zones z ON z.id = r.zone_id "
             "WHERE r.status <> 'revoked' ORDER BY r.slug LIMIT 50"
         ).fetchall()
-        return {"profile": settings.profile, "version": os.environ.get("RACKLOOM_VERSION", "dev"),
-                "workers": [{**w, "heartbeat_at": iso(w["heartbeat_at"])} for w in workers],
-                "workers_alive": len(alive), "jobs": {r["state"]: r["n"] for r in queue},
-                "inventory": inventory.freshness(u.conn, settings.inventory_max_age_hours),
-                "assistant": {"adapter": settings.chat_adapter, **((assistant or {}).get("value") or {})},
-                "audit": audit.verify(u.conn),
-                "execution_zones": [
-                    {**z, "environment_kinds": list(z["environment_kinds"])} for z in zones
-                ],
-                "site_runners": [
-                    {**r, "last_heartbeat_at": iso(r["last_heartbeat_at"]) if r["last_heartbeat_at"] else None}
-                    for r in runners_rows
-                ]}
+        latest_exercise = u.conn.execute(
+            "SELECT id, status, duration_ms, finished_at FROM restore_exercises ORDER BY started_at DESC LIMIT 1"
+        ).fetchone()
+        return {
+            "profile": settings.profile,
+            "version": os.environ.get("RACKLOOM_VERSION", "dev"),
+            "workers": [{**w, "heartbeat_at": iso(w["heartbeat_at"])} for w in workers],
+            "workers_alive": len(alive),
+            "jobs": {r["state"]: r["n"] for r in queue},
+            "inventory": inventory.freshness(u.conn, settings.inventory_max_age_hours),
+            "assistant": {"adapter": settings.chat_adapter, **((assistant or {}).get("value") or {})},
+            "audit": audit.verify(u.conn),
+            "execution_zones": [{**z, "environment_kinds": list(z["environment_kinds"])} for z in zones],
+            "site_runners": [
+                {
+                    **r,
+                    "last_heartbeat_at": iso(r["last_heartbeat_at"]) if r["last_heartbeat_at"] else None,
+                }
+                for r in runners_rows
+            ],
+            "dispatch": recovery.status(u.conn),
+            "restore_exercise": (
+                {
+                    "id": str(latest_exercise["id"]),
+                    "status": latest_exercise["status"],
+                    "duration_ms": latest_exercise["duration_ms"],
+                    "finished_at": iso(latest_exercise["finished_at"]),
+                }
+                if latest_exercise
+                else None
+            ),
+        }
 
 
 health = APIRouter(tags=["santé"])

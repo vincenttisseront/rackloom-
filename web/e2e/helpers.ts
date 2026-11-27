@@ -65,7 +65,21 @@ export async function typeInto(loc: Locator, text: string): Promise<void> {
 }
 
 export async function login(page: Page, who: string): Promise<void> {
-  await page.goto('/connexion')
+  // Relance courte sur ERR_NETWORK_CHANGED (flocon CI / bascule réseau locale).
+  let lastErr: unknown
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await page.goto('/connexion', { waitUntil: 'domcontentloaded' })
+      lastErr = undefined
+      break
+    } catch (err) {
+      lastErr = err
+      const msg = String(err)
+      if (!msg.includes('ERR_NETWORK_CHANGED') && !msg.includes('ERR_CONNECTION_REFUSED')) throw err
+      await page.waitForTimeout(500 * (attempt + 1))
+    }
+  }
+  if (lastErr) throw lastErr
   await typeInto(page.getByLabel('Adresse e-mail'), `${who}@demo.invalid`)
   await page.getByLabel('Mot de passe').fill(password(who))
   await page.getByLabel('Mot de passe').press('Enter')

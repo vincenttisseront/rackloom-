@@ -135,9 +135,13 @@ def claim(
     concurrence ; un autre projet sous quota peut démarrer sans attendre.
     F16 : si `zone` est fournie, saute les jobs dont `required_zone` diffère (un runner
     de dev ne prend jamais un job de prod). `capabilities` borne les kinds acceptés.
+    F26 : saute les jobs d'écriture lorsque `dispatch_paused` est actif (restauration /
+    maintenance) ; ils restent `queued` avec `wait_reason = dispatch_paused`.
     """
+    from .. import recovery
     from . import quotas as fair
 
+    paused = recovery.is_paused(conn)
     skipped: list[Any] = []
     for _ in range(64):
         query = """
@@ -164,6 +168,10 @@ def claim(
         row = conn.execute(query, params).fetchone()
         if row is None:
             return None
+        if paused and row["class"] == "write":
+            fair.mark_waiting(conn, row["id"], recovery.WAIT_DISPATCH_PAUSED)
+            skipped.append(row["id"])
+            continue
         env_id = None
         if row["change_id"] is not None:
             env = conn.execute("SELECT environment_id FROM changes WHERE id = %s", (row["change_id"],)).fetchone()

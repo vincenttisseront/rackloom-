@@ -1206,6 +1206,122 @@
         ]
       }
     },
+    "/api/v1/admin/dispatch": {
+      "get": {
+        "description": "F26 : état de l'interrupteur global de suspension des envois.",
+        "operationId": "get_dispatch_api_v1_admin_dispatch_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Dispatch Api V1 Admin Dispatch Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Dispatch",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/dispatch/pause": {
+      "post": {
+        "description": "F26 : suspend les nouvelles écritures vers le parc (maintenance / avant reprise).",
+        "operationId": "pause_dispatch_api_v1_admin_dispatch_pause_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Pause Dispatch Api V1 Admin Dispatch Pause Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pause Dispatch",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/dispatch/resume": {
+      "post": {
+        "description": "F26 : reprend les envois après réconciliation (action humaine explicite).",
+        "operationId": "resume_dispatch_api_v1_admin_dispatch_resume_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Resume Dispatch Api V1 Admin Dispatch Resume Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Dispatch",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
     "/api/v1/admin/emergency": {
       "get": {
         "operationId": "emergency_status_api_v1_admin_emergency_get",
@@ -2069,6 +2185,141 @@
         "summary": "Simulate Policy",
         "tags": [
           "gouvernance"
+        ]
+      }
+    },
+    "/api/v1/admin/restore-exercises": {
+      "get": {
+        "description": "F26 : historiques des exercices de restauration isolés.",
+        "operationId": "list_restore_exercises_api_v1_admin_restore_exercises_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Restore Exercises Api V1 Admin Restore Exercises Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Restore Exercises",
+        "tags": [
+          "administration"
+        ]
+      },
+      "post": {
+        "description": "F26 : lance un exercice de restauration dans un répertoire isolé (chronométré).\n\nLe paquet principal (base, artefacts, refs secrets) est restauré en isolé ; clés et\nstate sont vérifiés séparément. Les envois vers le parc sont suspendus pendant l'exercice.",
+        "operationId": "start_restore_exercise_api_v1_admin_restore_exercises_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Start Restore Exercise Api V1 Admin Restore Exercises Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Restore Exercise",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/restore-exercises/{exercise_id}": {
+      "get": {
+        "operationId": "get_restore_exercise_api_v1_admin_restore_exercises__exercise_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exercise_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Exercise Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Restore Exercise Api V1 Admin Restore Exercises  Exercise Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Restore Exercise",
+        "tags": [
+          "administration"
         ]
       }
     },

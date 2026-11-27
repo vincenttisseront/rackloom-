@@ -93,6 +93,56 @@ def _load(conn: Conn, job: dict[str, Any], lock: bool = True) -> dict[str, Any]:
 
 
 def _admit(r: JobContext, conn: Conn, ctx: dict[str, Any], recompute=None, stage: str = "start") -> None:
+    # F26 : défense si un job d'écriture a été réclamé avant la suspension des envois.
+    if r.job["class"] == "write":
+        from .. import recovery
+
+        if recovery.is_paused(conn):
+            refusal = {
+                "id": "dispatch",
+                "code": "dispatch_paused",
+                "reason": recovery.refusal_message(),
+                "field": "",
+            }
+            r.fenced(
+                conn,
+                "state = 'blocked', blocked_reason = %s, finished_at = now(), lease_owner = NULL",
+                (refusal["code"],),
+            )
+            admission.release_stack(conn, r.job)
+            label = (
+                "Admission (envois suspendus)"
+                if stage == "start"
+                else "Contrôle avant envoi (envois suspendus)"
+            )
+            r.step(conn, label, "failed", summary={"rule": refusal["id"], "reason": refusal["reason"]})
+            r.event(
+                conn,
+                "job.blocked",
+                {
+                    "kind": r.job["kind"],
+                    "rule": refusal["id"],
+                    "code": refusal["code"],
+                    "field": None,
+                    "message": refusal["reason"],
+                    "stage": stage,
+                },
+                severity="error",
+            )
+            change = ctx["change"]
+            if change is not None and change["state"] in ("approved", "executing", "verifying"):
+                target = "blocked" if change["state"] == "approved" else "partially_succeeded"
+                transition(
+                    conn,
+                    change,
+                    target,
+                    reason_code=f"admission_{refusal['code']}",
+                    actor_type="worker",
+                    actor_id=r.worker_id,
+                    detail={"message": refusal["reason"]},
+                )
+            raise Refused(refusal["code"], refusal["reason"])
+
     decision = admission.evaluate(
         admission.Context(
             conn=conn,

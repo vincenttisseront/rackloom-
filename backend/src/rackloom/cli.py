@@ -482,6 +482,105 @@ def cmd_emergency_idp_down(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_recovery_pause(args: argparse.Namespace) -> int:
+    """F26 : suspend les envois vers le parc."""
+    from . import recovery
+    from .errors import ApiError
+
+    with _conn() as conn:
+        try:
+            result = recovery.pause(
+                conn, reason=args.reason, actor="console", source=args.source or "maintenance"
+            )
+        except ApiError as exc:
+            print(json.dumps({"code": exc.code, "message": exc.message}, ensure_ascii=False), file=sys.stderr)
+            return 1
+        conn.commit()
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def cmd_recovery_resume(args: argparse.Namespace) -> int:
+    from . import recovery
+    from .errors import ApiError
+
+    with _conn() as conn:
+        try:
+            result = recovery.resume(conn, reason=args.reason, actor="console")
+        except ApiError as exc:
+            print(json.dumps({"code": exc.code, "message": exc.message}, ensure_ascii=False), file=sys.stderr)
+            return 1
+        conn.commit()
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def cmd_recovery_status(args: argparse.Namespace) -> int:
+    from . import recovery
+
+    with _conn() as conn:
+        print(json.dumps(recovery.status(conn), ensure_ascii=False))
+    return 0
+
+
+def cmd_recovery_backup(args: argparse.Namespace) -> int:
+    """F26 : produit un paquet de sauvegarde (base + artefacts + refs) + checklists séparées."""
+    from . import recovery
+    from .errors import ApiError
+
+    with _conn() as conn:
+        try:
+            result = recovery.create_backup(conn, out_dir=Path(args.out))
+        except ApiError as exc:
+            print(json.dumps({"code": exc.code, "message": exc.message}, ensure_ascii=False), file=sys.stderr)
+            return 1
+        conn.commit()
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def cmd_recovery_exercise(args: argparse.Namespace) -> int:
+    """F26 : exercice de restauration isolé, chronométré, avec envois suspendus."""
+    from . import recovery
+    from .errors import ApiError
+
+    with _conn() as conn:
+        try:
+            result = recovery.run_exercise(
+                conn,
+                backup_dir=Path(args.backup),
+                isolated_root=Path(args.isolated),
+                reason=args.reason,
+                actor="console",
+                keys_dir=Path(args.keys) if args.keys else None,
+                state_dir=Path(args.state) if args.state else None,
+                verify_keys_from_backup=not args.skip_keys,
+                verify_state_from_backup=not args.skip_state,
+            )
+        except ApiError as exc:
+            print(json.dumps({"code": exc.code, "message": exc.message}, ensure_ascii=False), file=sys.stderr)
+            return 1
+        conn.commit()
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result["status"] == "passed" else 2
+
+
+def cmd_recovery_verify_keys(args: argparse.Namespace) -> int:
+    from . import recovery
+
+    result = recovery.verify_keys(Path(args.dir))
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result["ok"] else 2
+
+
+def cmd_recovery_verify_state(args: argparse.Namespace) -> int:
+    from . import recovery
+
+    result = recovery.verify_state(Path(args.dir))
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result["ok"] else 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="rackloom")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -603,6 +702,41 @@ def build_parser() -> argparse.ArgumentParser:
     bi = bundle.add_parser("import", help="F17 : importe un lot après vérifications")
     bi.add_argument("path")
     bi.set_defaults(func=cmd_bundle_import)
+    recovery = sub.add_parser("recovery").add_subparsers(dest="recovery_command", required=True)
+    rp = recovery.add_parser("pause", help="F26 : suspend les envois vers le parc")
+    rp.add_argument("--reason", required=True)
+    rp.add_argument("--source", choices=["maintenance", "restore_exercise", "restore"], default="maintenance")
+    rp.set_defaults(func=cmd_recovery_pause)
+    rr = recovery.add_parser("resume", help="F26 : reprend les envois après réconciliation")
+    rr.add_argument("--reason", required=True)
+    rr.set_defaults(func=cmd_recovery_resume)
+    recovery.add_parser("status", help="F26 : état de l'interrupteur d'envois").set_defaults(
+        func=cmd_recovery_status
+    )
+    rb = recovery.add_parser(
+        "backup",
+        help="F26 : paquet base+artefacts+refs secrets ; clés et state en dossiers séparés",
+    )
+    rb.add_argument("--out", required=True, help="répertoire vide de destination")
+    rb.set_defaults(func=cmd_recovery_backup)
+    re_ = recovery.add_parser(
+        "exercise",
+        help="F26 : restauration isolée chronométrée (envois suspendus, jobs en file non relancés)",
+    )
+    re_.add_argument("--backup", required=True, help="paquet produit par recovery backup")
+    re_.add_argument("--isolated", required=True, help="répertoire isolé vide")
+    re_.add_argument("--reason", required=True)
+    re_.add_argument("--keys", help="dossier de clés (sinon keys-separate du paquet)")
+    re_.add_argument("--state", help="dossier de state (sinon state-separate du paquet)")
+    re_.add_argument("--skip-keys", action="store_true")
+    re_.add_argument("--skip-state", action="store_true")
+    re_.set_defaults(func=cmd_recovery_exercise)
+    rk = recovery.add_parser("verify-keys", help="F26 : vérifie les clés (procédure distincte)")
+    rk.add_argument("--dir", required=True)
+    rk.set_defaults(func=cmd_recovery_verify_keys)
+    rs = recovery.add_parser("verify-state", help="F26 : vérifie le state (procédure distincte)")
+    rs.add_argument("--dir", required=True)
+    rs.set_defaults(func=cmd_recovery_verify_state)
     return parser
 
 

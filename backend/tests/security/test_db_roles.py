@@ -66,6 +66,7 @@ ALLOWED = {
         "SELECT status FROM offline_bundles",
         "SELECT kind FROM offline_bundle_items",
         "SELECT outcome FROM offline_bundle_imports",
+        "SELECT status FROM restore_exercises",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -122,6 +123,7 @@ ALLOWED = {
         "SELECT status FROM offline_bundles",
         "SELECT kind FROM offline_bundle_items",
         "SELECT outcome FROM offline_bundle_imports",
+        "SELECT status FROM restore_exercises",
     ],
 }
 
@@ -150,6 +152,9 @@ DENIED = {
         "UPDATE environment_freezes SET lifted_at = now()",
         "INSERT INTO change_windows (id) VALUES (gen_random_uuid())",
         "INSERT INTO calendar_freezes (id) VALUES (gen_random_uuid())",
+        # F26 : le worker lit les exercices ; seule l'API (ou la CLI via migrator/owner) écrit.
+        "INSERT INTO restore_exercises (id) VALUES (gen_random_uuid())",
+        "UPDATE restore_exercises SET status = 'failed'",
     ],
 }
 

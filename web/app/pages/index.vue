@@ -59,8 +59,30 @@ onMounted(async () => {
           <SimBadge v-if="status.inventory?.connector_mode === 'simulated'" /></dd>
         <dt>Assistant</dt><dd>{{ status.assistant.adapter }} <SimBadge v-if="status.assistant.adapter === 'fake'" label="Assistant fictif" /></dd>
         <dt>Audit</dt><dd><span class="badge" :class="status.audit.ok ? 'ok' : 'bad'">{{ status.audit.ok ? 'chaîne intègre' : 'chaîne rompue' }}</span> ({{ status.audit.checked }} entrées)</dd>
+        <dt>Envois vers le parc</dt>
+        <dd data-testid="dispatch-status">
+          <span class="badge" :class="status.dispatch?.paused ? 'warn' : 'ok'">
+            {{ status.dispatch?.paused ? 'suspendus' : 'actifs' }}
+          </span>
+          <span v-if="status.dispatch?.paused && status.dispatch?.reason" class="small muted"> — {{ status.dispatch.reason }}</span>
+          <span v-if="status.dispatch?.waiting_dispatch_paused" class="small muted">
+            · {{ status.dispatch.waiting_dispatch_paused }} écriture(s) en file non relancée(s)
+          </span>
+        </dd>
+        <dt v-if="status.restore_exercise">Dernier exercice de restauration</dt>
+        <dd v-if="status.restore_exercise" data-testid="restore-exercise">
+          <span class="badge" :class="status.restore_exercise.status === 'passed' ? 'ok' : status.restore_exercise.status === 'failed' ? 'bad' : 'warn'">
+            {{ status.restore_exercise.status }}
+          </span>
+          <span v-if="status.restore_exercise.duration_ms != null" class="small muted">
+            · {{ status.restore_exercise.duration_ms }} ms
+          </span>
+        </dd>
       </dl>
       <p v-if="status.stuck_jobs?.length" class="banner warn">Jobs au bail expiré : {{ status.stuck_jobs.length }}</p>
+      <p v-if="status.dispatch?.paused" class="banner warn" data-testid="dispatch-paused-banner">
+        Envois vers le parc suspendus : aucune écriture relancée tant que l'interrupteur reste actif (F26).
+      </p>
     </section>
 
     <p v-if="!projects.length && !error" class="empty">
