@@ -88,6 +88,17 @@ def login(conn: Conn, email: str, password: str, client: str,
         audit.record(conn, actor_type="anonymous", actor_id=None, action="auth.login", outcome="denied",
                      targets={"email": email})
         return ApiError(401, "invalid_credentials", "identifiants invalides")
+    # F14 : si le SSO est marqué indisponible, seule une intervention d'urgence active autorise le login.
+    from . import emergency as emergency_mod
+
+    permitted, permit_code = emergency_mod.login_permitted(conn, user["id"])
+    if not permitted:
+        conn.execute("INSERT INTO login_attempts (email, client, succeeded) VALUES (%s, %s, false)",
+                     (email, client))
+        audit.record(conn, actor_type="anonymous", actor_id=None, action="auth.login",
+                     outcome=permit_code, targets={"email": email})
+        return ApiError(403, permit_code, "connexion locale refusée : SSO indisponible et "
+                         "aucune intervention d'urgence active pour ce compte")
     conn.execute("INSERT INTO login_attempts (email, client, succeeded) VALUES (%s, %s, true)", (email, client))
     # Rotation : toute session présentée au moment de la connexion est révoquée.
     if previous_token:
@@ -96,13 +107,15 @@ def login(conn: Conn, email: str, password: str, client: str,
             "WHERE id_hash = %s AND revoked_at IS NULL",
             (token_hash(previous_token),),
         )
-    session = _create_session(conn, user["id"], user["privilege_epoch"], "password")
+    method = "emergency" if permit_code == "emergency_active" else "password"
+    session = _create_session(conn, user["id"], user["privilege_epoch"], method)
     audit.record(conn, actor_type="user", actor_id=str(user["id"]), action="auth.login", outcome="ok",
-                 targets={"session_id": str(session.session_id)})
+                 targets={"session_id": str(session.session_id), "via": permit_code})
     return session
 
 
-def _create_session(conn: Conn, user_id: UUID, epoch: int, method: str) -> NewSession:
+def _create_session(conn: Conn, user_id: UUID, epoch: int, method: str,
+                    acr: str = "pwd", amr: list[str] | None = None) -> NewSession:
     settings = get_settings()
     token = new_token()
     csrf = csrf_token_for(token)
@@ -111,12 +124,13 @@ def _create_session(conn: Conn, user_id: UUID, epoch: int, method: str) -> NewSe
     conn.execute(
         """
         INSERT INTO sessions (id, id_hash, user_id, csrf_hash, auth_method, auth_time, idle_expires_at,
-                              absolute_expires_at, privilege_epoch)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                              absolute_expires_at, privilege_epoch, acr, amr)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (session_id, token_hash(token), user_id, token_hash(csrf), method, t,
          t + timedelta(minutes=settings.session_idle_minutes),
-         t + timedelta(minutes=settings.session_absolute_minutes), epoch),
+         t + timedelta(minutes=settings.session_absolute_minutes), epoch,
+         acr, amr or ["pwd"]),
     )
     return NewSession(token=token, csrf_token=csrf, session_id=session_id, user_id=user_id)
 
@@ -131,7 +145,7 @@ def resolve_session(conn: Conn, token: str, touch: bool = True) -> Principal | N
     row = conn.execute(
         """
         SELECT s.id, s.user_id, s.auth_method, s.auth_time, s.idle_expires_at, s.absolute_expires_at,
-               s.privilege_epoch AS s_epoch, s.revoked_at, s.last_seen_at,
+               s.privilege_epoch AS s_epoch, s.revoked_at, s.last_seen_at, s.acr, s.amr,
                u.email, u.display_name, u.status, u.privilege_epoch AS u_epoch, u.is_demo, u.kind
         FROM sessions s JOIN users u ON u.id = s.user_id
         WHERE s.id_hash = %s
@@ -160,6 +174,8 @@ def resolve_session(conn: Conn, token: str, touch: bool = True) -> Principal | N
         auth_method=row["auth_method"], auth_time=row["auth_time"],
         bindings=load_bindings(conn, row["user_id"]), csrf_token=csrf_token_for(token),
         kind=row["kind"] or "human",
+        acr=row["acr"] or "pwd",
+        amr=list(row["amr"] or ["pwd"]),
     )
 
 

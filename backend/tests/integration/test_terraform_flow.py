@@ -305,10 +305,10 @@ def test_t40_octroi_retire_entre_approbation_et_demarrage(conn, demo, worker, wo
 def test_refus_avec_motif(conn, demo, worker):
     c, plan = _plan_ready(conn, demo, worker)
     with pytest.raises(ApiError):
-        approvals.decide(conn, demo.principal("bruno"), c["id"], {
+        approvals.decide(conn, demo.principal("bruno", step_up=True), c["id"], {
             "plan_id": str(plan["id"]), "bundle_digest": plan["bundle_digest"], "decision": "rejected"})
     conn.rollback()
-    approvals.decide(conn, demo.principal("bruno"), c["id"], {
+    approvals.decide(conn, demo.principal("bruno", step_up=True), c["id"], {
         "plan_id": str(plan["id"]), "bundle_digest": plan["bundle_digest"], "decision": "rejected",
         "comment": "Taille inadaptée"})
     conn.commit()

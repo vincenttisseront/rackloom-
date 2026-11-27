@@ -115,16 +115,26 @@ class Demo:
     def user(self, name: str) -> dict[str, Any]:
         return self.conn.execute("SELECT * FROM users WHERE email = %s", (f"{name}@demo.invalid",)).fetchone()
 
-    def principal(self, name: str):
+    def principal(self, name: str, *, step_up: bool = False):
         from datetime import UTC, datetime
         from uuid import uuid4
 
         from rackloom.identity.authz import Principal, load_bindings
 
         u = self.user(name)
-        return Principal(user_id=u["id"], email=u["email"], display_name=u["display_name"], session_id=uuid4(),
-                         auth_method="password", auth_time=datetime.now(UTC),
-                         bindings=load_bindings(self.conn, u["id"]))
+        acr = "urn:rackloom:step-up" if step_up else "pwd"
+        method = "step_up" if step_up else "password"
+        return Principal(
+            user_id=u["id"],
+            email=u["email"],
+            display_name=u["display_name"],
+            session_id=uuid4(),
+            auth_method=method,
+            auth_time=datetime.now(UTC),
+            bindings=load_bindings(self.conn, u["id"]),
+            acr=acr,
+            amr=["pwd"] if not step_up else ["pwd", "otp"],
+        )
 
 
 @pytest.fixture
@@ -152,6 +162,10 @@ def api(db_url: str, monkeypatch: pytest.MonkeyPatch):
             r = c.post("/api/v1/auth/login", json={"email": f"{name}@demo.invalid", "password": DEMO_PASSWORD})
             assert r.status_code == 200, r.text
             c.headers["X-CSRF-Token"] = r.json()["csrf_token"]
+            # F12 : preuve fraîche pour approbation / gel / secrets dans les tests HTTP.
+            up = c.post("/api/v1/auth/reauth", json={"password": DEMO_PASSWORD})
+            assert up.status_code == 200, up.text
+            c.headers["X-CSRF-Token"] = up.json()["csrf_token"]
         return c
 
     return client

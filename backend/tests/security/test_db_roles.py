@@ -26,6 +26,10 @@ ALLOWED = {
         "SELECT state FROM ipam_reservations",
         "SELECT status FROM drift_scans",
         "SELECT kind FROM drift_findings",
+        "SELECT rule_id FROM policy_exceptions",
+        "SELECT role FROM temporary_grants",
+        "SELECT reason FROM emergency_interventions",
+        "SELECT user_id FROM emergency_allowlist",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -42,6 +46,10 @@ ALLOWED = {
         "SELECT state FROM ipam_reservations",
         "SELECT status FROM drift_scans",
         "SELECT kind FROM drift_findings",
+        "SELECT rule_id FROM policy_exceptions",
+        "SELECT role FROM temporary_grants",
+        "SELECT reason FROM emergency_interventions",
+        "SELECT user_id FROM emergency_allowlist",
     ],
 }
 

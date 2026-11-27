@@ -360,14 +360,14 @@ Chaque type de job déclare une classe `read` ou `write`. Les règles d'écritur
 | 90 | fenêtre ou période de gel du calendrier | write | F27 (`builtin@3`) |
 | 95 | disjoncteur du connecteur fermé | write | F37 (`builtin@4`) |
 | 110 | capacité sur le placement | write | F05 (`builtin@5`) |
-| 100 | droits temporaires encore valides | write | réservé F11 |
-| 110 | capacité sur le placement | write | réservé F05 |
+| 100 | droits temporaires encore valides | write | F11 (`builtin@8`) |
+| 110 | capacité sur le placement | write | F05 (`builtin@5`) |
 | 115 | sauvegarde vérifiée pour un changement sensible | write | réservé F39 |
-| 120 | réservations IPAM/DNS confirmées | write | réservé F03 |
+| 120 | réservations IPAM/DNS confirmées | write | F03 (`builtin@6`) |
 | 125 | licences disponibles | write | F34 (`builtin@7`) |
 | 130 | zone du runner autorisée pour l'environnement | toutes | réservé F16 |
 | 135 | combinaison de versions compatible | write | réservé F38 |
-| 140 | politiques versionnées de l'organisation | selon règle | réservé F10 |
+| 140 | politiques versionnées de l'organisation | write | F10 (`builtin@8`) |
 | 900 | verrou de stack acquis | write | 1 |
 
 ## 12. Points d'extension réservés pour le backlog
@@ -376,7 +376,7 @@ Ils sont présents au lot 1 parce qu'ils coûtent peu et évitent une migration 
 
 | Point | Présent au lot 1 | Servira à |
 |---|---|---|
-| Registre d'admission ordonné, classes `read`/`write`, décisions enregistrées (étape `start` et, pour les règles sensibles au temps, `dispatch`) | oui (`builtin@7` : R010–R095, R110, R120, R125, R900) | F27, F37, F34, F11, F05, F39, F03, F16, F38, F10 |
+| Registre d'admission ordonné, classes `read`/`write`, décisions enregistrées (étape `start` et, pour les règles sensibles au temps, `dispatch`) | oui (`builtin@8` : R010–R100, R110, R120, R125, R140, R900) | F27, F37, F34, F11, F05, F39, F03, F16, F38, F10 |
 | Étape « préférence de projet » dans l'ordre de résolution | oui (`project_preference_versions`, provenance `project_preference`) | F50 |
 | Départage du résolveur isolé dans une fonction remplaçable | oui (rang, puis identifiant) | F32 |
 | Source `ci` acceptée par le même schéma et le même résolveur | oui (client simulé) | F35 |

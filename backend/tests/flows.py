@@ -102,7 +102,8 @@ def latest_plan(conn, change_id) -> dict[str, Any]:
 
 
 def approve(conn, demo, change_id, plan, who: str = "bruno", digest: str | None = None) -> dict[str, Any]:
-    res = approvals.decide(conn, demo.principal(who), change_id, {
+    # F12 : l'approbation exige une preuve fraîche (step-up) côté serveur.
+    res = approvals.decide(conn, demo.principal(who, step_up=True), change_id, {
         "plan_id": str(plan["id"]), "bundle_digest": digest or plan["bundle_digest"], "decision": "approved"})
     conn.commit()
     return res

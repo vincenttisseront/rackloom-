@@ -1,6 +1,5 @@
 """Autorisation côté serveur. Hors périmètre → 404 ; dans le périmètre sans le rôle → 403."""
 
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,10 +8,22 @@ from uuid import UUID
 
 from ..errors import forbidden, not_found
 
-ROLES = ("platform_admin", "template_publisher", "template_author", "operator", "approver", "auditor")
+ROLES = (
+    "platform_admin",
+    "template_publisher",
+    "template_author",
+    "operator",
+    "approver",
+    "auditor",
+    "project_admin",
+    "connector_admin",
+)
 
 
 GLOBAL_ROLES = ("platform_admin", "template_publisher", "template_author", "auditor")
+
+# F13 : administration déléguée par projet (catalogue / connecteurs / politiques).
+PROJECT_ADMIN_ROLES = ("project_admin", "connector_admin")
 
 
 @dataclass(frozen=True)
@@ -20,6 +31,7 @@ class Binding:
     role: str
     project_id: UUID | None
     environment_id: UUID | None
+    source: str = "permanent"  # permanent | temporary (F11)
 
 
 @dataclass
@@ -34,6 +46,8 @@ class Principal:
     csrf_token: str = ""
     kind: str = "human"  # human | service (F35)
     service_project_id: UUID | None = None
+    acr: str = "pwd"  # F12
+    amr: list[str] = field(default_factory=lambda: ["pwd"])
 
     @property
     def is_platform_admin(self) -> bool:
@@ -70,8 +84,13 @@ class Principal:
         return False
 
     def roles_for(self, project_id: UUID) -> list[str]:
-        return sorted({b.role for b in self.bindings
-                       if b.project_id == project_id or (b.project_id is None and b.role == "auditor")})
+        return sorted(
+            {
+                b.role
+                for b in self.bindings
+                if b.project_id == project_id or (b.project_id is None and b.role == "auditor")
+            }
+        )
 
 
 def require_project(principal: Principal, project_id: UUID, what: str = "projet") -> None:
@@ -79,8 +98,9 @@ def require_project(principal: Principal, project_id: UUID, what: str = "projet"
         raise not_found(what)
 
 
-def require_role(principal: Principal, role: str, project_id: UUID, environment_id: UUID | None = None,
-                 what: str = "ressource") -> None:
+def require_role(
+    principal: Principal, role: str, project_id: UUID, environment_id: UUID | None = None, what: str = "ressource"
+) -> None:
     require_project(principal, project_id, what)
     if not principal.has_role(role, project_id, environment_id):
         raise forbidden(f"rôle {role} requis sur ce projet")
@@ -111,9 +131,61 @@ def require_auditor(principal: Principal, project_id: UUID | None = None) -> Non
     raise forbidden("rôle auditeur requis")
 
 
-def load_bindings(conn, user_id: UUID) -> list[Binding]:
+def require_project_admin(principal: Principal, project_id: UUID) -> None:
+    """F13 : admin de plateforme ou project_admin du projet."""
+    require_project(principal, project_id)
+    if principal.is_platform_admin or principal.has_role("project_admin", project_id):
+        return
+    raise forbidden("rôle project_admin requis sur ce projet")
+
+
+def require_connector_admin(principal: Principal, project_id: UUID | None = None) -> None:
+    """F13 : configurer un connecteur (écriture seule des secrets)."""
+    if principal.is_platform_admin:
+        return
+    if project_id is not None and (
+        principal.has_role("connector_admin", project_id) or principal.has_role("project_admin", project_id)
+    ):
+        return
+    raise forbidden("rôle connector_admin ou project_admin requis")
+
+
+def permanent_bindings(conn, user_id: UUID) -> list[Binding]:
     rows = conn.execute(
         "SELECT role, project_id, environment_id FROM role_bindings WHERE user_id = %s AND revoked_at IS NULL",
         (user_id,),
     ).fetchall()
-    return [Binding(r["role"], r["project_id"], r["environment_id"]) for r in rows]
+    return [Binding(r["role"], r["project_id"], r["environment_id"], source="permanent") for r in rows]
+
+
+def load_bindings(conn, user_id: UUID) -> list[Binding]:
+    """Bindings permanents + droits temporaires encore valides (F11)."""
+    from . import temporary as temp_rights
+
+    permanent = permanent_bindings(conn, user_id)
+    temporary = [
+        Binding(b.role, b.project_id, b.environment_id, source="temporary")
+        for b in temp_rights.as_bindings(conn, user_id)
+    ]
+    return permanent + temporary
+
+
+def has_permanent_role(
+    conn,
+    user_id: UUID,
+    role: str,
+    project_id: UUID | None = None,
+    environment_id: UUID | None = None,
+) -> bool:
+    from datetime import UTC
+
+    p = Principal(
+        user_id=user_id,
+        email="",
+        display_name="",
+        session_id=user_id,
+        auth_method="check",
+        auth_time=datetime.min.replace(tzinfo=UTC),
+        bindings=permanent_bindings(conn, user_id),
+    )
+    return p.has_role(role, project_id, environment_id)

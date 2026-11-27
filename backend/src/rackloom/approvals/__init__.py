@@ -23,12 +23,20 @@ from ..projects import calendars, freezes
 
 
 def _auth_context(principal: Principal) -> dict[str, Any]:
-    return {"method": principal.auth_method, "auth_time": principal.auth_time.isoformat(),
-            "session_id": str(principal.session_id), "email": principal.email}
+    return {
+        "method": principal.auth_method,
+        "auth_time": principal.auth_time.isoformat(),
+        "session_id": str(principal.session_id),
+        "email": principal.email,
+        "acr": getattr(principal, "acr", "pwd"),
+        "amr": list(getattr(principal, "amr", ["pwd"]) or ["pwd"]),
+    }
 
 
 def decide(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, Any],
            request_id: str | None = None) -> dict[str, Any]:
+    from ..identity import reauth
+
     service_accounts.refuse_approval(principal)
     allowed = {"plan_id", "retry_id", "bundle_digest", "decision", "comment"}
     extra = set(body) - allowed
@@ -40,6 +48,9 @@ def decide(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, An
     comment = str(body.get("comment") or "").strip()[:1000]
     if decision == "rejected" and not comment:
         raise ApiError(422, "comment_required", "un motif est obligatoire pour refuser", field="/comment")
+    # F12 : lire un plan n'exige rien ; approuver (et refuser de façon critique) exige une preuve fraîche.
+    if decision == "approved":
+        reauth.require_fresh(principal, action="approuver un plan")
     change = get_change(conn, principal, change_id, for_update=True)
     require_role(principal, "approver", change["project_id"], change["environment_id"])
     if decision == "approved" and freezes.active(conn, change["environment_id"], lock=True):

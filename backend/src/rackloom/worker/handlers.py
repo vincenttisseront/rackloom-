@@ -83,9 +83,12 @@ def _admit(r: JobContext, conn: Conn, ctx: dict[str, Any], recompute=None, stage
              (refusal["code"],))
     admission.release_stack(conn, r.job)
     r.step(conn, label, "failed", summary={"rule": refusal["id"], "reason": refusal["reason"]})
+    field = refusal.get("field")
     r.event(conn, "job.blocked", {"kind": r.job["kind"], "rule": refusal["id"], "code": refusal["code"],
-                                  "stage": stage,
-                                  "message": f"Admission refusée ({refusal['id']}) : {refusal['reason']}"},
+                                  "field": field, "stage": stage,
+                                  "message": f"Admission refusée ({refusal['id']}"
+                                  + (f", champ {field}" if field else "")
+                                  + f") : {refusal['reason']}"},
             severity="error")
     change = ctx["change"]
     if change is not None:

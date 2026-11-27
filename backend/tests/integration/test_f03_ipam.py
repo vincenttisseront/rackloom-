@@ -121,7 +121,7 @@ def test_f03_admission_reserve_puis_confirme(conn, demo, worker):
     rows = ipam.for_change(conn, c["id"])
     # Après succès, confirmées (for_change ne liste que ACTIVE : confirmed inclus).
     assert rows and all(r["state"] == "confirmed" for r in rows)
-    assert BUILTIN_VERSION == "builtin@7"
+    assert BUILTIN_VERSION == "builtin@8"
 
     decisions = conn.execute(
         "SELECT rules FROM admission_decisions WHERE job_id = %s AND stage = 'start'",

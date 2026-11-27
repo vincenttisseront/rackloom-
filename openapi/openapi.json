@@ -106,6 +106,37 @@
         "title": "LoginBody",
         "type": "object"
       },
+      "ReauthBody": {
+        "additionalProperties": false,
+        "properties": {
+          "idp_proof": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idp Proof"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "title": "ReauthBody",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -416,6 +447,75 @@
         ]
       }
     },
+    "/api/v1/admin/emergency": {
+      "get": {
+        "operationId": "emergency_status_api_v1_admin_emergency_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Emergency Status Api V1 Admin Emergency Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Emergency Status",
+        "tags": [
+          "gouvernance"
+        ]
+      }
+    },
+    "/api/v1/admin/emergency/close": {
+      "post": {
+        "description": "Fermeture d'intervention depuis l'UI admin (activation reste console-only).",
+        "operationId": "emergency_close_api_api_v1_admin_emergency_close_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Emergency Close Api Api V1 Admin Emergency Close Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Emergency Close Api",
+        "tags": [
+          "gouvernance"
+        ]
+      }
+    },
     "/api/v1/admin/environments": {
       "get": {
         "description": "Tous les environnements, pour geler d'urgence sans rôle sur le projet (administrateur, auditeur en lecture).",
@@ -488,6 +588,75 @@
         "summary": "Environment Policies",
         "tags": [
           "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/policies/active": {
+      "get": {
+        "operationId": "active_policy_api_v1_admin_policies_active_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Active Policy Api V1 Admin Policies Active Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Active Policy",
+        "tags": [
+          "gouvernance"
+        ]
+      }
+    },
+    "/api/v1/admin/policies/simulate": {
+      "post": {
+        "description": "Simulation sur une demande historique : aucune écriture, plans inchangés (F10).",
+        "operationId": "simulate_policy_api_v1_admin_policies_simulate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Simulate Policy Api V1 Admin Policies Simulate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Simulate Policy",
+        "tags": [
+          "gouvernance"
         ]
       }
     },
@@ -1196,6 +1365,50 @@
           }
         },
         "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/reauth": {
+      "post": {
+        "description": "F12 : preuve fraîche (mot de passe local ou IdP de test) pour actions sensibles.",
+        "operationId": "reauthenticate_api_v1_auth_reauth_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReauthBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reauthenticate Api V1 Auth Reauth Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reauthenticate",
         "tags": [
           "auth"
         ]
@@ -3847,6 +4060,63 @@
         ]
       }
     },
+    "/api/v1/policy-exceptions/{exception_id}/revoke": {
+      "post": {
+        "operationId": "revoke_policy_exception_api_v1_policy_exceptions__exception_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exception_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Exception Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revoke Policy Exception Api V1 Policy Exceptions  Exception Id  Revoke Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Policy Exception",
+        "tags": [
+          "gouvernance"
+        ]
+      }
+    },
     "/api/v1/projects": {
       "get": {
         "operationId": "list_projects_api_v1_projects_get",
@@ -3870,6 +4140,212 @@
         "summary": "List Projects",
         "tags": [
           "projets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/policy-exceptions": {
+      "get": {
+        "operationId": "list_policy_exceptions_api_v1_projects__project_id__policy_exceptions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Policy Exceptions Api V1 Projects  Project Id  Policy Exceptions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Policy Exceptions",
+        "tags": [
+          "gouvernance"
+        ]
+      },
+      "post": {
+        "operationId": "create_policy_exception_api_v1_projects__project_id__policy_exceptions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Policy Exception Api V1 Projects  Project Id  Policy Exceptions Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Policy Exception",
+        "tags": [
+          "gouvernance"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/temporary-grants": {
+      "get": {
+        "operationId": "list_temporary_grants_api_v1_projects__project_id__temporary_grants_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Temporary Grants Api V1 Projects  Project Id  Temporary Grants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Temporary Grants",
+        "tags": [
+          "gouvernance"
+        ]
+      },
+      "post": {
+        "operationId": "create_temporary_grant_api_v1_projects__project_id__temporary_grants_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Temporary Grant Api V1 Projects  Project Id  Temporary Grants Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Temporary Grant",
+        "tags": [
+          "gouvernance"
         ]
       }
     },
@@ -5195,6 +5671,63 @@
         "summary": "Reference Sources",
         "tags": [
           "atelier"
+        ]
+      }
+    },
+    "/api/v1/temporary-grants/{grant_id}/revoke": {
+      "post": {
+        "operationId": "revoke_temporary_grant_api_v1_temporary_grants__grant_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Grant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revoke Temporary Grant Api V1 Temporary Grants  Grant Id  Revoke Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Temporary Grant",
+        "tags": [
+          "gouvernance"
         ]
       }
     },

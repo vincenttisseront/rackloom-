@@ -312,6 +312,72 @@ def cmd_chat_eval(args: argparse.Namespace) -> int:
     return 0 if report["verdict"] == "passed" else 2
 
 
+def cmd_emergency_activate(args: argparse.Namespace) -> int:
+    """F14 : active une intervention d'urgence depuis la console."""
+    from .errors import ApiError
+    from .identity import emergency
+
+    with _conn() as conn:
+        user_ids = []
+        for email in args.users:
+            row = conn.execute(
+                "SELECT id FROM users WHERE email = %s AND status = 'active' AND kind = 'human'",
+                (email.lower(),),
+            ).fetchone()
+            if row is None:
+                print(f"utilisateur inconnu : {email}", file=sys.stderr)
+                return 1
+            user_ids.append(row["id"])
+        try:
+            result = emergency.activate(
+                conn,
+                reason=args.reason,
+                minutes=args.minutes,
+                user_ids=user_ids,
+                actor="console",
+                simulate_idp_down=not args.keep_sso,
+            )
+        except ApiError as exc:
+            print(json.dumps({"code": exc.code, "message": exc.message}, ensure_ascii=False), file=sys.stderr)
+            return 1
+        conn.commit()
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def cmd_emergency_status(args: argparse.Namespace) -> int:
+    from .identity import emergency
+
+    with _conn() as conn:
+        print(json.dumps(emergency.status(conn), ensure_ascii=False))
+    return 0
+
+
+def cmd_emergency_close(args: argparse.Namespace) -> int:
+    from .errors import ApiError
+    from .identity import emergency
+
+    with _conn() as conn:
+        try:
+            result = emergency.close(conn, reason=args.reason, actor="console", restore_sso=True)
+        except ApiError as exc:
+            print(json.dumps({"code": exc.code, "message": exc.message}, ensure_ascii=False), file=sys.stderr)
+            return 1
+        conn.commit()
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def cmd_emergency_idp_down(args: argparse.Namespace) -> int:
+    from .identity import emergency
+
+    with _conn() as conn:
+        emergency.set_sso_available(conn, False, actor="console")
+        conn.commit()
+    print(json.dumps({"sso_available": False}, ensure_ascii=False))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="rackloom")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -394,6 +460,36 @@ def build_parser() -> argparse.ArgumentParser:
     ce.add_argument("--scenario", help="scénario de l'adaptateur fictif à qualifier")
     ce.add_argument("--project", default="vitrine", help="projet dont le contexte sert de banc")
     ce.set_defaults(func=cmd_chat_eval)
+    emergency = sub.add_parser("emergency").add_subparsers(dest="emergency_command", required=True)
+    ea = emergency.add_parser(
+        "activate",
+        help="F14 : active l'accès d'urgence local (console) si le SSO est indisponible",
+    )
+    ea.add_argument("--reason", required=True)
+    ea.add_argument("--minutes", type=int, default=60)
+    ea.add_argument(
+        "--user",
+        action="append",
+        dest="users",
+        required=True,
+        help="email local autorisé (répétable)",
+    )
+    ea.add_argument(
+        "--keep-sso",
+        action="store_true",
+        help="ne simule pas la panne IdP (SSO reste disponible)",
+    )
+    ea.set_defaults(func=cmd_emergency_activate)
+    emergency.add_parser("status", help="F14 : état SSO et intervention").set_defaults(
+        func=cmd_emergency_status
+    )
+    ec = emergency.add_parser("close", help="F14 : ferme l'intervention et retire l'accès")
+    ec.add_argument("--reason", required=True)
+    ec.set_defaults(func=cmd_emergency_close)
+    es = emergency.add_parser(
+        "simulate-idp-down", help="F14 : marque le SSO indisponible (laboratoire / démo)"
+    )
+    es.set_defaults(func=cmd_emergency_idp_down)
     return parser
 
 

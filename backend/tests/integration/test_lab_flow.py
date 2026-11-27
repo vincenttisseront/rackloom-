@@ -151,7 +151,7 @@ def test_t22_echec_partiel_puis_reprise_ciblee(conn, demo, worker, lab):
     retry = approvals.request_retry(conn, demo.principal("alice"), c["id"], {"step": "ansible_configure"})
     conn.commit()
     assert retry["host_ids"] == [str(second["id"])]
-    approvals.decide(conn, demo.principal("bruno"), c["id"], {
+    approvals.decide(conn, demo.principal("bruno", step_up=True), c["id"], {
         "retry_id": str(retry["retry_id"]), "bundle_digest": retry["bundle_digest"], "decision": "approved"})
     conn.commit()
     assert worker.drain() == ["ansible_configure", "verify"]
@@ -245,7 +245,7 @@ def test_at01_echec_du_pilote_bloque_la_vague(conn, demo, worker, lab):
     assert set(retry["host_ids"]) == {str(pilot["id"]), str(follow["id"])}
     approvals.decide(
         conn,
-        demo.principal("bruno"),
+        demo.principal("bruno", step_up=True),
         c["id"],
         {"retry_id": str(retry["retry_id"]), "bundle_digest": retry["bundle_digest"], "decision": "approved"},
     )
@@ -299,7 +299,7 @@ def test_f28_configuration_bloquee_par_le_gel_puis_reprise(conn, demo, worker, l
     c = _approved_and_applied(conn, demo, worker)
     assert worker.drain(kinds=["guest_ready"]) == ["guest_ready"]
     env_id = demo.env("vitrine", "dev")["id"]
-    bruno = demo.principal("bruno")
+    bruno = demo.principal("bruno", step_up=True)
     freezes.freeze(conn, bruno, env_id, "Gel avant la fenêtre de configuration")
     conn.commit()
 
