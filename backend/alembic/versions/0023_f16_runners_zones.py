@@ -1,7 +1,7 @@
 """F16 : runners par site ou zone (mTLS, capacités, heartbeat).
 
 Revision ID: 0023
-Revises: 0021 (temporaire jusqu'au merge F15 / 0022 ; puis rebase → down_revision=\"0022\")
+Revises: 0022
 """
 
 from pathlib import Path
@@ -9,8 +9,7 @@ from pathlib import Path
 from alembic import op
 
 revision = "0023"
-# Temporaire : F15 (0022) pas encore sur main. Après merge F15 : rebase et down_revision = "0022".
-down_revision = "0021"
+down_revision = "0022"
 branch_labels = None
 depends_on = None
 
