@@ -26,6 +26,7 @@ JOB_CLASS = {
     "verify": "read",
     "reconcile": "read",
     "drift_scan": "read",
+    "vm_restore": "write",
 }
 
 JOB_LABELS = {
@@ -39,6 +40,7 @@ JOB_LABELS = {
     "verify": "Vérification du service",
     "reconcile": "Réconciliation",
     "drift_scan": "Détection de dérive (lecture seule)",
+    "vm_restore": "Restauration VM (réseau isolé)",
 }
 
 
@@ -49,13 +51,19 @@ class LeaseLost(Exception):
 def enqueue(conn: Conn, *, kind: str, idempotency_key: str, change: dict[str, Any] | None = None,
             project_id: UUID | None = None, payload: dict[str, Any] | None = None,
             stack_id: UUID | None = None, execution_id: UUID | None = None,
-            run_after: datetime | None = None, max_attempts: int = 3, priority: int = 100) -> dict[str, Any]:
-    """Idempotent : une même clé renvoie le job existant."""
+            run_after: datetime | None = None, max_attempts: int = 3, priority: int | None = None) -> dict[str, Any]:
+    """Idempotent : une même clé renvoie le job existant.
+
+    F36 : la priorité par défaut suit le quota projet (plus petit = plus tôt).
+    """
+    from . import quotas as fair
+
     existing = conn.execute("SELECT * FROM jobs WHERE idempotency_key = %s", (idempotency_key,)).fetchone()
     if existing:
         return existing
     job_id = uuid7()
     pid = project_id or (change["project_id"] if change else None)
+    prio = priority if priority is not None else fair.priority_for(conn, pid, JOB_CLASS[kind])
     row = conn.execute(
         """
         INSERT INTO jobs (id, change_id, project_id, execution_id, kind, class, state, stack_id, payload,
@@ -63,7 +71,7 @@ def enqueue(conn: Conn, *, kind: str, idempotency_key: str, change: dict[str, An
         VALUES (%s, %s, %s, %s, %s, %s, 'queued', %s, %s, %s, %s, %s, %s) RETURNING *
         """,
         (job_id, change["id"] if change else None, pid, execution_id, kind, JOB_CLASS[kind], stack_id,
-         Jsonb(payload or {}), idempotency_key, priority, run_after or clock.now(), max_attempts),
+         Jsonb(payload or {}), idempotency_key, prio, run_after or clock.now(), max_attempts),
     ).fetchone()
     events.emit(conn, type="job.queued", source="job", project_id=pid,
                 correlation_id=change["id"] if change else None, job_id=job_id,
@@ -73,28 +81,53 @@ def enqueue(conn: Conn, *, kind: str, idempotency_key: str, change: dict[str, An
 
 def claim(conn: Conn, worker_id: str, lease_seconds: int,
           kinds: list[str] | None = None) -> dict[str, Any] | None:
-    """Réclame un job en transaction courte. Renvoie le job avec sa nouvelle époque."""
-    query = """
-        SELECT id FROM jobs
-        WHERE state = 'queued' AND run_after <= now()
+    """Réclame un job en transaction courte. Renvoie le job avec sa nouvelle époque.
+
+    F36 : saute les jobs dont le projet (ou l'environnement) a atteint son quota de
+    concurrence ; un autre projet sous quota peut démarrer sans attendre.
     """
-    params: list[Any] = []
-    if kinds:
-        query += " AND kind = ANY(%s)"
-        params.append(kinds)
-    query += " ORDER BY priority, run_after, id FOR UPDATE SKIP LOCKED LIMIT 1"
-    row = conn.execute(query, params).fetchone()
-    if row is None:
-        return None
-    return conn.execute(
+    from . import quotas as fair
+
+    skipped: list[Any] = []
+    for _ in range(64):
+        query = """
+            SELECT j.id, j.project_id, j.class, j.change_id, j.priority, j.run_after
+            FROM jobs j
+            WHERE j.state = 'queued' AND j.run_after <= now()
         """
-        UPDATE jobs SET state = 'leased', lease_owner = %s, lease_epoch = lease_epoch + 1,
-               lease_expires_at = now() + make_interval(secs => %s), heartbeat_at = now(),
-               attempts = attempts + 1, updated_at = now()
-        WHERE id = %s RETURNING *
-        """,
-        (worker_id, lease_seconds, row["id"]),
-    ).fetchone()
+        params: list[Any] = []
+        if kinds:
+            query += " AND j.kind = ANY(%s)"
+            params.append(kinds)
+        if skipped:
+            query += " AND NOT (j.id = ANY(%s))"
+            params.append(skipped)
+        query += " ORDER BY j.priority, j.run_after, j.id FOR UPDATE SKIP LOCKED LIMIT 1"
+        row = conn.execute(query, params).fetchone()
+        if row is None:
+            return None
+        env_id = None
+        if row["change_id"] is not None:
+            env = conn.execute(
+                "SELECT environment_id FROM changes WHERE id = %s", (row["change_id"],)
+            ).fetchone()
+            env_id = env["environment_id"] if env else None
+        ok, reason = fair.admits(conn, row, environment_id=env_id)
+        if not ok:
+            fair.mark_waiting(conn, row["id"], reason or fair.WAIT_QUOTA)
+            skipped.append(row["id"])
+            continue
+        fair.clear_waiting(conn, row["id"])
+        return conn.execute(
+            """
+            UPDATE jobs SET state = 'leased', lease_owner = %s, lease_epoch = lease_epoch + 1,
+                   lease_expires_at = now() + make_interval(secs => %s), heartbeat_at = now(),
+                   attempts = attempts + 1, wait_reason = NULL, updated_at = now()
+            WHERE id = %s RETURNING *
+            """,
+            (worker_id, lease_seconds, row["id"]),
+        ).fetchone()
+    return None
 
 
 def fenced_update(conn: Conn, job: dict[str, Any], sets: str, params: tuple = ()) -> dict[str, Any]:

@@ -16,7 +16,7 @@ test('F56 — estimation sans date garantie ni modèle', async ({ page }) => {
   } else {
     expect(est.body.execution.range?.p50_seconds).toBeGreaterThan(0)
   }
-  expect(est.body.queue.status).toBe('unavailable')
+  expect(['idle', 'ready', 'waiting', 'running']).toContain(est.body.queue.status)
 
   await login(page, 'alice')
   await page.goto(`/demandes/${planned.id}`)

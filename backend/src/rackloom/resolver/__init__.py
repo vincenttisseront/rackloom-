@@ -225,7 +225,10 @@ def _scan_locked(value: Any, path: str = "") -> None:
             allowed_need_key = (
                 (path == "" and key in NEED_KEYS)
                 or (path == "/service" and key == "template")
-                or (path == "/inputs" and key in ("quantity", "size_tier", "usage", "lifetime_until"))
+                or (
+                    path == "/inputs"
+                    and key in ("quantity", "size_tier", "usage", "lifetime_until", "source_instance")
+                )
             )
             if not allowed_need_key and _is_technical(key):
                 raise ApiError(422, "locked_field", LOCKED_MESSAGE, field=pointer)
@@ -404,7 +407,13 @@ def _validate_inputs(
 ) -> None:
     """V05, V08, V09, V10 sur les entrées fournies."""
     spec = contract["inputs"]
+    # F40 : source_instance est un besoin fonctionnel de restauration, hors contrat template.
+    restore_keys = {"source_instance"}
     for key in inputs:
+        if key in restore_keys:
+            if not isinstance(inputs[key], str) or not inputs[key].strip() or len(inputs[key]) > 80:
+                raise _input("source_instance", "nom d'instance source attendu")
+            continue
         if key not in spec:
             raise ApiError(
                 422, "field_not_allowed", f"entrée « {key} » non déclarée par ce service", field=f"/inputs/{key}"
@@ -449,6 +458,7 @@ def resolve(
     provenance: dict[str, dict[str, str]],
     change_id: UUID | None = None,
     deployment: dict[str, Any] | None = None,
+    change_kind: str = "create",
     now: datetime | None = None,
 ) -> dict[str, Any]:
     now = now or datetime.now(UTC)
@@ -456,6 +466,7 @@ def resolve(
     settings = get_settings()
     referent_user = projects.referent_name(conn, project)
     referent = project["name"] + (f" ({referent_user})" if referent_user != "désigné du projet" else "")
+    is_restore = change_kind == "restore"
     slug = need["service"]["template"]
     pref_row_early = project_preferences.current(conn, project["id"])
     pref_early = (pref_row_early["preferences"] if pref_row_early else {}) or {}
@@ -594,7 +605,30 @@ def resolve(
 
     pol = projects.current_policy(conn, env["id"])
     rules = pol["rules"] if pol else {}
-    env_params = contract["environments"][env["kind"]]
+    env_params = dict(contract["environments"][env["kind"]])
+    # F40 : restauration → réseau de quarantaine uniquement, nom distinct, pas de prod.
+    restore_meta: dict[str, Any] | None = None
+    if is_restore:
+        from ..restore import profile as restore_profile_mod
+
+        profile = restore_profile_mod.restore_profile(contract)
+        source_instance = str((need.get("inputs") or {}).get("source_instance") or "").strip()
+        if not source_instance:
+            raise _bad("/inputs/source_instance", "instance source obligatoire pour une restauration")
+        placement = dict(env_params.get("placement") or {})
+        placement["network_role"] = profile["network_role"]
+        env_params["placement"] = placement
+        env_params["naming"] = profile["naming"].replace("{env_slug}", "{environment}")
+        env_params["backup"] = {
+            "policy": profile["backup_policy"],
+            "max_age_hours": profile["max_age_hours"],
+        }
+        restore_meta = {
+            "source_instance": source_instance,
+            "network_role": profile["network_role"],
+            "attach_production_network": False,
+            "simulated": True,
+        }
     out["environment"] = {
         "id": str(env["id"]),
         "slug": env["slug"],
@@ -637,10 +671,14 @@ def resolve(
     if pref_tier and pref_tier in env_params["size_tiers"] and "size_tier" not in inputs and deployment is None:
         default_tier = pref_tier
         tier_source_default = "project_preference"
-    if deployment is not None and previous:
-        default_tier = next(iter(previous.values()))["size_tier"]
+    if deployment is not None and previous and not is_restore:
+        first = next(iter(previous.values()))
+        default_tier = first.get("size_tier") or default_tier
         tier_source_default = "deployment_pinned"
-    quantity = inputs.get("quantity", len(previous) if previous else spec["quantity"]["default"])
+    if is_restore:
+        quantity = int(inputs.get("quantity") or 1)
+    else:
+        quantity = inputs.get("quantity", len(previous) if previous else spec["quantity"]["default"])
     tier = inputs.get("size_tier", default_tier)
 
     def src(field: str, default: str) -> str:
@@ -777,9 +815,18 @@ def resolve(
         "cluster": {"stable_id": primary_cluster["stable_id"], "name": primary_cluster["name"]},
         "datastore": {"stable_id": primary_datastore["stable_id"], "name": primary_datastore["name"]},
         "folder": {"stable_id": folder["stable_id"], "name": folder["name"]},
-        "network": {"stable_id": network["stable_id"], "name": network["name"]},
+        "network": {
+            "stable_id": network["stable_id"],
+            "name": network["name"],
+            "role": (network.get("attributes") or {}).get("role"),
+        },
         "addressing": contract["system_profile"]["network"]["addressing"],
     }
+    if is_restore and restore_meta is not None:
+        from ..restore import profile as restore_profile_mod
+
+        restore_profile_mod.assert_isolated_network(out["placement"]["network"])
+        previous = []
     # Hors de placement : le dossier d'exécution n'attend que des stable_id sous targets.placement.
     out["anti_affinity"] = (
         {"scope": anti_affinity["scope"]} if anti_affinity and anti_affinity.get("scope") else None
@@ -893,7 +940,25 @@ def resolve(
         "environment_policy",
         label=f"un approbateur de {project['name']} autre que le demandeur" if distinct else None,
     )
-    val("/governance/backup", env_params.get("backup", "none"), "template", applied=False)
+    backup_raw = env_params.get("backup", "none")
+    if backup_raw in (None, "none", False):
+        out["backup"] = {"policy": "none", "required": False}
+    elif isinstance(backup_raw, dict):
+        out["backup"] = {
+            "policy": backup_raw.get("policy") or "daily",
+            "max_age_hours": int(backup_raw.get("max_age_hours") or 24),
+            "required": True,
+        }
+    else:
+        out["backup"] = {"policy": str(backup_raw), "max_age_hours": 24, "required": True}
+    val("/governance/backup", backup_raw, "template", applied=False)
+    if restore_meta is not None:
+        out["restore"] = restore_meta
+        out["inputs"]["source_instance"] = restore_meta["source_instance"]
+        for inst in out.get("instances") or []:
+            if inst.get("name") == restore_meta["source_instance"]:
+                out["blocks"].append(_block("name_unavailable", referent))
+                return finish("blocked")
     val("/governance/open_ports", contract["system_profile"]["security"]["open_ports"], "template", applied=False)
     if out["inputs"]["lifetime_until"]:
         val(

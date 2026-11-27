@@ -3181,6 +3181,64 @@
         ]
       }
     },
+    "/api/v1/deployments/{deployment_id}/restore": {
+      "post": {
+        "description": "F40 : demande de restauration en réseau isolé (après approbation).",
+        "operationId": "restore_deployment_api_v1_deployments__deployment_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Restore Deployment Api V1 Deployments  Deployment Id  Restore Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Deployment",
+        "tags": [
+          "demandes"
+        ]
+      }
+    },
     "/api/v1/deployments/{deployment_id}/service-card": {
       "get": {
         "description": "F57 : fiche courte « Votre service est prêt » (périmètre projet, sorties allowlist).",

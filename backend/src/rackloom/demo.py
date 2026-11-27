@@ -139,6 +139,10 @@ def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
                 "SELECT * FROM users WHERE id = %s", (minted["user_id"],)
             ).fetchone()
 
+    from . import compatibility
+
+    compatibility.ensure_seeded(conn)
+
     audit.record(conn, actor_type="system", actor_id="demo-seed", action="demo.seed", outcome="ok",
                  targets={"projects": sorted(projs), "users": len(users)},
                  versions={"inventory_snapshot": str(snapshot)})

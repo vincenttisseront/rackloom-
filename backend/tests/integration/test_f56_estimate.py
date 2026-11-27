@@ -27,7 +27,8 @@ def test_pas_de_date_sans_approbation_et_historique_insuffisant(api, conn, demo)
     assert body["approval"]["status"] in ("not_ready", "pending", "n/a")
     assert body["execution"]["status"] == "insufficient_history"
     assert body["execution"]["label"] == "délai non estimable"
-    assert body["queue"]["status"] == "unavailable"
+    assert body["queue"]["status"] in ("idle", "ready", "waiting", "running")
+    assert body["queue"].get("runner_choice") is not True
 
 
 def test_demande_planifiee_montre_creneau(api, conn, demo):

@@ -132,8 +132,16 @@ def add_version(conn: Conn, principal: Principal, change_id: UUID, body: dict[st
     project = _project(conn, change["project_id"])
     deployment = conn.execute("SELECT * FROM deployments WHERE id = %s", (change["deployment_id"],)).fetchone() \
         if change["deployment_id"] else None
-    resolution = resolver.resolve(conn, principal=principal, project=project, need=need, provenance=provenance,
-                                  change_id=change_id, deployment=deployment)
+    resolution = resolver.resolve(
+        conn,
+        principal=principal,
+        project=project,
+        need=need,
+        provenance=provenance,
+        change_id=change_id,
+        deployment=deployment,
+        change_kind=change["kind"],
+    )
     version_no = change["current_version_no"] + 1
     revision_no = change["current_revision_no"] + 1
     conn.execute(
@@ -285,6 +293,88 @@ def submit(conn: Conn, principal: Principal, change_id: UUID, revision_no: int,
         change = transition(conn, dict(change), "validated", reason_code="submitted", actor_type="user",
                             actor_id=str(principal.user_id), detail={"revision_no": revision_no},
                             request_id=request_id)
+    # F40 : restauration — plan simulé prêt à approuver (pas de Terraform ; réseau quarantaine).
+    if change["kind"] == "restore":
+        from datetime import UTC, datetime, timedelta
+
+        from .. import artifacts
+        from .. import restore as restore_mod
+        from ..canonical import digest as canon_digest
+        from ..executions import bundle as bundles
+
+        restore_mod.verify_plan(revision["resolved"], revision["resolved"]["restore"]["source_instance"])
+        change = transition(conn, change, "planning", reason_code="restore_plan", actor_type="user",
+                            actor_id=str(principal.user_id), detail={"revision_no": revision_no},
+                            request_id=request_id)
+        plan_bytes = b'{"rackloom":"restore-plan","simulated":true}'
+        art = artifacts.store(
+            conn,
+            project_id=change["project_id"],
+            change_id=change["id"],
+            kind="tf_plan_bin",
+            key_class="A",
+            plaintext=plan_bytes,
+        )
+        env = conn.execute("SELECT * FROM environments WHERE id = %s", (change["environment_id"],)).fetchone()
+        valid_until = datetime.now(UTC) + timedelta(seconds=env["plan_ttl_seconds"])
+        version = current_version(conn, change)
+        stack = conn.execute("SELECT * FROM stacks WHERE id = %s", (dep["stack_id"],)).fetchone()
+        bundle = bundles.build(
+            conn,
+            change=change,
+            version=version,
+            revision=revision,
+            stack=stack,
+            plan_sha256=art["sha256"],
+            state_lineage=None,
+            state_serial=None,
+            valid_until=valid_until.isoformat(),
+            terraform_version=None,
+        )
+        plan_id = uuid7()
+        summary = {
+            "simulated": True,
+            "restore": True,
+            "destructive": False,
+            "no_changes": False,
+            "terraform_version": None,
+            "vm_counts": {"create": 1, "update": 0, "delete": 0},
+            "message": "Restauration en réseau isolé (simulée)",
+        }
+        conn.execute(
+            """
+            INSERT INTO plans (id, change_id, version_no, revision_no, stack_id, job_id, status, plan_sha256,
+                               artifact_id, summary, counts, valid_until, bundle, bundle_digest, state_lineage,
+                               state_serial)
+            VALUES (%s, %s, %s, %s, %s, NULL, 'ready', %s, %s, %s, %s, %s, %s, %s, NULL, NULL)
+            """,
+            (
+                plan_id,
+                change["id"],
+                revision["version_no"],
+                revision["revision_no"],
+                dep["stack_id"],
+                art["sha256"],
+                art["id"],
+                Jsonb(summary),
+                Jsonb(summary["vm_counts"]),
+                valid_until,
+                Jsonb(bundle),
+                canon_digest(bundle),
+            ),
+        )
+        change = transition(
+            conn,
+            change,
+            "plan_ready",
+            reason_code="restore_plan_ready",
+            actor_type="user",
+            actor_id=str(principal.user_id),
+            detail={"plan_id": str(plan_id), "simulated": True},
+            request_id=request_id,
+        )
+        return {"change": change, "job_id": None, "deployment_id": dep["id"], "plan_id": plan_id}
+
     change = transition(conn, change, "planning", reason_code="plan_requested", actor_type="user",
                         actor_id=str(principal.user_id), detail={"revision_no": revision_no}, request_id=request_id)
     # F31 : préflight (lecture seule) avant tf_plan ; tf_plan n'est enfilé qu'après succès.

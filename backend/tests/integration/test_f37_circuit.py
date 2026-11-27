@@ -185,7 +185,7 @@ def test_f37_dispatch_refuse_si_ouvert_apres_admission(conn, demo, worker, worke
 
 
 def test_f37_policy_bundle_builtin4():
-    assert BUILTIN_VERSION == "builtin@8"
+    assert BUILTIN_VERSION == "builtin@9"
     from rackloom import policy
 
     ids = [r["id"] for r in policy.BUILTIN_RULES["admission"]]

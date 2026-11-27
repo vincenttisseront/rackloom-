@@ -56,8 +56,18 @@ function fmtWhen(iso: string | null | undefined): string {
       </dd>
       <dt>File d'attente</dt>
       <dd data-testid="estimate-queue">
-        <span class="badge">{{ estimate.queue?.status === 'unavailable' ? 'Non disponible' : estimate.queue?.status }}</span>
+        <span class="badge">{{
+          estimate.queue?.status === 'waiting' ? 'En attente'
+          : estimate.queue?.status === 'ready' ? 'Prête'
+          : estimate.queue?.status === 'running' ? 'En cours'
+          : estimate.queue?.status === 'idle' ? 'Inactive'
+          : estimate.queue?.status === 'unavailable' ? 'Non disponible'
+          : estimate.queue?.status
+        }}</span>
         <span class="small muted"> — {{ estimate.queue?.reason }}</span>
+        <span v-if="estimate.queue?.quota?.limit != null" class="small muted">
+          (quota {{ estimate.queue.quota.active }}/{{ estimate.queue.quota.limit }})
+        </span>
       </dd>
     </dl>
     <p v-if="estimate.known_blockers?.length" class="banner warn small" data-testid="estimate-blockers">

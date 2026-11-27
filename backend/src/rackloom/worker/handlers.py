@@ -1422,6 +1422,82 @@ def handle_drift_scan(r: JobContext) -> None:
         )
 
 
+def handle_vm_restore(r: JobContext) -> None:
+    """F40 : restauration simulée en réseau de quarantaine (pas de labo réel)."""
+    from .. import restore as restore_mod
+
+    with r.tx() as conn:
+        ctx = _load(conn, r.job)
+        _admit(r, conn, ctx)
+        resolved = ctx["resolution"] or {}
+        restore_meta = resolved.get("restore") or {}
+        source = restore_meta.get("source_instance")
+        if not source:
+            raise Refused("restore_missing_source", "instance source absente de la révision")
+        restore_mod.verify_plan(resolved, source)
+        network = (resolved.get("placement") or {}).get("network") or {}
+        names = [i["name"] for i in (resolved.get("instances") or [])]
+        r.step(
+            conn,
+            "Restauration en quarantaine (simulée)",
+            "succeeded",
+            simulated=True,
+            summary={
+                "source_instance": source,
+                "restored_names": names,
+                "network": network.get("name"),
+                "network_role": network.get("role"),
+                "attach_production_network": False,
+                "simulated": True,
+                "notice": "Aucune restauration réelle : observations fictives (D2).",
+            },
+        )
+        r.fenced(
+            conn,
+            "state = 'succeeded', finished_at = now(), result = %s",
+            (
+                Jsonb(
+                    {
+                        "simulated": True,
+                        "source_instance": source,
+                        "restored_names": names,
+                        "network_role": network.get("role"),
+                    }
+                ),
+            ),
+        )
+        change = ctx["change"]
+        if change["state"] == "approved":
+            change = transition(
+                conn,
+                change,
+                "executing",
+                reason_code="restore_started",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"simulated": True},
+            )
+        if change["state"] == "executing":
+            change = transition(
+                conn,
+                change,
+                "verifying",
+                reason_code="restore_verify",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"simulated": True, "network_role": network.get("role")},
+            )
+        transition(
+            conn,
+            change,
+            "succeeded",
+            reason_code="restore_simulated",
+            actor_type="worker",
+            actor_id=r.worker_id,
+            detail={"simulated": True, "network_role": network.get("role")},
+        )
+
+
 HANDLERS = {
     "preflight": handle_preflight,
     "tf_plan": handle_tf_plan,
@@ -1431,6 +1507,7 @@ HANDLERS = {
     "verify": handle_verify,
     "reconcile": handle_reconcile,
     "drift_scan": handle_drift_scan,
+    "vm_restore": handle_vm_restore,
 }
 
 

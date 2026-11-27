@@ -44,14 +44,14 @@ grants:
     cluster: [domain-c10, domain-c11]
     datastore: [datastore-201, datastore-202]
     folder: [group-v21]
-    network: [network-101, network-102]
+    network: [network-101, network-102, network-190]
   vitrine/prod:
     service_template: [ubuntu-web]
     image: [vm-500]
     cluster: [domain-c20]
     datastore: [datastore-301]
     folder: [group-v22]
-    network: [network-301]
+    network: [network-301, network-390]
   compta/dev:
     service_template: [ubuntu-web]
     image: [vm-500]

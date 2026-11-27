@@ -255,3 +255,27 @@ def modify_deployment(deployment_id: UUID, request: Request,
             return {"change": change_view(u.conn, u.p, change)}
 
         return idempotent(u, request, body, act)
+
+
+@router.post("/deployments/{deployment_id}/restore")
+def restore_deployment(deployment_id: UUID, request: Request,
+                       body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    """F40 : demande de restauration en réseau isolé (après approbation)."""
+    from .. import restore as restore_mod
+
+    _only(body, {"source_instance"})
+    source = body.get("source_instance")
+    if not isinstance(source, str) or not source.strip():
+        raise ApiError(422, "invalid_input", "source_instance attendu", field="/source_instance")
+    with unit_of_work(request, write=True) as u:
+        dep = service.get_deployment(u.conn, u.p, deployment_id)
+
+        def act() -> dict[str, Any]:
+            workflow.require_action(u.conn, u.p, "deployment", dep, "restore")
+            change = restore_mod.create_restore_change(
+                u.conn, u.p, deployment_id, source_instance=source.strip(), request_id=u.request_id
+            )
+            return {"change": change_view(u.conn, u.p, change)}
+
+        return idempotent(u, request, body, act)
+
