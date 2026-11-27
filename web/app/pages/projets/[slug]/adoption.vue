@@ -146,7 +146,7 @@ async function run(action: 'observe' | 'preview' | 'propose-import' | 'approve' 
       <p v-if="!adoptions.length" class="empty">Aucune adoption.</p>
       <ul v-else>
         <li v-for="a in adoptions" :key="a.id">
-          <button type="button" class="linkish" data-testid="open-adoption" @click="openAdoption(a.id)">
+          <button type="button" class="link" data-testid="open-adoption" @click="openAdoption(a.id)">
             {{ a.vm_name }}
           </button>
           <span class="badge" :class="a.state === 'blocked_conflict' ? 'bad' : a.state === 'imported' ? 'ok' : 'warn'">
@@ -194,15 +194,3 @@ async function run(action: 'observe' | 'preview' | 'propose-import' | 'approve' 
     </section>
   </div>
 </template>
-
-<style scoped>
-.linkish {
-  background: none;
-  border: none;
-  color: var(--accent, #0b5);
-  cursor: pointer;
-  text-decoration: underline;
-  padding: 0;
-  font: inherit;
-}
-</style>
