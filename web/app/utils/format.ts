@@ -32,6 +32,7 @@ export const JOB_LABELS: Record<string, string> = {
   reconcile: 'Réconciliation',
   inventory_refresh: "Rafraîchissement de l'inventaire",
   drift_scan: 'Détection de dérive',
+  compliance_scan: 'Scan de conformité',
   vm_restore: 'Restauration VM (réseau isolé)',
 }
 

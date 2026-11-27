@@ -42,7 +42,7 @@ def import_anchor(
     if len(parts) < 2 or parts[0] not in ("ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa"):
         raise ValueError("clé publique d'hôte invalide")
     fp = fingerprint(public_key_line)
-    return conn.execute(
+    row = conn.execute(
         """
         INSERT INTO trust_anchors (id, address, key_type, public_key, fingerprint, source, imported_by)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -52,6 +52,8 @@ def import_anchor(
         """,
         (uuid7(), address, parts[0], f"{parts[0]} {parts[1]}", fp, source, imported_by),
     ).fetchone()
+    assert row is not None
+    return row
 
 
 def known_hosts(conn: Conn, addresses: list[str]) -> str:
@@ -130,17 +132,37 @@ def view(conn: Conn, host: dict[str, Any]) -> dict[str, Any]:
         "enrolled_at": _iso(host["enrolled_at"]),
         "deployment_state": host["deployment_state"],
         "composition_member": host.get("composition_member"),
-        "change": {"id": str(host["change_id"]), "ref": f"CHG-{change['seq']:04d}", "state": change["state"]},
+        "change": {
+            "id": str(host["change_id"]),
+            "ref": f"CHG-{change['seq']:04d}" if change else "CHG-????",
+            "state": change["state"] if change else "unknown",
+        },
         "health": health(conn, host),
         "facts": obs["facts"]["data"] if "facts" in obs else None,
-        "packages": obs["packages"]["data"] if "packages" in obs else None,
+        "packages": _public_map(obs["packages"]["data"]) if "packages" in obs else None,
         "services": obs["services"]["data"] if "services" in obs else None,
+        "settings": _public_map(obs["settings"]["data"]) if "settings" in obs else None,
         "probe": obs["probe"]["data"] if "probe" in obs else None,
         "provenance": {
             "source": "rackloom-collect (Ansible, sans élévation)",
             "simulated_parts": ["identité vCenter", "adresse IP (nœud de labo associé)"],
+            "rudder": (
+                "observations fictives explicites (rudder_fake)"
+                if (
+                    ("settings" in obs and obs["settings"].get("source") == "rudder_fake")
+                    or ("packages" in obs and obs["packages"].get("source") == "rudder_fake")
+                )
+                else None
+            ),
         },
     }
+
+
+def _public_map(data: Any) -> dict[str, Any] | None:
+    """Retire les clés internes (_…) des observations affichées."""
+    if not isinstance(data, dict):
+        return None
+    return {k: v for k, v in data.items() if not str(k).startswith("_")}
 
 
 def _iso(value: datetime | None) -> str | None:

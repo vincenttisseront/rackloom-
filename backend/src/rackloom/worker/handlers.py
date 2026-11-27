@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from .. import admission, artifacts, drift, hosts, ipam, registry, sshca
+from .. import admission, artifacts, compliance, drift, hosts, ipam, registry, sshca
 from ..canonical import digest, file_tree_digest
 from ..changes.transitions import transition
 from ..db import Conn, Jsonb
@@ -1861,6 +1861,47 @@ def handle_drift_scan(r: JobContext) -> None:
         )
 
 
+def handle_compliance_scan(r: JobContext) -> None:
+    """F24 : scan de conformité en lecture seule — aucune correction."""
+    with r.tx() as conn:
+        ctx = _load(conn, r.job)
+        _admit(r, conn, ctx)
+        host_id = r.job["payload"].get("host_id")
+        if not host_id:
+            raise Refused("host_id manquant pour le scan de conformité", "compliance_target_missing")
+        if r.job["payload"].get("already_scanned"):
+            result = compliance.latest_for_host(conn, UUID(str(host_id))) or {
+                "status": "ok",
+                "findings": [],
+                "correction": False,
+            }
+        else:
+            result = compliance.scan_host(
+                conn,
+                host_id=UUID(str(host_id)),
+                profile_slug=str(r.job["payload"].get("profile_slug") or "ubuntu-web-baseline"),
+                profile_version=r.job["payload"].get("profile_version"),
+                source=str(r.job["payload"].get("source") or "rackloom"),
+                job_id=r.job["id"],
+                actor_type="worker",
+                actor_id=r.worker_id,
+            )
+        r.fenced(
+            conn,
+            "state = 'succeeded', finished_at = now(), result = %s",
+            (Jsonb({**result, "correction": False}),),
+        )
+        r.event(
+            conn,
+            "compliance.scanned",
+            {
+                "message": f"Conformité : {result.get('status')} ({len(result.get('findings') or [])} règle(s))",
+                "status": result.get("status"),
+                "correction": False,
+            },
+        )
+
+
 def handle_vm_restore(r: JobContext) -> None:
     """F40 : restauration simulée en réseau de quarantaine (pas de labo réel)."""
     from .. import restore as restore_mod
@@ -2440,6 +2481,7 @@ HANDLERS = {
     "verify": handle_verify,
     "reconcile": handle_reconcile,
     "drift_scan": handle_drift_scan,
+    "compliance_scan": handle_compliance_scan,
     "vm_restore": handle_vm_restore,
     "service_restart": handle_service_restart,
     "lease_retire": handle_lease_retire,
