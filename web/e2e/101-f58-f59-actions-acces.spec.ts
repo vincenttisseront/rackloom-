@@ -1,7 +1,7 @@
-import { expect, expectAccessible, login, press, session, test } from './helpers'
+import { expect, expectAccessible, login, logout, press, session, test } from './helpers'
 
 test('F58/F59 — actions fiche service et demande d\'accès', async ({ page }) => {
-  test.setTimeout(300_000)
+  test.setTimeout(180_000)
   const alice = await session('alice')
   const bruno = await session('bruno')
   const chloe = await session('chloe')
@@ -26,49 +26,54 @@ test('F58/F59 — actions fiche service et demande d\'accès', async ({ page }) 
   await login(page, 'alice')
   await page.goto(`/deployments/${deploymentId}`)
   await expect(page.getByTestId('service-card')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('access-request-panel')).toBeVisible()
 
   const actions = page.getByTestId('service-actions')
-  // Actions présentes si le service est prêt/actif ; sinon panneau d'accès seul.
   if (await actions.count()) {
     await expect(page.getByTestId('service-action-impact').first()).toBeVisible()
-    await expect(page.getByTestId('service-action-increase_capacity').or(
-      page.getByTestId('service-action-request_restart'),
-    )).toBeVisible()
+    await expect(
+      page.getByTestId('service-action-increase_capacity').or(page.getByTestId('service-action-request_restart')),
+    ).toBeVisible()
   }
-  await expect(page.getByTestId('access-request-panel')).toBeVisible()
   await expectAccessible(page, 'F58/F59 fiche')
 
-  // Demande d'accès (si niveaux éligibles).
+  // Demande d'accès via UI (si niveaux éligibles) ; approbation via API Bruno (évite un 2e login UI).
+  let requestId: string | null = null
   if (await page.getByTestId('request-access').count()) {
     await press(page.getByTestId('request-access'))
     await expect(page.getByTestId('notice')).toContainText(/accès/i, { timeout: 20_000 })
 
-    await login(page, 'bruno')
-    await page.goto(`/deployments/${deploymentId}`)
-    const approve = page.getByTestId('approve-access')
-    await expect(approve).toBeVisible({ timeout: 20_000 })
-    await press(approve)
-    await expect(page.getByTestId('notice')).toContainText(/accordé|synchronisation|Échec/i, {
-      timeout: 20_000,
-    })
+    const listed = await alice.call('GET', `/deployments/${deploymentId}/access-requests`)
+    expect(listed.status).toBe(200)
+    const pending = (listed.body.items || []).find((r: any) => r.state === 'pending_approval')
+    expect(pending, 'demande en attente').toBeTruthy()
+    requestId = pending.id
+
+    const approved = await bruno.call('POST', `/access-requests/${requestId}/approve`, {})
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200)
+    expect(['granted', 'sync_failed']).toContain(approved.body.state)
+
+    await page.reload()
+    await expect(page.getByTestId('access-requests')).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByTestId('access-requests')).toContainText(
+      /Accès accordé|Échec de synchronisation|accordé|synchronisation/i,
+    )
   }
 
   // F58 : augmenter la capacité → demande préremplie (si action dispo).
-  await login(page, 'alice')
-  await page.goto(`/deployments/${deploymentId}`)
   const cap = page.getByTestId('service-action-increase_capacity')
   if (await cap.count()) {
     await press(cap)
     await expect(page.getByRole('heading', { name: /Modifier ce déploiement|Demande|Récapitulatif/i })).toBeVisible({
       timeout: 30_000,
     })
-    // Impact remplacement visible sur l'étape 2 si présent.
     const risk = page.getByTestId('risk-destructive')
     if (await risk.count()) {
       await expect(risk).toContainText(/remplac/i)
     }
   }
 
+  await logout(page)
   await alice.dispose()
   await bruno.dispose()
   await chloe.dispose()
