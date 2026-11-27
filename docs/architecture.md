@@ -143,8 +143,9 @@ Règles vérifiées par `import-linter` dans `make test` :
 | N9 | runner vsphere | vCenter | 443/tcp | inventaire, suivi | 2 | identité d'inventaire en lecture seule |
 | N10 | runner ansible | VM gérées | 22/tcp | configuration et collecte | 2 | réseaux de gestion autorisés, ancre de clé d'hôte |
 | N11 | appliance | NTP, DNS internes | 123/udp, 53 | exploitation | 3 | configurés au premier boot |
+| N12 | agents de télémétrie enrôlés | proxy → api | 443/tcp | métriques et journaux (F23) | backlog | mTLS client ; identité authentifiée prime sur le contenu ; quotas et rétention par projet |
 
-Aucun flux entrant vers PostgreSQL, Ollama, le launcher ou les runners. Les invités n'initient aucune connexion vers l'appliance en v1 (la passerelle de télémétrie F23 est une extension).
+Aucun flux entrant vers PostgreSQL, Ollama, le launcher ou les runners. Les agents de télémétrie (F23) sont la seule extension d'écriture entrante hors WebUI/API authentifiée : mTLS, isolation projet, quotas.
 
 ## 7. Besoin, résolution et templates
 
@@ -393,6 +394,7 @@ Ils sont présents au lot 1 parce qu'ils coûtent peu et évitent une migration 
 | Contexte d'authentification de l'approbateur | oui | F12 |
 | Fraîcheur des instantanés d'inventaire dans chaque révision | oui | F05, F09, F32 |
 | Champ `zone` dans la spécification du launcher | oui (slugs `dev`/`prod`/… ; défaut `local`) | F16 |
+| Passerelle de télémétrie (agents mTLS, quotas, rétention) | oui (`telemetry_*`, `POST /telemetry/ingest`) | F23 |
 | Secrets en écriture seule côté API, références dans les contrats | oui | F13, F43 |
 | Contrat de connecteur à capacités et suite de contrat | oui (connecteurs du lot 1) | F30 |
 | Adaptateurs de modèle interchangeables, constructeur de contexte filtré, scénarios fictifs rejouables, banc d'évaluation (`chat_eval_reports`, prompt `rackloom.chat-prompt/v1`), routage des modèles, aperçu de contexte, runbooks | oui | F46, F47, F48, F49 |

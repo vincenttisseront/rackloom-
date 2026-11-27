@@ -32,6 +32,7 @@ from . import (
     routes_resources,
     routes_runners,
     routes_studio,
+    routes_telemetry,
 )
 
 log = logging.getLogger(__name__)
@@ -133,11 +134,13 @@ def create_app() -> FastAPI:
         routes_studio,
         routes_runners,
         routes_itsm,
+        routes_telemetry,
     ):
         app.include_router(module.router, prefix=PREFIX)
     app.include_router(routes_identity_audit.scim_router, prefix=PREFIX)
     app.include_router(routes_runners.runner_router, prefix=PREFIX)
     app.include_router(routes_itsm.webhook_router, prefix=PREFIX)
+    app.include_router(routes_telemetry.agent_router, prefix=PREFIX)
     app.include_router(routes_admin.health, prefix=PREFIX)
     return app
 

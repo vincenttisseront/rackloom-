@@ -56,6 +56,11 @@ const links = computed(() => {
         title: 'Bundles hors ligne',
         blurb: 'Lots signés pour sites déconnectés : contenu exact, intégrité, import sans Internet.',
       },
+      {
+        to: '/admin/telemetry',
+        title: 'Télémétrie',
+        blurb: 'Agents mTLS, quotas et rétention par projet (passerelle F23).',
+      },
     )
   }
   return items

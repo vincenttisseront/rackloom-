@@ -966,6 +966,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/telemetry/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Agents */
+        get: operations["list_agents_api_v1_admin_telemetry_agents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/telemetry/agents/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enroll Agent */
+        post: operations["enroll_agent_api_v1_admin_telemetry_agents_enroll_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/telemetry/agents/{agent_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Agent */
+        post: operations["revoke_agent_api_v1_admin_telemetry_agents__agent_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/telemetry/projects/{project}/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Limits */
+        put: operations["put_limits_api_v1_admin_telemetry_projects__project__limits_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/templates": {
         parameters: {
             query?: never;
@@ -3332,6 +3400,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/telemetry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Project Telemetry */
+        get: operations["project_telemetry_api_v1_projects__project__telemetry_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/role-bindings": {
         parameters: {
             query?: never;
@@ -3652,6 +3737,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/telemetry/ingest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest
+         * @description L'agent pousse métriques ou journaux (mTLS). Le projet authentifié l'emporte.
+         */
+        post: operations["ingest_api_v1_telemetry_ingest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/temporary-grants/{grant_id}/revoke": {
         parameters: {
             query?: never;
@@ -3735,17 +3840,6 @@ export interface components {
              */
             lease_seconds: number;
         };
-        /** EnrollBody */
-        EnrollBody: {
-            /** Capabilities */
-            capabilities: string[];
-            /** Name */
-            name: string;
-            /** Slug */
-            slug: string;
-            /** Zone */
-            zone: string;
-        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -3755,6 +3849,26 @@ export interface components {
         HeartbeatBody: {
             /** Worker Id */
             worker_id?: string | null;
+        };
+        /** IngestBody */
+        IngestBody: {
+            /** Kind */
+            kind: string;
+            /** Payload */
+            payload: unknown;
+            /** Project */
+            project?: string | null;
+        };
+        /** LimitsBody */
+        LimitsBody: {
+            /** Max Payload Bytes */
+            max_payload_bytes?: number | null;
+            /** Quota Bytes Per Window */
+            quota_bytes_per_window?: number | null;
+            /** Retention Days */
+            retention_days?: number | null;
+            /** Window Seconds */
+            window_seconds?: number | null;
         };
         /** LoginBody */
         LoginBody: {
@@ -3789,6 +3903,26 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** EnrollBody */
+        rackloom__api__routes_runners__EnrollBody: {
+            /** Capabilities */
+            capabilities: string[];
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /** Zone */
+            zone: string;
+        };
+        /** EnrollBody */
+        rackloom__api__routes_telemetry__EnrollBody: {
+            /** Name */
+            name: string;
+            /** Project */
+            project: string;
+            /** Slug */
+            slug: string;
         };
     };
     responses: never;
@@ -5416,7 +5550,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["EnrollBody"];
+                "application/json": components["schemas"]["rackloom__api__routes_runners__EnrollBody"];
             };
         };
         responses: {
@@ -5587,6 +5721,137 @@ export interface operations {
                 "application/json": {
                     [key: string]: unknown;
                 } | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_agents_api_v1_admin_telemetry_agents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+    };
+    enroll_agent_api_v1_admin_telemetry_agents_enroll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["rackloom__api__routes_telemetry__EnrollBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_agent_api_v1_admin_telemetry_agents__agent_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_limits_api_v1_admin_telemetry_projects__project__limits_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LimitsBody"];
             };
         };
         responses: {
@@ -10325,6 +10590,41 @@ export interface operations {
             };
         };
     };
+    project_telemetry_api_v1_projects__project__telemetry_get: {
+        parameters: {
+            query?: {
+                kind?: string | null;
+            };
+            header?: never;
+            path: {
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     grant_role_api_v1_role_bindings_post: {
         parameters: {
             query?: never;
@@ -10980,6 +11280,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    ingest_api_v1_telemetry_ingest_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IngestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

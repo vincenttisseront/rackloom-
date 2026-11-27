@@ -539,16 +539,24 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F25 : ITSM et notifications (Lot F, 2026-11-27, heure de Paris)
 
-- Branche `cursor/f25-itsm-notifications-5f31` (PR #44). Migration Alembic **`0032`** (`down_revision=0031` après cascade F24). Aucun stub.
+- Fusionné (PR #44). Migration Alembic **`0032`** (`down_revision=0031` après cascade F24). Aucun stub.
 - Tables `itsm_adapters`, `itsm_tickets`, `itsm_deliveries`, `itsm_inbound_events`, `notifications` ; GRANT `rackloom_api` / `rackloom_worker` (SELECT/INSERT/UPDATE).
 - Adaptateur fictif `itsm-fake` : livraisons idempotentes (`dedupe_key`), reprise ; tickets reliés aux demandes/jobs ; notifications vers `/demandes/{id}` (URL publique sans secret).
 - Webhook entrant : rejeu → `duplicate` sans second ticket ; `approve` / `decision` → `403 approval_forbidden` (commit de l'événement rejeté). `POST /notifications/{id}/respond` ne peut pas approuver.
 - API : sync/liste ITSM sur demande, flush admin, notifications ; UI panneau demande + accueil.
 - Preuves : `test_f25_itsm.py` (8) ; e2e `104-f25-itsm.spec.ts` ; `test_db_roles`. ITSM réel : non (D11).
 
+### F23 : passerelle de télémétrie (Lot G, 2026-11-27, heure de Paris)
+
+- Branche `cursor/f23-passerelle-telemetry-711d` (PR #42). Migration Alembic **`0033`** (`down_revision=0032` après cascade Lot F). Aucun stub.
+- Tables `telemetry_agents`, `telemetry_project_limits`, `telemetry_usage_windows`, `telemetry_samples` ; GRANT `rackloom_api` / `rackloom_worker`.
+- Module `telemetry` : CA locale sous `keys_dir` ; enrôlement mTLS (empreinte SHA-256) ; `POST /telemetry/ingest` (header `X-Client-Cert-SHA256`) ; identité authentifiée prime → `403 project_spoofed` ; quota fenêtre → `429 quota_exceeded` ; taille → `413 payload_too_large` ; rétention `expires_at`.
+- API admin : enroll / revoke / limits ; lecture scopée `GET /projects/{project}/telemetry` ; UI admin + panneau projet.
+- Preuves : `test_f23_telemetry.py` (5) ; e2e `104-f23-telemetry.spec.ts` ; `test_db_roles`. Labo réel : non.
+
 ## Prochain jalon
 
-1. Fusionner **F25 (`0032`)** (PR #44) après CI verte post-rebase (`down_revision=0031`).
+1. Fusionner **F23 (`0033`)** (PR #42) après CI verte post-rebase (`down_revision=0032`).
 2. Suite : F30, AT02–AT04 selon dépendances ; ISO (lot 3) après Lots F+G.
 3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

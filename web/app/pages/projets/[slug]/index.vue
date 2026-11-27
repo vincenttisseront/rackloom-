@@ -16,6 +16,7 @@ const patchCampaigns = ref<any[]>([])
 const softwareInventory = ref<any | null>(null)
 const softwareExportBusy = ref(false)
 const softwareExportNotice = ref<string | null>(null)
+const telemetry = ref<any | null>(null)
 const error = ref<string | null>(null)
 
 const KIND_LABEL: Record<string, string> = {
@@ -59,6 +60,11 @@ onMounted(async () => {
       softwareInventory.value = await api.get(`/projects/${slug.value}/software-inventory`)
     } catch {
       softwareInventory.value = null
+    }
+    try {
+      telemetry.value = await api.get(`/projects/${slug.value}/telemetry`)
+    } catch {
+      telemetry.value = null
     }
     try {
       preferences.value = await api.get(`/projects/${slug.value}/preferences`)
@@ -344,6 +350,45 @@ function envChanged(updated: any) {
         Provenance : comparaison sur la version de distribution ;
         jamais sur la seule version amont.
       </p>
+    </section>
+
+    <section
+      v-if="telemetry"
+      class="card"
+      aria-labelledby="telemetry-title"
+      data-testid="telemetry-panel"
+    >
+      <h2 id="telemetry-title">Télémétrie</h2>
+      <p class="small muted">
+        Échantillons reçus d'agents enrôlés (mTLS). L'identité authentifiée fixe le projet ;
+        quotas et rétention s'appliquent côté serveur.
+      </p>
+      <p class="small" data-testid="telemetry-quota">
+        Quota fenêtre :
+        {{ telemetry.quota.used_bytes }} / {{ telemetry.quota.limit_bytes }} octets
+        ({{ telemetry.limits.window_seconds }} s) · rétention {{ telemetry.limits.retention_days }} j
+      </p>
+      <p v-if="!telemetry.samples.length" class="empty" data-testid="telemetry-empty">
+        Aucun échantillon conservé.
+      </p>
+      <table v-else data-testid="telemetry-samples">
+        <thead>
+          <tr>
+            <th scope="col">Type</th>
+            <th scope="col">Taille</th>
+            <th scope="col">Reçu</th>
+            <th scope="col">Expire</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="s in telemetry.samples" :key="s.id">
+            <td><span class="badge">{{ s.kind }}</span></td>
+            <td>{{ s.byte_size }} o</td>
+            <td class="small">{{ dateTime(s.received_at) }}</td>
+            <td class="small">{{ dateTime(s.expires_at) }}</td>
+          </tr>
+        </tbody>
+      </table>
     </section>
 
     <section class="card" aria-labelledby="deps-title">
