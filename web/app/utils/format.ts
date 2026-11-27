@@ -85,6 +85,7 @@ export const SERVICE_TONE: Record<string, string> = {
   created_not_ready: 'warn',
   failed: 'bad',
   verification_unavailable: 'warn',
+  unavailable: 'bad',
   unknown: 'neutral',
 }
 

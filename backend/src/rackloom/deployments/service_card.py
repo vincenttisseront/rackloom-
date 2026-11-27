@@ -34,6 +34,7 @@ STATUS_HEADLINES = {
     "created_not_ready": "Service créé, mais pas prêt",
     "failed": "Échec du service",
     "verification_unavailable": "Vérification indisponible",
+    "unavailable": "Service indisponible",
     "unknown": "Service pas encore vérifié",
 }
 
@@ -42,6 +43,7 @@ STATUS_LABELS = {
     "created_not_ready": "Créé, pas prêt",
     "failed": "Échec",
     "verification_unavailable": "Vérification indisponible",
+    "unavailable": "Indisponible",
     "unknown": "Non vérifié",
 }
 
@@ -136,7 +138,9 @@ def build(conn: Conn, dep: dict[str, Any], *, principal: Principal | None = None
     reason = dep.get("service_reason") or ""
     # Titres utilisateur : pour created_not_ready, le motif exact (ex. sonde HTTP) reste visible.
     detail_line = reason
-    if status == "created_not_ready" and "sonde HTTP" in reason:
+    if status == "unavailable":
+        headline_detail = reason or "Service actif, sonde en échec depuis le segment prévu"
+    elif status == "created_not_ready" and "sonde HTTP" in reason:
         motif = reason.removeprefix("VM créée, ").strip()
         headline_detail = reason if reason.startswith("Service") else f"Créé mais pas prêt : {motif}"
     elif status == "verification_unavailable":
@@ -144,12 +148,34 @@ def build(conn: Conn, dep: dict[str, Any], *, principal: Principal | None = None
     else:
         headline_detail = reason
 
+    # F18 : dimensions distinctes si des résultats de sonde existent.
+    from .. import probes as probes_mod
+
+    availability_block: dict[str, Any] | None = None
+    latest = probes_mod.latest_results(conn, dep["id"])
+    if latest:
+        objective = probes_mod.objective_for_deployment(conn, dep)
+        max_age = int(objective["max_probe_age_seconds"]) if objective else probes_mod.DEFAULT_MAX_AGE
+        focus = latest[0]
+        dims = probes_mod.evaluate_dimensions(
+            service_state=focus["service_state"],
+            probe_health=focus["probe_health"],
+            checked_at=focus["checked_at"],
+            max_age_seconds=max_age,
+        )
+        availability_block = {
+            **dims,
+            "from_segment": focus["from_segment"],
+            "protocol": focus["protocol"],
+        }
+
     card: dict[str, Any] = {
         "deployment_id": str(dep["id"]),
         "status": status,
         "status_label": STATUS_LABELS.get(status, status),
         "headline": STATUS_HEADLINES.get(status, STATUS_HEADLINES["unknown"]),
         "detail": headline_detail or detail_line,
+        "availability": availability_block,
         "service": {
             "title": contract["title"],
             "slug": tpl["slug"],

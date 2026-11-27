@@ -61,6 +61,17 @@ watch(
         {{ card.checks.summary }}
         <span v-if="card.checked_at" class="muted"> · {{ dateTime(card.checked_at) }}</span>
       </dd>
+      <template v-if="card.availability">
+        <dt>État du service</dt>
+        <dd data-testid="availability-service-state">{{ card.availability.service_state_label }}</dd>
+        <dt>Santé de la sonde</dt>
+        <dd data-testid="availability-probe-health">
+          {{ card.availability.probe_health_label }}
+          <span v-if="card.availability.from_segment" class="muted"> · segment {{ card.availability.from_segment }}</span>
+        </dd>
+        <dt>Fraîcheur</dt>
+        <dd data-testid="availability-freshness">{{ card.availability.freshness_label }}</dd>
+      </template>
     </dl>
     <ul v-if="card.checks.succeeded.length" class="small" data-testid="service-checks-ok">
       <li v-for="(c, i) in card.checks.succeeded" :key="`ok-${i}`">

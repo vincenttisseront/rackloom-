@@ -52,7 +52,8 @@ secret_refs: []
 health_checks:
   - {type: package_installed, package: nginx}
   - {type: service_active, unit: nginx}
-  - {type: http_probe, port: 80, path: /, expect_status: 200}
+  # F18 : sonde depuis le segment d'accès labo (protocoles autorisés uniquement).
+  - {type: http_probe, port: 80, path: /, expect_status: 200, protocol: http, from_segment: lab-access}
 deployment_policy:
   admissible_environment_kinds: [dev, prod]
   approval: {required: true, distinct_approver: true}

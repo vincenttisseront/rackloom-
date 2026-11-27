@@ -112,7 +112,8 @@
 | Bundles pour sites déconnectés (F17) | livré (lots fictifs signés) | testé localement | `test_f17_offline_bundles.py` ; e2e `103-f17-bundles.spec.ts` ; migration `0024` ; Ed25519 ; octet altéré → `bundle_tampered` ; VM QEMU isolée : non (lot 3) |
 | Exercices de restauration (F26) | livré (filesystem isolé) | testé localement | `test_f26_restore.py` ; `dispatch_paused` ; migration `0025` (`down_revision=0024`) ; `docs/restore-exercises.md` ; VM QEMU / state distant : non |
 | Consommation par équipe (F29) | livré (inventaire fictif) | testé localement | `test_f29_consumption.py` ; e2e `103-f29-consommation.spec.ts` ; migration `0026` (`down_revision=0025`) ; aucun montant sans `pricing_rates` ; L2 non fait |
-| Fonctions F18–F20, F22–F25, F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
+| Sondes et objectifs de disponibilité (F18) | livré (segments simulés) | testé localement | `test_f18_probes.py` ; e2e `104-f18-sondes.spec.ts` ; migration `0027` (`down_revision=0026`) ; `unavailable` si sonde KO depuis segment ; segments réels : non |
+| Fonctions F19–F20, F22–F25, F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6
 
@@ -480,15 +481,24 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F29 : consommation par équipe (Lot E, 2026-11-27, heure de Paris)
 
-- Branche `cursor/f29-consommation-equipe-dbb9` rebasée sur `main` après F26. Migration Alembic **`0026`** (`down_revision=0025`).
+- Fusionné (PR #34). Migration Alembic **`0026`** (`down_revision=0025`).
 - Table `pricing_rates` + GRANT `rackloom_api` (SELECT/INSERT/UPDATE) / `rackloom_worker` (SELECT).
 - Module `consumption` : allocation (déploiements actifs), mesure (attributs d'usage inventaire s'ils existent), estimation (demandes résolues avant exécution). Aucun montant si aucun tarif.
 - API `GET /projects/{project}/consumption` ; panneau projet ; comparateur F52 peut exposer un coût seulement si tarif présent.
 - Preuves : `test_f29_consumption.py` ; e2e `103-f29-consommation.spec.ts`. Mesures vCenter réelles : non (D2).
 
+### F18 : sondes et objectifs de disponibilité (Lot F, 2026-11-27, heure de Paris)
+
+- Branche `cursor/f18-sondes-disponibilite-fc72`. Migration Alembic **`0027`** (`down_revision=0026`).
+- Tables `probe_segments`, `availability_objectives`, `probe_results` ; `deployments.service_status` enrichi de `unavailable` ; GRANT api/worker.
+- Segments builtin `lab-access` (atteint les cibles) et `filtered` (isolation simulée). Trois dimensions : `service_state`, `probe_health`, `freshness`.
+- API `GET /deployments/{id}/availability`, `POST /deployments/{id}/probes/run`, `GET /admin/probe-segments` ; fiche service expose les dimensions.
+- Verify worker : segment filtrant → sonde KO ; service actif + sonde KO → `unavailable`.
+- Preuves : `test_f18_probes.py` ; e2e `104-f18-sondes.spec.ts`. Segments réseau réels : non (labo).
+
 ## Prochain jalon
 
-1. Fusionner **F29 (`0026`)** (PR #34) après CI verte post-rebase.
-2. Suite : F18–F20, F22–F25, F30, AT02–AT04 selon dépendances.
+1. Fusionner **F18 (`0027`)** après CI verte.
+2. Suite lot F : F19–F20, F22–F25 ; puis F30, AT02–AT04 selon dépendances.
 3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
