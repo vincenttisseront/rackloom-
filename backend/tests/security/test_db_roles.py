@@ -67,6 +67,7 @@ ALLOWED = {
         "SELECT kind FROM offline_bundle_items",
         "SELECT outcome FROM offline_bundle_imports",
         "SELECT status FROM restore_exercises",
+        "SELECT amount_minor FROM pricing_rates",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -124,6 +125,7 @@ ALLOWED = {
         "SELECT kind FROM offline_bundle_items",
         "SELECT outcome FROM offline_bundle_imports",
         "SELECT status FROM restore_exercises",
+        "SELECT amount_minor FROM pricing_rates",
     ],
 }
 

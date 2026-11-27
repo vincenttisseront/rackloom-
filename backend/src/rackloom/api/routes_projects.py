@@ -19,15 +19,29 @@ router = APIRouter(tags=["projets"], dependencies=[Depends(csrf_guard)])
 
 
 def _env_view(env: dict[str, Any]) -> dict[str, Any]:
-    return {"id": str(env["id"]), "slug": env["slug"], "name": env["name"], "kind": env["kind"],
-            "is_production": env["is_production"]}
+    return {
+        "id": str(env["id"]),
+        "slug": env["slug"],
+        "name": env["name"],
+        "kind": env["kind"],
+        "is_production": env["is_production"],
+    }
 
 
 @router.get("/projects")
 def list_projects(request: Request) -> list[dict[str, Any]]:
     with unit_of_work(request) as u:
-        return [{"id": str(p["id"]), "slug": p["slug"], "name": p["name"], "code": p["code"], "roles": p["roles"],
-                 "referent": projects.referent_name(u.conn, p)} for p in projects.list_projects(u.conn, u.p)]
+        return [
+            {
+                "id": str(p["id"]),
+                "slug": p["slug"],
+                "name": p["name"],
+                "code": p["code"],
+                "roles": p["roles"],
+                "referent": projects.referent_name(u.conn, p),
+            }
+            for p in projects.list_projects(u.conn, u.p)
+        ]
 
 
 @router.get("/projects/{project}/environments")
@@ -74,27 +88,37 @@ def services_for(conn, principal: Principal, project: dict[str, Any]) -> list[di
             rules = (projects.current_policy(conn, env["id"]) or {}).get("rules", {})
             lifetime = rules.get("lifetime", {})
             labels = spec["size_tier"].get("value_labels", {})
-            targets.append({**_env_view(env), "freeze": freeze_view(freezes.active(conn, env["id"])),
-                            "template_version": tpl["version"],
-                            "size_tiers": [{"value": t, "label": labels.get(t, t)} for t in params["size_tiers"]],
-                            "default_size_tier": params["default_size_tier"],
-                            "lifetime": {"required": bool(lifetime.get("required")),
-                                         "max_days": lifetime.get("max_days")}})
+            targets.append(
+                {
+                    **_env_view(env),
+                    "freeze": freeze_view(freezes.active(conn, env["id"])),
+                    "template_version": tpl["version"],
+                    "size_tiers": [{"value": t, "label": labels.get(t, t)} for t in params["size_tiers"]],
+                    "default_size_tier": params["default_size_tier"],
+                    "lifetime": {"required": bool(lifetime.get("required")), "max_days": lifetime.get("max_days")},
+                }
+            )
         if not targets:
             continue
         contract = registry.latest_promoted(conn, slug, targets[0]["kind"])["contract"]
         spec = contract["inputs"]
-        out.append({
-            "slug": slug, "version": display_version or contract["version"], "title": contract["title"],
-            "description": contract["description"],
-            "inputs": {"quantity": {k: spec["quantity"][k] for k in ("min", "max", "default", "label")},
-                       "size_tier": {"label": spec["size_tier"]["label"]},
-                       "usage": {"label": spec["usage"]["label"], "max_length": spec["usage"].get("max_length", 80)},
-                       "lifetime_until": {"label": spec["lifetime_until"]["label"]}},
-            "environments": [t for t in targets if not t["is_production"]],
-            "production": [t for t in targets if t["is_production"]],
-            "production_note": "sur demande explicite, avec son circuit d'approbation",
-        })
+        out.append(
+            {
+                "slug": slug,
+                "version": display_version or contract["version"],
+                "title": contract["title"],
+                "description": contract["description"],
+                "inputs": {
+                    "quantity": {k: spec["quantity"][k] for k in ("min", "max", "default", "label")},
+                    "size_tier": {"label": spec["size_tier"]["label"]},
+                    "usage": {"label": spec["usage"]["label"], "max_length": spec["usage"].get("max_length", 80)},
+                    "lifetime_until": {"label": spec["lifetime_until"]["label"]},
+                },
+                "environments": [t for t in targets if not t["is_production"]],
+                "production": [t for t in targets if t["is_production"]],
+                "production_note": "sur demande explicite, avec son circuit d'approbation",
+            }
+        )
     return out
 
 
@@ -122,8 +146,7 @@ def compare_choices(project: str, request: Request, body: dict[str, Any] = Body(
 
     extra = set(body) - {"need"}
     if extra:
-        raise ApiError(422, "unknown_field", f"champ « {sorted(extra)[0]} » refusé",
-                       field=f"/{sorted(extra)[0]}")
+        raise ApiError(422, "unknown_field", f"champ « {sorted(extra)[0]} » refusé", field=f"/{sorted(extra)[0]}")
     with unit_of_work(request) as u:
         p = projects.get_project(u.conn, u.p, project)
         return compare_mod.compare(u.conn, u.p, p, body.get("need"))
@@ -138,8 +161,7 @@ def similar_changes(project: str, request: Request, body: dict[str, Any] = Body(
 
     extra = set(body) - {"need", "exclude_change_id"}
     if extra:
-        raise ApiError(422, "unknown_field", f"champ « {sorted(extra)[0]} » refusé",
-                       field=f"/{sorted(extra)[0]}")
+        raise ApiError(422, "unknown_field", f"champ « {sorted(extra)[0]} » refusé", field=f"/{sorted(extra)[0]}")
     with unit_of_work(request) as u:
         p = projects.get_project(u.conn, u.p, project)
         exclude = None
@@ -147,19 +169,17 @@ def similar_changes(project: str, request: Request, body: dict[str, Any] = Body(
             try:
                 exclude = UUID(str(body["exclude_change_id"]))
             except ValueError as exc:
-                raise ApiError(422, "invalid_id", "identifiant invalide",
-                               field="/exclude_change_id") from exc
-        return similarity.find_similar(
-            u.conn, u.p, p, body.get("need"), exclude_change_id=exclude
-        )
+                raise ApiError(422, "invalid_id", "identifiant invalide", field="/exclude_change_id") from exc
+        return similarity.find_similar(u.conn, u.p, p, body.get("need"), exclude_change_id=exclude)
 
 
 @router.get("/projects/{project}/changes")
 def list_changes(project: str, request: Request) -> list[dict[str, Any]]:
     with unit_of_work(request) as u:
         p = projects.get_project(u.conn, u.p, project)
-        rows = u.conn.execute("SELECT * FROM changes WHERE project_id = %s ORDER BY seq DESC LIMIT 200",
-                              (p["id"],)).fetchall()
+        rows = u.conn.execute(
+            "SELECT * FROM changes WHERE project_id = %s ORDER BY seq DESC LIMIT 200", (p["id"],)
+        ).fetchall()
         return [change_summary(u.conn, c) for c in rows]
 
 
@@ -171,8 +191,9 @@ def create_change(project: str, request: Request, body: dict[str, Any] = Body(de
         def act() -> dict[str, Any]:
             extra = set(body) - {"title"}
             if extra:
-                raise ApiError(422, "field_not_allowed", f"champ « {sorted(extra)[0]} » refusé",
-                               field=f"/{sorted(extra)[0]}")
+                raise ApiError(
+                    422, "field_not_allowed", f"champ « {sorted(extra)[0]} » refusé", field=f"/{sorted(extra)[0]}"
+                )
             change = service.create_change(u.conn, u.p, p, str(body.get("title") or ""), u.request_id)
             return change_view(u.conn, u.p, change)
 
@@ -183,8 +204,10 @@ def create_change(project: str, request: Request, body: dict[str, Any] = Body(de
 def list_deployments(project: str, request: Request) -> list[dict[str, Any]]:
     with unit_of_work(request) as u:
         p = projects.get_project(u.conn, u.p, project)
-        rows = u.conn.execute("SELECT * FROM deployments WHERE project_id = %s AND status <> 'abandoned' "
-                              "ORDER BY created_at DESC", (p["id"],)).fetchall()
+        rows = u.conn.execute(
+            "SELECT * FROM deployments WHERE project_id = %s AND status <> 'abandoned' ORDER BY created_at DESC",
+            (p["id"],),
+        ).fetchall()
         return [deployment_summary(u.conn, d) for d in rows]
 
 
@@ -193,14 +216,29 @@ def list_hosts(project: str, request: Request) -> list[dict[str, Any]]:
     with unit_of_work(request) as u:
         p = projects.get_project(u.conn, u.p, project)
         rows = u.conn.execute("SELECT * FROM hosts WHERE project_id = %s ORDER BY name", (p["id"],)).fetchall()
-        return [{"id": str(h["id"]), "name": h["name"], "deployment_id": str(h["deployment_id"]),
-                 "deployment_state": h["deployment_state"], "health": hosts_mod.health(u.conn, h)} for h in rows]
+        return [
+            {
+                "id": str(h["id"]),
+                "name": h["name"],
+                "deployment_id": str(h["deployment_id"]),
+                "deployment_state": h["deployment_state"],
+                "health": hosts_mod.health(u.conn, h),
+            }
+            for h in rows
+        ]
+
+
+@router.get("/projects/{project}/consumption")
+def project_consumption(project: str, request: Request) -> dict[str, Any]:
+    """F29 : allocation / mesure / estimation par projet ; aucun montant sans tarif."""
+    from .. import consumption
+
+    with unit_of_work(request) as u:
+        return consumption.project_report(u.conn, u.p, project)
 
 
 @router.get("/projects/{project}/adoptions/candidates")
-def list_adoption_candidates(
-    project: str, request: Request, environment: str = "dev"
-) -> dict[str, Any]:
+def list_adoption_candidates(project: str, request: Request, environment: str = "dev") -> dict[str, Any]:
     """F08 : VM existantes octroyées (inventaire fictif), candidates à l'adoption."""
     from .. import adoption
 
@@ -218,17 +256,13 @@ def list_adoptions(project: str, request: Request) -> list[dict[str, Any]]:
 
 
 @router.post("/projects/{project}/adoptions")
-def enroll_adoption(
-    project: str, request: Request, body: dict[str, Any] = Body(...)
-) -> dict[str, Any]:
+def enroll_adoption(project: str, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """F08 : enrôlement pour observation en lecture seule (aucune mutation VM)."""
     from .. import adoption
 
     extra = set(body) - {"environment", "vm_stable_id"}
     if extra:
-        raise ApiError(
-            422, "unknown_field", f"champ « {sorted(extra)[0]} » refusé", field=f"/{sorted(extra)[0]}"
-        )
+        raise ApiError(422, "unknown_field", f"champ « {sorted(extra)[0]} » refusé", field=f"/{sorted(extra)[0]}")
     with unit_of_work(request, write=True) as u:
 
         def act() -> dict[str, Any]:

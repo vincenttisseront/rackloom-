@@ -11,7 +11,14 @@ const preferences = ref<any | null>(null)
 const prefForm = ref({ default_size_tier: 'standard', naming: '', reason: '' })
 const prefBusy = ref(false)
 const prefNotice = ref<string | null>(null)
+const consumption = ref<any | null>(null)
 const error = ref<string | null>(null)
+
+const KIND_LABEL: Record<string, string> = {
+  allocation: 'Allocation',
+  measurement: 'Mesure',
+  estimation: 'Estimation',
+}
 
 const canPublishPrefs = computed(() => {
   // Référent ou admin : l'API refuse sinon (F50).
@@ -27,6 +34,11 @@ onMounted(async () => {
       api.get(`/projects/${slug.value}/changes`), api.get(`/projects/${slug.value}/deployments`), api.get(`/projects/${slug.value}/hosts`),
       api.get(`/projects/${slug.value}/environments`),
     ])
+    try {
+      consumption.value = await api.get(`/projects/${slug.value}/consumption`)
+    } catch {
+      consumption.value = null
+    }
     try {
       preferences.value = await api.get(`/projects/${slug.value}/preferences`)
       const cur = preferences.value?.current?.preferences || {}
@@ -136,6 +148,61 @@ function envChanged(updated: any) {
         </div>
         <button type="submit" class="primary" :disabled="prefBusy" data-testid="pref-publish">Publier</button>
       </form>
+    </section>
+
+    <section
+      v-if="consumption"
+      class="card"
+      aria-labelledby="consumption-title"
+      data-testid="consumption-panel"
+    >
+      <h2 id="consumption-title">Consommation de l'équipe</h2>
+      <p class="small muted">{{ consumption.notice }}</p>
+      <p v-if="consumption.simulated" class="small"><SimBadge title="Inventaire et mesures simulés" /></p>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Ressource</th>
+            <th scope="col">{{ KIND_LABEL.allocation }}</th>
+            <th scope="col">{{ KIND_LABEL.measurement }}</th>
+            <th scope="col">{{ KIND_LABEL.estimation }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in consumption.resources" :key="r.resource" :data-testid="`consumption-row-${r.resource}`">
+            <td>{{ r.resource }} <span class="muted small">({{ r.unit }})</span></td>
+            <td>{{ r.allocated.value }}</td>
+            <td>{{ r.measured ? r.measured.value : '—' }}</td>
+            <td>{{ r.estimated.value }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p
+        class="small"
+        data-testid="consumption-reconciliation"
+        :class="consumption.inventory_reconciliation.ok ? 'ok' : 'muted'"
+      >
+        Inventaire : {{ consumption.inventory_reconciliation.notice }}
+        <span v-if="consumption.inventory_reconciliation.ok"> (totaux alignés)</span>
+      </p>
+      <p
+        v-if="!consumption.billing"
+        class="banner warn"
+        role="status"
+        data-testid="consumption-no-billing"
+      >
+        Aucun montant affiché : données tarifaires absentes.
+      </p>
+      <p
+        v-else
+        class="small"
+        data-testid="consumption-billing"
+      >
+        Estimation tarifaire :
+        {{ (consumption.billing.total_minor / 100).toFixed(2) }}
+        {{ consumption.billing.currency }} / {{ consumption.billing.period }}
+        <span class="badge">{{ KIND_LABEL.estimation }}</span>
+      </p>
     </section>
 
     <section class="card" aria-labelledby="deps-title">

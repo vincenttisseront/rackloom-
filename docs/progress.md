@@ -17,7 +17,10 @@
 - **F07 (fabrique d'images)** : fusionné (PR #30), migration Alembic `0020`.
 - **F08 (adoption de VM)** : fusionné (PR #29), migration Alembic **`0021`**.
 - **F15 (certificats SSH courts)** : fusionné (PR #36), migration Alembic **`0022`** (`down_revision=0021`).
-- **F16 (runners par zone)** : PR #33 (`cursor/f16-runners-zones-24cb`), migration Alembic **`0023`** (`down_revision=0022`), bundle **`builtin@10`** (R130).
+- **F16 (runners par zone)** : fusionné (PR #33), migration Alembic **`0023`** (`down_revision=0022`), bundle **`builtin@10`** (R130).
+- **F17 (bundles hors ligne)** : fusionné (PR #35), migration Alembic **`0024`**.
+- **F26 (exercices de restauration)** : fusionné (PR #32), migration Alembic **`0025`**.
+- **F29 (consommation par équipe)** : PR #34 (`cursor/f29-consommation-equipe-dbb9`), migration Alembic **`0026`** (`down_revision=0025`).
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -108,7 +111,8 @@
 | Runners par site ou zone (F16) | livré | testé localement | `test_f16_runners_zones.py` ; R130 ; `builtin@10` ; migration `0023` ; site distant : non |
 | Bundles pour sites déconnectés (F17) | livré (lots fictifs signés) | testé localement | `test_f17_offline_bundles.py` ; e2e `103-f17-bundles.spec.ts` ; migration `0024` ; Ed25519 ; octet altéré → `bundle_tampered` ; VM QEMU isolée : non (lot 3) |
 | Exercices de restauration (F26) | livré (filesystem isolé) | testé localement | `test_f26_restore.py` ; `dispatch_paused` ; migration `0025` (`down_revision=0024`) ; `docs/restore-exercises.md` ; VM QEMU / state distant : non |
-| Fonctions F18–F20, F22–F25, F29–F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
+| Consommation par équipe (F29) | livré (inventaire fictif) | testé localement | `test_f29_consumption.py` ; e2e `103-f29-consommation.spec.ts` ; migration `0026` (`down_revision=0025`) ; aucun montant sans `pricing_rates` ; L2 non fait |
+| Fonctions F18–F20, F22–F25, F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6
 
@@ -469,14 +473,22 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F26 : exercices de restauration (Lot E, 2026-11-27, heure de Paris)
 
-- Branche `cursor/f26-exercices-restauration-61ff` rebasée sur `main` après F17. Migration Alembic **`0025`** (`down_revision=0024`).
+- Fusionné (PR #32). Migration Alembic **`0025`** (`down_revision=0024`).
 - Interrupteur global `dispatch_paused` (`platform_settings`) : les jobs d'écriture en file ne sont pas réclamés (`wait_reason=dispatch_paused`) ; lectures OK ; défense worker si déjà loué.
 - Module `recovery` : backup (base + artefacts + refs secrets) ; clés et state en dossiers / procédures séparés ; exercice isolé chronométré (`restore_exercises`) ; CLI `rackloom recovery` ; API admin ; `docs/restore-exercises.md`.
 - Preuves : `test_f26_restore.py` ; `test_db_roles` (GRANT). VM QEMU neuve (L3) et state distant (L2) : non.
 
+### F29 : consommation par équipe (Lot E, 2026-11-27, heure de Paris)
+
+- Branche `cursor/f29-consommation-equipe-dbb9` rebasée sur `main` après F26. Migration Alembic **`0026`** (`down_revision=0025`).
+- Table `pricing_rates` + GRANT `rackloom_api` (SELECT/INSERT/UPDATE) / `rackloom_worker` (SELECT).
+- Module `consumption` : allocation (déploiements actifs), mesure (attributs d'usage inventaire s'ils existent), estimation (demandes résolues avant exécution). Aucun montant si aucun tarif.
+- API `GET /projects/{project}/consumption` ; panneau projet ; comparateur F52 peut exposer un coût seulement si tarif présent.
+- Preuves : `test_f29_consumption.py` ; e2e `103-f29-consommation.spec.ts`. Mesures vCenter réelles : non (D2).
+
 ## Prochain jalon
 
-1. Fusionner **F26 (`0025`)** (PR #32) après CI verte post-rebase.
-2. Suite lot E : F29 ; puis F18–F20, F22–F25, F30, AT02–AT04.
+1. Fusionner **F29 (`0026`)** (PR #34) après CI verte post-rebase.
+2. Suite : F18–F20, F22–F25, F30, AT02–AT04 selon dépendances.
 3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
