@@ -100,44 +100,6 @@
         "title": "ClaimBody",
         "type": "object"
       },
-      "EnrollBody": {
-        "additionalProperties": false,
-        "properties": {
-          "capabilities": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 32,
-            "minItems": 1,
-            "title": "Capabilities",
-            "type": "array"
-          },
-          "name": {
-            "maxLength": 120,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "slug": {
-            "pattern": "^[a-z][a-z0-9-]{1,40}$",
-            "title": "Slug",
-            "type": "string"
-          },
-          "zone": {
-            "pattern": "^[a-z][a-z0-9-]{1,40}$",
-            "title": "Zone",
-            "type": "string"
-          }
-        },
-        "required": [
-          "slug",
-          "name",
-          "zone",
-          "capabilities"
-        ],
-        "title": "EnrollBody",
-        "type": "object"
-      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -168,6 +130,96 @@
           }
         },
         "title": "HeartbeatBody",
+        "type": "object"
+      },
+      "IngestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "pattern": "^(metrics|logs)$",
+            "title": "Kind",
+            "type": "string"
+          },
+          "payload": {
+            "title": "Payload"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project"
+          }
+        },
+        "required": [
+          "kind",
+          "payload"
+        ],
+        "title": "IngestBody",
+        "type": "object"
+      },
+      "LimitsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "max_payload_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1048576.0,
+                "minimum": 64.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Payload Bytes"
+          },
+          "quota_bytes_per_window": {
+            "anyOf": [
+              {
+                "maximum": 1073741824.0,
+                "minimum": 64.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Bytes Per Window"
+          },
+          "retention_days": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Days"
+          },
+          "window_seconds": {
+            "anyOf": [
+              {
+                "maximum": 86400.0,
+                "minimum": 60.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Seconds"
+          }
+        },
+        "title": "LimitsBody",
         "type": "object"
       },
       "LoginBody": {
@@ -276,6 +328,73 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "rackloom__api__routes_runners__EnrollBody": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "pattern": "^[a-z][a-z0-9-]{1,40}$",
+            "title": "Slug",
+            "type": "string"
+          },
+          "zone": {
+            "pattern": "^[a-z][a-z0-9-]{1,40}$",
+            "title": "Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "zone",
+          "capabilities"
+        ],
+        "title": "EnrollBody",
+        "type": "object"
+      },
+      "rackloom__api__routes_telemetry__EnrollBody": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "project": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Project",
+            "type": "string"
+          },
+          "slug": {
+            "pattern": "^[a-z][a-z0-9-]{1,40}$",
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "project"
+        ],
+        "title": "EnrollBody",
         "type": "object"
       }
     }
@@ -2432,7 +2551,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EnrollBody"
+                "$ref": "#/components/schemas/rackloom__api__routes_runners__EnrollBody"
               }
             }
           },
@@ -2690,6 +2809,184 @@
         "summary": "Import Software Advisories",
         "tags": [
           "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/telemetry/agents": {
+      "get": {
+        "operationId": "list_agents_api_v1_admin_telemetry_agents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Agents Api V1 Admin Telemetry Agents Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Agents",
+        "tags": [
+          "télémétrie"
+        ]
+      }
+    },
+    "/api/v1/admin/telemetry/agents/enroll": {
+      "post": {
+        "operationId": "enroll_agent_api_v1_admin_telemetry_agents_enroll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/rackloom__api__routes_telemetry__EnrollBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Enroll Agent Api V1 Admin Telemetry Agents Enroll Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enroll Agent",
+        "tags": [
+          "télémétrie"
+        ]
+      }
+    },
+    "/api/v1/admin/telemetry/agents/{agent_id}/revoke": {
+      "post": {
+        "operationId": "revoke_agent_api_v1_admin_telemetry_agents__agent_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revoke Agent Api V1 Admin Telemetry Agents  Agent Id  Revoke Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Agent",
+        "tags": [
+          "télémétrie"
+        ]
+      }
+    },
+    "/api/v1/admin/telemetry/projects/{project}/limits": {
+      "put": {
+        "operationId": "put_limits_api_v1_admin_telemetry_projects__project__limits_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LimitsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Limits Api V1 Admin Telemetry Projects  Project  Limits Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Limits",
+        "tags": [
+          "télémétrie"
         ]
       }
     },
@@ -9475,6 +9772,66 @@
         ]
       }
     },
+    "/api/v1/projects/{project}/telemetry": {
+      "get": {
+        "operationId": "project_telemetry_api_v1_projects__project__telemetry_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Telemetry Api V1 Projects  Project  Telemetry Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Telemetry",
+        "tags": [
+          "télémétrie"
+        ]
+      }
+    },
     "/api/v1/role-bindings": {
       "post": {
         "operationId": "grant_role_api_v1_role_bindings_post",
@@ -10360,6 +10717,50 @@
         "summary": "Reference Sources",
         "tags": [
           "atelier"
+        ]
+      }
+    },
+    "/api/v1/telemetry/ingest": {
+      "post": {
+        "description": "L'agent pousse métriques ou journaux (mTLS). Le projet authentifié l'emporte.",
+        "operationId": "ingest_api_v1_telemetry_ingest_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Ingest Api V1 Telemetry Ingest Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ingest",
+        "tags": [
+          "télémétrie-mtls"
         ]
       }
     },
