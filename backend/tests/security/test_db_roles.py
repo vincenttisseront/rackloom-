@@ -86,6 +86,10 @@ ALLOWED = {
         "SELECT dedupe_key FROM itsm_deliveries",
         "SELECT outcome FROM itsm_inbound_events",
         "SELECT href FROM notifications",
+        "SELECT status FROM telemetry_agents",
+        "SELECT max_payload_bytes FROM telemetry_project_limits",
+        "SELECT bytes_accepted FROM telemetry_usage_windows",
+        "SELECT kind FROM telemetry_samples",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -162,6 +166,10 @@ ALLOWED = {
         "SELECT dedupe_key FROM itsm_deliveries",
         "SELECT outcome FROM itsm_inbound_events",
         "SELECT href FROM notifications",
+        "SELECT status FROM telemetry_agents",
+        "SELECT max_payload_bytes FROM telemetry_project_limits",
+        "SELECT bytes_accepted FROM telemetry_usage_windows",
+        "SELECT kind FROM telemetry_samples",
     ],
 }
 
