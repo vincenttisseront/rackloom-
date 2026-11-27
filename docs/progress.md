@@ -15,7 +15,8 @@
 - **F02 + F04 (compositions multi-VM et graphe)** : fusionné (PR #31), migration Alembic `0018`.
 - **F06 (baux temporaires)** : fusionné (PR #28), migration Alembic `0019`.
 - **F07 (fabrique d'images)** : fusionné (PR #30), migration Alembic `0020`.
-- **F08 (adoption de VM)** : PR #29 (`cursor/f08-adoption-vm-6c45`), migration Alembic **`0021`** (`down_revision=0020`).
+- **F08 (adoption de VM)** : fusionné (PR #29), migration Alembic **`0021`**.
+- **F15 (certificats SSH courts)** : PR en cours (`cursor/f15-ssh-certs-fa51`), migration Alembic **`0022`** (`down_revision=0021`).
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -102,7 +103,8 @@
 | Graphe de dépendances (F04) | livré | testé localement | impact réseau filtré ; hors périmètre masqué/404 ; page `/dependances` ; e2e `102-f02-f04` ; L2 non fait |
 | Baux pour environnements temporaires (F06) | livré (retrait simulé) | testé localement | `test_f06_leases.py` ; e2e `102-f06-baux.spec.ts` ; migration `0019` ; expiration → signalement + plan `retire` ; renew ; job `lease_retire` sans destroy ; L2 non fait |
 | Fabrique d'images (F07) | livré (fabrique fictive) | testé localement | `test_f07_fabrique.py` ; e2e `102-f07-fabrique.spec.ts` ; migration `0020` ; outil réel (D11) / labo : non |
-| Fonctions F08, F15–F20, F22–F26, F29–F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
+| Certificats SSH à courte durée (F15) | livré | testé localement | `test_f15_ssh_certs.py` ; `test_f15_ssh_lab.py` (docker) ; CA entreprise : non |
+| Fonctions F16–F20, F22–F26, F29–F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6
 
@@ -436,9 +438,17 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Inventaire démo : `vm-9001` (orphan) / `vm-9002` (state externe fictif). UI `/projets/{slug}/adoption`.
 - Preuves : `test_f08_adoption.py` (3) ; e2e `102-f08-adoption.spec.ts`. Labo vSphere réel : non (D2).
 
+### F15 : certificats SSH à courte durée (Lot E, 2026-11-27, heure de Paris)
+
+- Branche `cursor/f15-ssh-certs-fa51` depuis `main` (après F08 / `0021`). Migration Alembic **`0022`** (`down_revision=0021`). Tables `ssh_cas`, `ssh_certificate_issues` ; séquence `ssh_certificate_serial` ; GRANT SELECT/INSERT/UPDATE/DELETE `rackloom_api` / `rackloom_worker`.
+- Module `sshca` : CA ed25519 scellée (`secret://lab/ssh-ca/signing`) ; émission par job (principals `identité@hôte`, TTL ~20 min) ; clé de signature jamais dans le payload runner.
+- Lab-node : `TrustedUserCAKeys` + `AuthorizedPrincipalsFile` lorsque `ca.pub` est monté ; `AuthorizedKeysFile none`.
+- Runner Ansible : `CertificateFile` + agent SSH éphémère (clé privée effacée après `ssh-add`).
+- Preuves : `test_f15_ssh_certs.py` (émission, expiration, mauvais périmètre, `lab keys`) ; `test_f15_ssh_lab.py` (SSH réel docker) ; `test_db_roles`. CA d'entreprise : non (D11).
+
 ## Prochain jalon
 
-1. Fusionner **F08 (`0021`)** (PR #29) après CI verte post-rebase.
-2. Ensuite selon le backlog (F15–F20, F22–F26, F29–F30, AT02–AT04).
+1. Fusionner **F15 (`0022`)** après CI verte.
+2. Ensuite selon le backlog (F16–F20, F22–F26, F29–F30, AT02–AT04).
 3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
