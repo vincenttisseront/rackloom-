@@ -132,3 +132,32 @@ def test_lab_keys_ecrit_ca_pub(conn, keys, tmp_path):
     assert (pub / "ca.pub").is_file()
     assert lab.identities_present(conn, pub)
     assert sshca.ca_present(conn, pub)
+
+
+def test_perimetre_utilise_le_hostname_lab_pas_le_nom_vm(conn, keys, tmp_path):
+    """Regression CI : principals = hostname du nœud (AuthorizedPrincipalsFile), pas vit-dev-web-01."""
+    from rackloom import lab
+    from rackloom.worker import handlers
+
+    lab.set_nodes(
+        conn,
+        [{"name": "rl-lab-abc-1", "address": "10.89.0.2"}, {"name": "rl-lab-abc-2", "address": "10.89.0.3"}],
+    )
+    sshca.ensure_lab_ca(conn, tmp_path / "lab-keys")
+    targets = [
+        {"name": "vit-dev-web-01", "address": "10.89.0.2"},
+        {"name": "vit-dev-web-02", "address": "10.89.0.3"},
+    ]
+    assert handlers._perimeter_host_names(conn, targets) == ["rl-lab-abc-1", "rl-lab-abc-2"]
+    issued = sshca.issue_for_job(
+        conn,
+        job_id=None,
+        identity="rackloom-config",
+        host_names=handlers._perimeter_host_names(conn, targets),
+    )
+    conn.commit()
+    assert issued.principals == (
+        "rackloom-config@rl-lab-abc-1",
+        "rackloom-config@rl-lab-abc-2",
+    )
+    assert "vit-dev-web" not in "".join(issued.principals)

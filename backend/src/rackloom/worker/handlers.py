@@ -639,17 +639,33 @@ def finish_apply(r: JobContext, run_id: str, status: dict[str, Any], *, job: dic
     return outcome
 
 
-def _issue_ssh_cert(
-    conn: Conn, job_id: UUID, purpose: str, targets: list[dict[str, Any]]
-) -> sshca.IssuedCredential:
+def _perimeter_host_names(conn: Conn, targets: list[dict[str, Any]]) -> list[str]:
+    """Noms d'hôte du périmètre SSH (= hostname OpenSSH / entrée lab_nodes).
+
+    Les principals `identité@hôte` doivent correspondre à AuthorizedPrincipalsFile
+    sur le nœud (`identité@$(hostname)`), pas au nom logique de VM du déploiement.
+    """
+    row = conn.execute("SELECT value FROM platform_settings WHERE key = 'lab_nodes'").fetchone()
+    by_addr = {n["address"]: n["name"] for n in (row["value"] if row else [])}
+    names: list[str] = []
+    for h in targets:
+        mapped = by_addr.get(h["address"])
+        if mapped:
+            names.append(mapped)
+        else:
+            # Hors labo : le nom d'hôte inventorié doit être celui configuré sur la machine.
+            names.append(h["name"])
+    return names
+
+
+def _issue_ssh_cert(conn: Conn, job_id: UUID, purpose: str, targets: list[dict[str, Any]]) -> sshca.IssuedCredential:
     """F15 : certificat court par job ; la clé de la CA ne quitte pas le worker."""
     identity = IDENTITIES[purpose]
-    host_names = [h["name"] for h in targets]
     return sshca.issue_for_job(
         conn,
         job_id=job_id,
         identity=identity,
-        host_names=host_names,
+        host_names=_perimeter_host_names(conn, targets),
         ttl_seconds=min(sshca.DEFAULT_TTL_SECONDS, 900 + 120),
     )
 
@@ -1897,10 +1913,14 @@ def handle_lease_retire(r: JobContext) -> None:
         lease = leases.get_by_deployment(conn, dep["id"]) if dep else None
         names = [i["name"] for i in ((dep or {}).get("instances") or []) if i.get("name")]
         # Preuve : les ressources existent encore avant clôture du bail.
-        host_before = conn.execute(
-            "SELECT count(*) AS n FROM hosts WHERE deployment_id = %s",
-            (dep["id"],),
-        ).fetchone()["n"] if dep else 0
+        host_before = (
+            conn.execute(
+                "SELECT count(*) AS n FROM hosts WHERE deployment_id = %s",
+                (dep["id"],),
+            ).fetchone()["n"]
+            if dep
+            else 0
+        )
         r.step(
             conn,
             "Retrait enregistré (simulé)",
@@ -1922,10 +1942,14 @@ def handle_lease_retire(r: JobContext) -> None:
                 reason="Retrait exécuté (simulé) — aucune suppression réelle de VM",
             )
         # Les hôtes et fichiers labo restent ; seul le statut déploiement passe à abandoned.
-        still_hosts = conn.execute(
-            "SELECT count(*) AS n FROM hosts WHERE deployment_id = %s",
-            (dep["id"],),
-        ).fetchone()["n"] if dep else 0
+        still_hosts = (
+            conn.execute(
+                "SELECT count(*) AS n FROM hosts WHERE deployment_id = %s",
+                (dep["id"],),
+            ).fetchone()["n"]
+            if dep
+            else 0
+        )
         r.fenced(
             conn,
             "state = 'succeeded', finished_at = now(), result = %s",
@@ -1978,9 +2002,7 @@ def handle_tf_import(r: JobContext) -> None:
         payload = r.job.get("payload") or {}
         adoption_id = payload.get("adoption_id")
         if adoption_id:
-            adoption = conn.execute(
-                "SELECT * FROM vm_adoptions WHERE id = %s", (UUID(str(adoption_id)),)
-            ).fetchone()
+            adoption = conn.execute("SELECT * FROM vm_adoptions WHERE id = %s", (UUID(str(adoption_id)),)).fetchone()
             if adoption is not None:
                 ctx["env"] = conn.execute(
                     "SELECT * FROM environments WHERE id = %s", (adoption["environment_id"],)
