@@ -15,7 +15,7 @@ test('Lot C — gouvernance : politique active, simulation sans écriture, urgen
   await login(page, 'admin')
   await page.goto('/admin/gouvernance')
   await expect(page.getByRole('heading', { level: 1, name: /Gouvernance/ })).toBeVisible()
-  await expect(page.getByTestId('policy-panel')).toContainText('builtin@9')
+  await expect(page.getByTestId('policy-panel')).toContainText('builtin@10')
   await expect(page.getByTestId('sso-available')).toHaveText('oui')
   await expectAccessible(page, 'Lot C gouvernance')
 
