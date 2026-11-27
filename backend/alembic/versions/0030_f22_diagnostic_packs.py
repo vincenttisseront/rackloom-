@@ -1,4 +1,4 @@
-"""F22 : dossiers de diagnostic partageables.
+"""F22 : dossiers de diagnostic partageables (payload JSONB, pas d'écriture artefacts API).
 
 Revision ID: 0030
 Revises: 0029

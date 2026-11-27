@@ -387,7 +387,7 @@ Ils sont présents au lot 1 parce qu'ils coûtent peu et évitent une migration 
 | Insertion d'un job avant `tf_plan` dans la chaîne | oui (`preflight`, classe `read`, F31) | F31 |
 | Compteurs d'erreurs par connecteur et par capacité | oui | F37 |
 | `correlation_id` sur événements, jobs, audit, runners et logs ; `events.source` ; `dedupe_key` unique ; reprise SSE | oui | F21, F22, F25, F44 |
-| Dossiers de diagnostic filtrés (artefacts classe B, droits à la génération et au téléchargement) | oui (`diagnostic_packs`) | F22 |
+| Dossiers de diagnostic filtrés (payload JSONB ; preuves = métadonnées artefacts B ; droits génération/téléchargement) | oui (`diagnostic_packs`) | F22 |
 | `policy_bundles` versionnés et politiques d'environnement versionnées dans chaque révision et dossier | oui | F10, F24 |
 | `jobs.run_after` et revalidation complète à l'admission | oui | F27, F36 |
 | Contexte d'authentification de l'approbateur | oui | F12 |

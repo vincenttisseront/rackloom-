@@ -117,7 +117,7 @@
 | Sondes et objectifs de disponibilité (F18) | livré (segments simulés) | testé localement | `test_f18_probes.py` ; e2e `104-f18-sondes.spec.ts` ; migration `0027` (`down_revision=0026`) ; `unavailable` si sonde KO depuis segment ; segments réels : non |
 | Patch par vagues (F19) | livré (patch / reboot simulés) | testé localement | `test_f19_patch_waves.py` ; migration `0028` (`down_revision=0027`) ; dégradation pilote → vague 2 bloquée sans écriture ni rollback ; L2 non fait |
 | Inventaire logiciel et fin de support (F20) | livré (fixtures Ubuntu hors ligne) | testé localement | `test_f20_software_inventory.py` ; `test_f20_debian_versions.py` ; e2e `103-f20-inventaire-logiciel.spec.ts` ; migration `0029` (`down_revision=0028`) ; rétroportage ≠ vulnérable amont ; export filtré ; flux éditeur réel : non |
-| Dossier de diagnostic partageable (F22) | livré | testé localement | `test_f22_diagnostic.py` ; e2e `104-f22-diagnostic.spec.ts` ; migration `0030` (`down_revision=0029`) ; payload JSONB ; preuves = métadonnées B ; canari absent export+résumé ; interprojet 404 |
+| Dossier de diagnostic partageable (F22) | livré | testé localement | `test_f22_diagnostic.py` ; e2e `104-f22-diagnostic.spec.ts` ; migration `0030` (`down_revision=0029`) ; payload JSONB (API n'écrit pas le volume artefacts) ; preuves = métadonnées B ; canari absent export+résumé ; interprojet 404 |
 | Fonctions F24–F25, F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6

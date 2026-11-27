@@ -124,8 +124,8 @@ def test_f22_telechargement_interprojet_404(api, conn, demo, f22_keys):
     assert chloe.post(f"{API}/changes/{c['id']}/diagnostic-packs", json={}).status_code == 404
     assert chloe.get(f"{API}/diagnostic-packs/{pack['id']}").status_code == 404
     assert chloe.get(f"{API}/diagnostic-packs/{pack['id']}/download").status_code == 404
-    # Artefact sous-jacent aussi hors périmètre.
-    assert chloe.get(f"{API}/artifacts/{pack['artifact_id']}").status_code == 404
+    # Pas d'écriture volume artefacts côté API (monté :ro) : payload en base.
+    assert pack.get("artifact_id") is None
 
 
 def test_f22_periode_invalide(api, conn, demo, f22_keys):

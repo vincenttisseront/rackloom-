@@ -1,8 +1,10 @@
 """F22 : dossier de diagnostic partageable.
 
-Rapport filtré (période, symptômes, preuves, événements, données manquantes)
-stocké en artefact de classe B. Droits vérifiés à la génération et au
-téléchargement. Secrets et données hors périmètre exclus de l'export et du résumé.
+Rapport filtré (période, symptômes, preuves, événements, données manquantes).
+Stocké en JSONB : l'API ne peut pas écrire le volume artefacts (monté :ro ;
+classe B = worker écrit / API lit). Les preuves listées restent des métadonnées
+d'artefacts B. Droits vérifiés à la génération et au téléchargement.
+Secrets et données hors périmètre exclus de l'export et du résumé.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from .. import artifacts, audit, events
+from .. import audit, events
 from ..canonical import digest
 from ..changes import service as changes_service
 from ..db import Conn, Jsonb
@@ -23,7 +25,6 @@ from ..ids import uuid7
 from ..redact import Redactor
 
 SCHEMA = "rackloom.diagnostic_pack/v1"
-KIND = "diagnostic_pack_json"
 MAX_EVENTS = 500
 MAX_SYMPTOM_LEN = 500
 
@@ -216,11 +217,12 @@ def _build_summary(
 
 
 def _pack_view(row: dict[str, Any]) -> dict[str, Any]:
+    art = row.get("artifact_id")
     return {
         "id": str(row["id"]),
         "project_id": str(row["project_id"]),
         "change_id": str(row["change_id"]),
-        "artifact_id": str(row["artifact_id"]),
+        "artifact_id": str(art) if art else None,
         "created_by": str(row["created_by"]),
         "created_at": row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else row["created_at"],
         "period": {
@@ -311,33 +313,25 @@ def create_pack(
             "summary": summary,
         }
     )
-    plaintext = json.dumps(report, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
-    # Double contrôle : aucun canari / motif secret ne doit rester.
-    plaintext = redactor.bytes(plaintext)
-    art = artifacts.store(
-        conn,
-        project_id=change["project_id"],
-        change_id=change["id"],
-        kind=KIND,
-        key_class="B",
-        plaintext=plaintext,
-    )
+    # Re-parse après masquage binaire pour garantir un JSON sans canari.
+    safe_text = redactor.text(json.dumps(report, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+    report = json.loads(safe_text)
+    pack_digest = digest(report)
     pack_id = uuid7()
     row = conn.execute(
         """
         INSERT INTO diagnostic_packs (
             id, project_id, change_id, artifact_id, created_by,
-            period_start, period_end, symptoms, evidence, missing, summary,
+            period_start, period_end, symptoms, evidence, missing, summary, payload,
             event_count, evidence_count, digest, schema_version
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         ) RETURNING *
         """,
         (
             pack_id,
             change["project_id"],
             change["id"],
-            art["id"],
             principal.user_id,
             start,
             end,
@@ -345,9 +339,10 @@ def create_pack(
             Jsonb(evidence),
             Jsonb(missing),
             Jsonb(summary) if summary is not None else None,
+            Jsonb(report),
             len(evts),
             len(evidence),
-            digest(report),
+            pack_digest,
             SCHEMA,
         ),
     ).fetchone()
@@ -360,9 +355,9 @@ def create_pack(
         correlation_id=change["id"],
         data={
             "pack_id": str(pack_id),
-            "artifact_id": str(art["id"]),
             "event_count": len(evts),
             "evidence_count": len(evidence),
+            "digest": pack_digest,
         },
         dedupe_key=f"diagnostic.pack:{pack_id}",
         redactor=redactor,
@@ -375,7 +370,7 @@ def create_pack(
         outcome="ok",
         project_id=change["project_id"],
         correlation_id=change["id"],
-        targets={"pack_id": str(pack_id), "artifact_id": str(art["id"]), "digest": digest(report)},
+        targets={"pack_id": str(pack_id), "digest": pack_digest},
         request_id=request_id,
     )
     return _pack_view(row)
@@ -400,15 +395,16 @@ def get_pack(conn: Conn, principal: Principal, pack_id: UUID) -> dict[str, Any]:
 def download_pack(
     conn: Conn, principal: Principal, pack_id: UUID, *, request_id: str | None = None
 ) -> tuple[dict[str, Any], bytes]:
-    """Téléchargement : droits revérifiés ; seul le contenu classe B filtré est renvoyé."""
+    """Téléchargement : droits revérifiés ; export filtré depuis le payload applicatif."""
     row = conn.execute("SELECT * FROM diagnostic_packs WHERE id = %s", (pack_id,)).fetchone()
     if row is None or not principal.can_see_project(row["project_id"]):
         raise not_found("dossier de diagnostic")
-    art = conn.execute("SELECT * FROM artifacts WHERE id = %s", (row["artifact_id"],)).fetchone()
-    if art is None or art["key_class"] != "B" or art["project_id"] != row["project_id"]:
+    payload = row["payload"]
+    if not isinstance(payload, dict):
         raise not_found("dossier de diagnostic")
-    content = artifacts.read(art)
     # Re-filtre défensif au téléchargement.
+    safe = Redactor().data(payload)
+    content = json.dumps(safe, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
     content = Redactor().bytes(content)
     audit.record(
         conn,
@@ -418,7 +414,7 @@ def download_pack(
         outcome="ok",
         project_id=row["project_id"],
         correlation_id=row["change_id"],
-        targets={"pack_id": str(pack_id), "artifact_id": str(art["id"])},
+        targets={"pack_id": str(pack_id), "digest": row["digest"]},
         request_id=request_id,
     )
     return _pack_view(row), content
