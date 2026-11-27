@@ -123,9 +123,10 @@ async function runExport(id: string) {
     <section data-testid="review-panel">
       <h2>Revue d’accès</h2>
       <button type="button" data-testid="review-prepare" :disabled="busy" @click="prepareReview">Préparer une campagne</button>
-      <div v-if="campaign" class="campaign">
+      <div v-if="campaign" class="campaign" data-testid="review-campaign">
         <h3>{{ campaign.title }} ({{ campaign.item_count }} éléments visibles)</h3>
-        <ul data-testid="review-items">
+        <p v-if="!campaign.items?.length" data-testid="review-empty">Aucun élément dans votre périmètre.</p>
+        <ul v-else data-testid="review-items">
           <li v-for="item in campaign.items" :key="item.id">
             <span>{{ item.project_slug }} — {{ item.kind }} — {{ item.summary }}</span>
             <span v-if="item.status === 'pending'" class="actions">
