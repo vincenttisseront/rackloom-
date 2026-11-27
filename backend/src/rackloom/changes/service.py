@@ -264,6 +264,16 @@ def _ensure_deployment(conn: Conn, change: dict[str, Any], revision: dict[str, A
          change["created_by"])).fetchone()
     conn.execute("UPDATE changes SET deployment_id = %s WHERE id = %s", (deployment_id, change["id"]))
     change["deployment_id"] = deployment_id
+    # F06 : ouvrir un bail si une date de fin a été capturée (aucune suppression automatique).
+    from .. import leases
+
+    leases.open_from_resolution(
+        conn,
+        deployment=dep,
+        resolution=revision["resolved"] or {},
+        actor_type="user",
+        actor_id=str(principal.user_id),
+    )
     return dep
 
 
@@ -293,8 +303,8 @@ def submit(conn: Conn, principal: Principal, change_id: UUID, revision_no: int,
         change = transition(conn, dict(change), "validated", reason_code="submitted", actor_type="user",
                             actor_id=str(principal.user_id), detail={"revision_no": revision_no},
                             request_id=request_id)
-    # F40 / F58 : restauration ou redémarrage — plan simulé prêt à approuver (pas de Terraform).
-    if change["kind"] in ("restore", "restart"):
+    # F40 / F58 / F06 : restauration, redémarrage ou retrait — plan simulé prêt à approuver.
+    if change["kind"] in ("restore", "restart", "retire"):
         from datetime import UTC, datetime, timedelta
 
         from .. import artifacts
@@ -316,6 +326,25 @@ def submit(conn: Conn, principal: Principal, change_id: UUID, revision_no: int,
                 "vm_counts": {"create": 1, "update": 0, "delete": 0},
                 "message": "Restauration en réseau isolé (simulée)",
                 "interruption": False,
+            }
+        elif change["kind"] == "retire":
+            reason_plan, reason_ready = "retire_plan", "retire_plan_ready"
+            plan_bytes = b'{"rackloom":"retire-plan","simulated":true,"destructive_intent":true}'
+            names = [i["name"] for i in (revision["resolved"].get("instances") or [])]
+            summary = {
+                "simulated": True,
+                "retirement": True,
+                "destructive": False,
+                "no_changes": False,
+                "terraform_version": None,
+                "vm_counts": {"create": 0, "update": 0, "delete": len(names), "replace": 0},
+                "vms": [{"name": n, "action": "retire", "attributes": {}} for n in names],
+                "message": (
+                    "Plan de retrait — aucune suppression réelle tant que non exécuté ; "
+                    "exécution locale simulée (pas de destroy Terraform)."
+                ),
+                "interruption": True,
+                "hosts": names,
             }
         else:
             reason_plan, reason_ready = "restart_plan", "restart_plan_ready"

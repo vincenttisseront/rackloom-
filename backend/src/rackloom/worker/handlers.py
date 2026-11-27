@@ -1875,6 +1875,92 @@ def handle_service_restart(r: JobContext) -> None:
         )
 
 
+def handle_lease_retire(r: JobContext) -> None:
+    """F06 : retrait de labo après approbation — simulé, aucun destroy Terraform."""
+    from .. import leases
+
+    with r.tx() as conn:
+        ctx = _load(conn, r.job)
+        _admit(r, conn, ctx)
+        change = ctx["change"]
+        dep = ctx["deployment"]
+        lease = leases.get_by_deployment(conn, dep["id"]) if dep else None
+        names = [i["name"] for i in ((dep or {}).get("instances") or []) if i.get("name")]
+        # Preuve : les ressources existent encore avant clôture du bail.
+        host_before = conn.execute(
+            "SELECT count(*) AS n FROM hosts WHERE deployment_id = %s",
+            (dep["id"],),
+        ).fetchone()["n"] if dep else 0
+        r.step(
+            conn,
+            "Retrait enregistré (simulé)",
+            "succeeded",
+            simulated=True,
+            summary={
+                "hosts": names,
+                "host_count_before": host_before,
+                "simulated": True,
+                "no_provider_destroy": True,
+                "notice": "Aucune suppression réelle de VM (D2) ; destroy Terraform réservé au laboratoire.",
+            },
+        )
+        if lease is not None:
+            leases.close_after_retirement(
+                conn,
+                lease_id=lease["id"],
+                change_id=change["id"],
+                reason="Retrait exécuté (simulé) — aucune suppression réelle de VM",
+            )
+        # Les hôtes et fichiers labo restent ; seul le statut déploiement passe à abandoned.
+        still_hosts = conn.execute(
+            "SELECT count(*) AS n FROM hosts WHERE deployment_id = %s",
+            (dep["id"],),
+        ).fetchone()["n"] if dep else 0
+        r.fenced(
+            conn,
+            "state = 'succeeded', finished_at = now(), result = %s",
+            (
+                Jsonb(
+                    {
+                        "simulated": True,
+                        "hosts": names,
+                        "hosts_intact": still_hosts == host_before,
+                        "no_provider_destroy": True,
+                    }
+                ),
+            ),
+        )
+        if change["state"] == "approved":
+            change = transition(
+                conn,
+                change,
+                "executing",
+                reason_code="retire_started",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"simulated": True},
+            )
+        if change["state"] == "executing":
+            change = transition(
+                conn,
+                change,
+                "verifying",
+                reason_code="retire_verify",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"simulated": True, "hosts_intact": still_hosts == host_before},
+            )
+        transition(
+            conn,
+            change,
+            "succeeded",
+            reason_code="retire_simulated",
+            actor_type="worker",
+            actor_id=r.worker_id,
+            detail={"simulated": True, "hosts_intact": still_hosts == host_before},
+        )
+
+
 HANDLERS = {
     "preflight": handle_preflight,
     "tf_plan": handle_tf_plan,
@@ -1886,6 +1972,7 @@ HANDLERS = {
     "drift_scan": handle_drift_scan,
     "vm_restore": handle_vm_restore,
     "service_restart": handle_service_restart,
+    "lease_retire": handle_lease_retire,
 }
 
 

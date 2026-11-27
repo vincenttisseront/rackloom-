@@ -193,16 +193,18 @@ def build(conn: Conn, dep: dict[str, Any], *, principal: Principal | None = None
         },
         "notice": "L'état du service vient des contrôles de santé observés, pas du seul succès d'un job.",
     }
-    # F58 / F59 : actions et demande d'accès (filtrées si un principal est fourni).
+    # F58 / F59 / F06 : actions, demande d'accès et bail (filtrés si un principal est fourni).
     if principal is not None:
-        from .. import access
+        from .. import access, leases
         from . import actions as service_actions
 
         card["service_actions"] = service_actions.describe_for_card(conn, principal, dep)
         card["access_request"] = access.card_section(conn, principal, dep)
+        card["lease"] = leases.card_section(conn, principal, dep)
     else:
         card["service_actions"] = []
         card["access_request"] = None
+        card["lease"] = None
     return card
 
 

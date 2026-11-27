@@ -139,7 +139,8 @@ def decide(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, An
                         actor_id=str(principal.user_id),
                         detail={"bundle_digest": plan["bundle_digest"][:12]}, request_id=request_id)
     run_after = calendars.schedule_run_after(conn, change["environment_id"])
-    # F40 : restauration → vm_restore ; F58 : redémarrage → service_restart ; sinon tf_apply.
+    # F40 : restauration → vm_restore ; F58 : redémarrage → service_restart ;
+    # F06 : retrait → lease_retire ; sinon tf_apply.
     if change["kind"] == "restore":
         from .. import restore as restore_mod
 
@@ -160,6 +161,22 @@ def decide(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, An
         from ..deployments import actions as service_actions
 
         job = service_actions.enqueue_restart(conn, change, approval_id=approval_id)
+        conn.execute(
+            "UPDATE jobs SET execution_id = %s, stack_id = %s, run_after = %s, "
+            "payload = payload || %s::jsonb WHERE id = %s",
+            (
+                execution_id,
+                plan["stack_id"],
+                run_after,
+                Jsonb({"plan_id": str(plan_id)}),
+                job["id"],
+            ),
+        )
+        job = conn.execute("SELECT * FROM jobs WHERE id = %s", (job["id"],)).fetchone()
+    elif change["kind"] == "retire":
+        from .. import leases
+
+        job = leases.enqueue_retire(conn, change, approval_id=approval_id)
         conn.execute(
             "UPDATE jobs SET execution_id = %s, stack_id = %s, run_after = %s, "
             "payload = payload || %s::jsonb WHERE id = %s",

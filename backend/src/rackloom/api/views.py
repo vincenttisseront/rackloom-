@@ -186,12 +186,32 @@ def plan_view(conn: Conn, plan: dict[str, Any], revision: dict[str, Any]) -> dic
                 "ressources : approbation impossible au lot 1.",
             }
         )
-    if summary.get("interruption"):
+    if summary.get("retirement"):
+        risks.append(
+            {
+                "code": "retirement",
+                "level": "warning",
+                "text": (
+                    f"Plan de retrait ({counts.get('delete', 0)} ressource(s)) : "
+                    "aucune suppression réelle tant que non approuvé et exécuté ; "
+                    "exécution locale simulée (pas de destroy Terraform)."
+                ),
+            }
+        )
+    if summary.get("interruption") and not summary.get("retirement"):
         risks.append(
             {
                 "code": "interruption",
                 "level": "warning",
                 "text": "Redémarrage : interruption de service pendant l'exécution (jamais masquée).",
+            }
+        )
+    elif summary.get("interruption") and summary.get("retirement"):
+        risks.append(
+            {
+                "code": "interruption",
+                "level": "warning",
+                "text": "Retrait : interruption de service si exécuté (jamais masquée).",
             }
         )
     if resolution["environment"]["is_production"]:
@@ -226,6 +246,7 @@ def plan_view(conn: Conn, plan: dict[str, Any], revision: dict[str, Any]) -> dic
         "destructive": summary.get("destructive", False),
         "interruption": bool(summary.get("interruption")),
         "restart": bool(summary.get("restart")),
+        "retirement": bool(summary.get("retirement")),
         "risks": risks,
         "details": plan_details(resolution),
         "ansible": ansible_contract(resolution),

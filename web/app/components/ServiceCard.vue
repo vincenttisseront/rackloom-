@@ -6,6 +6,8 @@ const emit = defineEmits<{
   approveAccess: [id: string]
   rejectAccess: [id: string]
   retryAccess: [id: string]
+  renewLease: []
+  proposeRetirement: []
 }>()
 const showTech = ref(false)
 const accessLevel = ref('')
@@ -13,6 +15,12 @@ const tone = computed(() => SERVICE_TONE[props.card?.status] || 'neutral')
 const eligibleLevels = computed(() =>
   (props.card?.access_request?.levels || []).filter((l: any) => l.eligible)
 )
+const leaseTone = computed(() => {
+  const state = props.card?.lease?.state
+  if (state === 'expired' || state === 'retirement_proposed') return 'bad'
+  if (state === 'reminded') return 'warn'
+  return 'neutral'
+})
 watch(
   eligibleLevels,
   (levels) => {
@@ -82,6 +90,47 @@ watch(
         </li>
       </ul>
       <p class="small muted">Chaque action ouvre une demande préremplie (plan et approbation). Aucune commande directe.</p>
+    </div>
+
+    <!-- F06 : bail temporaire -->
+    <div
+      v-if="card.lease"
+      class="banner"
+      :class="leaseTone"
+      style="margin-top: 1rem"
+      data-testid="lease-panel"
+      :data-state="card.lease.state"
+    >
+      <p class="small" style="margin: 0">
+        <strong>Bail</strong>
+        · {{ card.lease.state_label }}
+        · jusqu'au {{ card.lease.expires_on }}
+        <template v-if="card.lease.owner"> · {{ card.lease.owner }}</template>
+        <template v-if="typeof card.lease.days_remaining === 'number' && !card.lease.expired">
+          · {{ card.lease.days_remaining }} j. restants
+        </template>
+      </p>
+      <p v-if="card.lease.expired" class="small" data-testid="lease-expired-notice" style="margin: 0.35rem 0 0">
+        Labo expiré : signalé, ressources intactes tant que le retrait n'est pas approuvé et exécuté.
+      </p>
+      <div v-if="card.lease.actions?.length" class="actions" style="margin-top: 0.5rem">
+        <button
+          v-if="card.lease.can_renew"
+          type="button"
+          data-testid="lease-renew"
+          @click="emit('renewLease')"
+        >
+          Renouveler
+        </button>
+        <button
+          v-if="card.lease.can_propose_retirement"
+          type="button"
+          data-testid="lease-propose-retirement"
+          @click="emit('proposeRetirement')"
+        >
+          Proposer le retrait
+        </button>
+      </div>
     </div>
 
     <!-- F59 : demander l'accès -->

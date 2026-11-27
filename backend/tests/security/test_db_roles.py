@@ -50,6 +50,8 @@ ALLOWED = {
         "SELECT node_count FROM dependency_graph_builds",
         "SELECT kind FROM dependency_nodes",
         "SELECT provenance FROM dependency_edges",
+        "SELECT expires_on FROM deployment_leases",
+        "SELECT new_expires_on FROM deployment_lease_renewals",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -90,6 +92,8 @@ ALLOWED = {
         "SELECT node_count FROM dependency_graph_builds",
         "SELECT kind FROM dependency_nodes",
         "SELECT provenance FROM dependency_edges",
+        "SELECT expires_on FROM deployment_leases",
+        "SELECT new_expires_on FROM deployment_lease_renewals",
     ],
 }
 

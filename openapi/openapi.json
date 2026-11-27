@@ -4445,6 +4445,168 @@
         ]
       }
     },
+    "/api/v1/deployments/{deployment_id}/lease": {
+      "get": {
+        "description": "F06 : bail du déploiement (durée de vie, propriétaire, état).",
+        "operationId": "get_deployment_lease_api_v1_deployments__deployment_id__lease_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Deployment Lease Api V1 Deployments  Deployment Id  Lease Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Deployment Lease",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/deployments/{deployment_id}/lease/propose-retirement": {
+      "post": {
+        "description": "F06 : proposer un plan de retrait (labo intact jusqu'à approbation + exécution).",
+        "operationId": "propose_lease_retirement_api_v1_deployments__deployment_id__lease_propose_retirement_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Propose Lease Retirement Api V1 Deployments  Deployment Id  Lease Propose Retirement Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose Lease Retirement",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/deployments/{deployment_id}/lease/renew": {
+      "post": {
+        "description": "F06 : renouveler un bail (aucune écriture fournisseur).",
+        "operationId": "renew_deployment_lease_api_v1_deployments__deployment_id__lease_renew_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Renew Deployment Lease Api V1 Deployments  Deployment Id  Lease Renew Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Renew Deployment Lease",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
     "/api/v1/deployments/{deployment_id}/outputs": {
       "get": {
         "description": "F33 : sorties typées versionnées (allowlist) ; hors périmètre → 404 ; jamais le state.",

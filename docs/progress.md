@@ -96,7 +96,8 @@
 | Demande d'accès à un service (F59) | livré (faux IdP) | testé localement | correspondances approuvées ; `group` → 422 ; sync échouée visible ; relance idempotente ; IdP réel : non (D22) |
 | Compositions multi-VM (F02) | livré | testé localement | `test_f02_composition.py`, `test_f02_f04_light.py`, `test_f02_f04_compositions_graph.py` (lab) ; template `ubuntu-app-base` ; migration `0018` ; L2 non fait |
 | Graphe de dépendances (F04) | livré | testé localement | impact réseau filtré ; hors périmètre masqué/404 ; page `/dependances` ; e2e `102-f02-f04` ; L2 non fait |
-| Fonctions F06–F08, F15–F20, F22–F26, F29–F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
+| Baux pour environnements temporaires (F06) | livré (retrait simulé) | testé localement | `test_f06_leases.py` ; e2e `102-f06-baux.spec.ts` ; migration `0019` ; expiration → signalement + plan `retire` ; renew ; job `lease_retire` sans destroy ; L2 non fait |
+| Fonctions F07–F08, F15–F20, F22–F26, F29–F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6
 
@@ -407,9 +408,16 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - **F04** : reconstruction lecture seule ; provenance confirmée/inférée/inconnue ; `GET /dependency-graph`, impact filtré (404 hors périmètre) ; UI `/dependances`.
 - Preuves locales : unitaires composition ; intégration légère (résolution + impact scopé) ; suite non-terraform verte. Recette labo terraform/ansible : CI. Labo réel : non (D2).
 
+### F06 baux temporaires (2026-11-27, heure de Paris)
+
+- Branche `cursor/f06-baux-temporaires-91eb` rebasée sur `main` après F02/F04. Migration **`0019`** (`down_revision=0018`) ; F07=`0020`, F08=`0021`.
+- Tables `deployment_leases`, `deployment_lease_renewals` ; kinds `retire` / `lease_retire` ; GRANT api/worker.
+- Ouverture du bail à la soumission si `lifetime_until` ; sweep worker (rappel, expiration, proposition de plan) ; renouvellement (plafond D14) ; plan de retrait approuvable ; exécution simulée (pas de destroy Terraform).
+- Preuves : `test_f06_leases.py` ; e2e `102-f06-baux.spec.ts` ; fiche service (`lease-panel`).
+
 ## Prochain jalon
 
-1. Fusionner **F02+F04 (`0018`)** après CI verte (Vincent).
-2. Ensuite selon le backlog (F06–F08, F15–F20, F22–F26, F29–F30, AT02–AT04).
+1. Fusionner **F06 (`0019`)** après CI verte (Vincent).
+2. Ensuite selon le backlog (F07–F08, F15–F20, F22–F26, F29–F30, AT02–AT04).
 3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
