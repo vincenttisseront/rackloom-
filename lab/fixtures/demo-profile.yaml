@@ -39,7 +39,7 @@ policies:
 # Octrois d'inventaire et de services. compta/dev ne reçoit aucun réseau (démonstration D3).
 grants:
   vitrine/dev:
-    service_template: [ubuntu-web, ubuntu-web-durci]
+    service_template: [ubuntu-web, ubuntu-web-durci, ubuntu-app-base]
     image: [vm-500]
     cluster: [domain-c10, domain-c11]
     datastore: [datastore-201, datastore-202]
@@ -62,6 +62,8 @@ grants:
 # Version de template publiée au chargement ; 1.1.0 reste candidate (validée, non publiée).
 publish:
   - {template: ubuntu-web, version: 1.0.0, reason: "Template de démonstration du lot 1"}
+  # ubuntu-app-base (F02) : chargé en validated, publié uniquement dans les tests F02
+  # pour ne pas changer le service par défaut des parcours existants.
 
 connectors:
   - {slug: vsphere-fake, kind: vsphere, mode: simulated}

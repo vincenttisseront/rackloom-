@@ -367,6 +367,16 @@ def validate_template(m: dict[str, Any]) -> None:
     for ref in m.get("secret_refs", []):
         if not str(ref).startswith("secret://"):
             raise CatalogError("template : les secrets sont des références secret://, jamais des valeurs")
+    # F02 : composition multi-VM optionnelle (membres, readiness, depends_on).
+    if m.get("composition") is not None:
+        from .. import composition as composition_mod
+
+        composition_mod.validate_composition(m)
+        for kind, env in m["environments"].items():
+            if "{member}" not in env["naming"]:
+                raise CatalogError(
+                    f"template.{kind} : une composition exige {{member}} dans la convention de nommage"
+                )
     _reject_secret_literals(m["components"], f"template {m['slug']}")
 
 

@@ -181,9 +181,11 @@ def build(conn: Conn, dep: dict[str, Any], *, principal: Principal | None = None
                     "id": str(h["id"]),
                     "name": h["name"],
                     "deployment_state": h["deployment_state"],
+                    "composition_member": h.get("composition_member"),
                 }
                 for h in conn.execute(
-                    "SELECT id, name, deployment_state FROM hosts WHERE deployment_id = %s ORDER BY name",
+                    "SELECT id, name, deployment_state, composition_member "
+                    "FROM hosts WHERE deployment_id = %s ORDER BY name",
                     (dep["id"],),
                 ).fetchall()
             ],

@@ -46,6 +46,10 @@ ALLOWED = {
         "SELECT state FROM service_access_requests",
         "SELECT idp_assignment_id FROM service_access_assignments",
         "SELECT fail_next FROM idp_fake_state",
+        "SELECT composition_member FROM hosts",
+        "SELECT node_count FROM dependency_graph_builds",
+        "SELECT kind FROM dependency_nodes",
+        "SELECT provenance FROM dependency_edges",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -82,6 +86,10 @@ ALLOWED = {
         "SELECT state FROM service_access_requests",
         "SELECT idp_assignment_id FROM service_access_assignments",
         "SELECT fail_next FROM idp_fake_state",
+        "SELECT composition_member FROM hosts",
+        "SELECT node_count FROM dependency_graph_builds",
+        "SELECT kind FROM dependency_nodes",
+        "SELECT provenance FROM dependency_edges",
     ],
 }
 

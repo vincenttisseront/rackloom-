@@ -226,8 +226,7 @@ def _scan_locked(value: Any, path: str = "") -> None:
                 (path == "" and key in NEED_KEYS)
                 or (path == "/service" and key == "template")
                 or (
-                    path == "/inputs"
-                    and key in ("quantity", "size_tier", "usage", "lifetime_until", "source_instance")
+                    path == "/inputs" and key in ("quantity", "size_tier", "usage", "lifetime_until", "source_instance")
                 )
             )
             if not allowed_need_key and _is_technical(key):
@@ -709,6 +708,16 @@ def resolve(
         )
 
     # 3. Placement depuis l'inventaire octroyé (dernier instantané), départage rang puis identifiant.
+    # F02 : une composition fixe le nombre total d'instances (somme des membres), pas seulement quantity.
+    from .. import composition as composition_mod
+
+    compose_early = composition_mod.has_composition(contract)
+    if compose_early:
+        placement_quantity = sum(
+            composition_mod.member_quantity(m, int(quantity)) for m in composition_mod.members(contract)
+        )
+    else:
+        placement_quantity = int(quantity)
     if fresh["stale"]:
         out["blocks"].append(_block("inventory_stale", referent))
     granted = [] if fresh["stale"] else inventory.granted_items(conn, project["id"], env["id"])
@@ -737,7 +746,7 @@ def resolve(
         if not folders:
             out["blocks"].append(_block("no_authorized_placement", referent))
         else:
-            placements = _assign_placements(clusters, datastores, quantity, anti_affinity)
+            placements = _assign_placements(clusters, datastores, placement_quantity, anti_affinity)
             if isinstance(placements, str):
                 out["blocks"].append(_block(placements, referent))
                 placements = None
@@ -828,11 +837,10 @@ def resolve(
         restore_profile_mod.assert_isolated_network(out["placement"]["network"])
         previous = []
     # Hors de placement : le dossier d'exécution n'attend que des stable_id sous targets.placement.
-    out["anti_affinity"] = (
-        {"scope": anti_affinity["scope"]} if anti_affinity and anti_affinity.get("scope") else None
-    )
+    out["anti_affinity"] = {"scope": anti_affinity["scope"]} if anti_affinity and anti_affinity.get("scope") else None
 
     # Instances : noms existants conservés, nouveaux noms selon la convention (préférence F50 si valide).
+    # F02 : une composition produit des instances par membre, ordonnées par dépendances.
     dims = env_params["size_tiers"][tier]
     naming_pattern = env_params["naming"]
     naming_source = "template"
@@ -842,48 +850,109 @@ def resolve(
         naming_source = "project_preference"
         naming_ref = f"project_preference@{pref_row['version']}" if pref_row else "project_preference"
     used = _used_names(conn, project["id"], env["id"], change_id) - set(previous)
-    names = list(previous)[:quantity]
-    nn = 1
-    while len(names) < quantity:
-        if nn > 99:
-            out["blocks"].append(_block("name_unavailable", referent))
-            return finish("blocked")
-        candidate = naming_pattern.format(
-            project_code=project["code"],
-            nn=f"{nn:02d}",
-            environment=env["slug"],
-            project=project["slug"],
-        )
-        nn += 1
-        if candidate not in used and candidate not in names:
-            names.append(candidate)
+    compose = compose_early
+    member_plan: list[tuple[dict[str, Any], int]] = []
+    if compose:
+        for mid in composition_mod.topological_member_order(contract):
+            mdef = composition_mod.member_by_id(contract, mid)
+            assert mdef is not None
+            member_plan.append((mdef, composition_mod.member_quantity(mdef, int(quantity))))
+
+    names: list[str] = []
+    instance_members: list[str | None] = []
+    if compose:
+        previous_by_member: dict[str, list[str]] = {}
+        for pname, pinfo in previous.items():
+            pm = (pinfo or {}).get("member") if isinstance(pinfo, dict) else None
+            if pm:
+                previous_by_member.setdefault(pm, []).append(pname)
+        nn_by_member: dict[str, int] = {m["id"]: 1 for m, _ in member_plan}
+        for mdef, mqty in member_plan:
+            mid = mdef["id"]
+            kept = list(previous_by_member.get(mid, []))[:mqty]
+            names.extend(kept)
+            instance_members.extend([mid] * len(kept))
+            while len([x for x in instance_members if x == mid]) < mqty:
+                if nn_by_member[mid] > 99:
+                    out["blocks"].append(_block("name_unavailable", referent))
+                    return finish("blocked")
+                fmt_kwargs = {
+                    "project_code": project["code"],
+                    "nn": f"{nn_by_member[mid]:02d}",
+                    "environment": env["slug"],
+                    "project": project["slug"],
+                    "member": mid,
+                }
+                nn_by_member[mid] += 1
+                try:
+                    candidate = naming_pattern.format(**fmt_kwargs)
+                except KeyError:
+                    candidate = naming_pattern.replace("{member}", mid).format(
+                        project_code=project["code"],
+                        nn=f"{nn_by_member[mid] - 1:02d}",
+                        environment=env["slug"],
+                        project=project["slug"],
+                    )
+                if candidate not in used and candidate not in names:
+                    names.append(candidate)
+                    instance_members.append(mid)
+    else:
+        names = list(previous)[:quantity]
+        nn = 1
+        while len(names) < quantity:
+            if nn > 99:
+                out["blocks"].append(_block("name_unavailable", referent))
+                return finish("blocked")
+            candidate = naming_pattern.format(
+                project_code=project["code"],
+                nn=f"{nn:02d}",
+                environment=env["slug"],
+                project=project["slug"],
+            )
+            nn += 1
+            if candidate not in used and candidate not in names:
+                names.append(candidate)
+        instance_members = [None] * len(names)
+
     tier_ref = f"environments.{env['kind']}.size_tiers.{tier}"
     out["instances"] = []
     for index, name in enumerate(names):
         cl, ds = placements[index]
-        out["instances"].append({
+        inst: dict[str, Any] = {
             "name": name,
             "size_tier": tier,
             **dims,
             "existing": name in previous,
             "cluster": {"stable_id": cl["stable_id"], "name": cl["name"]},
             "datastore": {"stable_id": ds["stable_id"], "name": ds["name"]},
-        })
+        }
+        if instance_members[index]:
+            inst["member"] = instance_members[index]
+        out["instances"].append(inst)
         val(f"/instances/{index}/name", name, naming_source, ref=naming_ref)
+        if instance_members[index]:
+            val(f"/instances/{index}/member", instance_members[index], "template", ref="composition.members")
         for key in ("vcpu", "memory_mb", "disk_gb"):
             val(f"/instances/{index}/{key}", dims[key], "template", ref=tier_ref)
     waves_spec = contract["deployment_policy"]["waves"]
-    out["waves"] = registry.plan_waves(waves_spec, names)
+    if compose:
+        out["waves"] = composition_mod.plan_composition_waves(contract, out["instances"])
+        wave_label = "composition : un membre après l'autre selon les dépendances et la readiness"
+        wave_ref = "composition.members"
+    else:
+        out["waves"] = registry.plan_waves(waves_spec, names)
+        wave_label = (
+            "un pilote, puis les vagues suivantes ; un échec arrête la suite"
+            if waves_spec["mode"] == "pilot"
+            else "toutes les machines ensemble"
+        )
+        wave_ref = "deployment_policy.waves"
     val(
         "/execution/waves",
         " ; ".join(", ".join(w) for w in out["waves"]),
         "template",
-        ref="deployment_policy.waves",
-        label=(
-            "un pilote, puis les vagues suivantes ; un échec arrête la suite"
-            if waves_spec["mode"] == "pilot"
-            else "toutes les machines ensemble"
-        ),
+        ref=wave_ref,
+        label=wave_label,
     )
     if previous:
         # Annoncé dès l'étape 2 ; le plan correspondant sera bloqué (aucune suppression au lot 1).
@@ -895,6 +964,25 @@ def resolve(
     # Composants, module, rôles, exécution, gouvernance.
     comps = registry.template_components(conn, contract)
     out["components"] = comps
+    if compose:
+        member_components: dict[str, list[dict[str, Any]]] = {}
+        for mdef, _mqty in member_plan:
+            # Résout les composants du membre (même forme que template_components).
+            member_contract = {**contract, "components": mdef["components"]}
+            member_components[mdef["id"]] = registry.template_components(conn, member_contract)
+        out["member_components"] = member_components
+        out["composition"] = {
+            "members": [
+                {
+                    "id": m["id"],
+                    "title": m["title"],
+                    "depends_on": list(m.get("depends_on") or []),
+                    "readiness": list(m.get("readiness") or []),
+                    "health_checks": list(m.get("health_checks") or []),
+                }
+                for m in composition_mod.members(contract)
+            ]
+        }
     for c in comps:
         val(
             f"/components/{c['slug']}",
@@ -979,8 +1067,7 @@ def resolve(
         "simulated": True,
         "notice": "Prévisualisation seule : aucune réservation créée.",
         "candidates": [
-            {"address": p["address"], "dns_name": p["dns_name"], "hostname": p["hostname"]}
-            for p in ipam_previews
+            {"address": p["address"], "dns_name": p["dns_name"], "hostname": p["hostname"]} for p in ipam_previews
         ],
     }
     # F05 : mesure de capacité (âge, marge) — jamais présentée comme une réservation.

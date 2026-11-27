@@ -130,7 +130,35 @@ async function onRetryAccess(id: string) {
       @reject-access="onRejectAccess"
       @retry-access="onRetryAccess"
     />
-    <p v-else-if="!error" class="empty">Chargement…</p>
+    <section
+      v-if="deployment?.composition"
+      class="card"
+      style="margin-top: 1rem"
+      aria-labelledby="composition-title"
+      data-testid="composition-panel"
+    >
+      <h2 id="composition-title">Composition multi-VM</h2>
+      <p class="small muted">
+        Les membres sont configurés dans l'ordre de leurs dépendances ; un échec partiel ne
+        supprime aucune ressource déjà créée.
+      </p>
+      <ul>
+        <li v-for="m in deployment.composition.members" :key="m.id" data-testid="composition-member">
+          <strong>{{ m.title }}</strong>
+          <span class="mono small"> ({{ m.id }})</span>
+          <span v-if="m.depends_on?.length" class="small muted">
+            — attend {{ m.depends_on.map((d: any) => d.member).join(', ') }}
+          </span>
+          <ul class="small">
+            <li v-for="h in m.hosts" :key="h.id">
+              <NuxtLink :to="`/machines/${h.id}`">{{ h.name }}</NuxtLink>
+              · {{ h.deployment_state }}
+            </li>
+          </ul>
+        </li>
+      </ul>
+    </section>
+    <p v-if="!deployment && !error" class="empty">Chargement…</p>
     <p v-if="busy" class="small muted">Traitement…</p>
   </div>
 </template>
