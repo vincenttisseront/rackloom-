@@ -1730,6 +1730,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/compliance/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Compliance Profiles
+         * @description F24 : profils de conformité publiés (versionnés, immuables).
+         */
+        get: operations["list_compliance_profiles_api_v1_compliance_profiles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/connector-rotations/{rotation_id}/cutover": {
         parameters: {
             query?: never;
@@ -2543,6 +2563,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/hosts/{host_id}/compliance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Host Compliance
+         * @description F24 : dernier scan de conformité (lecture seule, aucune correction).
+         */
+        get: operations["get_host_compliance_api_v1_hosts__host_id__compliance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/hosts/{host_id}/compliance/remediate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remediate Host Compliance
+         * @description F24 : brouillon de demande de correction — aucun job d'écriture.
+         */
+        post: operations["remediate_host_compliance_api_v1_hosts__host_id__compliance_remediate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/hosts/{host_id}/compliance/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scan Host Compliance
+         * @description F24 : scan synchrone + job `compliance_scan` (classe read, aucune écriture).
+         */
+        post: operations["scan_host_compliance_api_v1_hosts__host_id__compliance_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/hosts/{host_id}/observations": {
         parameters: {
             query?: never;
@@ -2554,6 +2634,26 @@ export interface paths {
         get: operations["host_observations_api_v1_hosts__host_id__observations_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/hosts/{host_id}/rudder/import-observations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Rudder Observations
+         * @description F24 / RAC-36 : importe des observations Rudder fictives explicites (lecture seule).
+         */
+        post: operations["import_rudder_observations_api_v1_hosts__host_id__rudder_import_observations_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6882,6 +6982,28 @@ export interface operations {
             };
         };
     };
+    list_compliance_profiles_api_v1_compliance_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+    };
     cutover_rotation_api_v1_connector_rotations__rotation_id__cutover_post: {
         parameters: {
             query?: never;
@@ -8457,6 +8579,117 @@ export interface operations {
             };
         };
     };
+    get_host_compliance_api_v1_hosts__host_id__compliance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remediate_host_compliance_api_v1_hosts__host_id__compliance_remediate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scan_host_compliance_api_v1_hosts__host_id__compliance_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     host_observations_api_v1_hosts__host_id__observations_get: {
         parameters: {
             query?: {
@@ -8479,6 +8712,45 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_rudder_observations_api_v1_hosts__host_id__rudder_import_observations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                host_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

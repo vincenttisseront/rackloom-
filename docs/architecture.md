@@ -400,8 +400,9 @@ Ils sont présents au lot 1 parce qu'ils coûtent peu et évitent une migration 
 | Interrupteur global de suspension des envois (`dispatch_paused`) | oui (`platform_settings`, file + exercices F26) | F26, maintenance |
 | État du service distinct de l'état des jobs, preuves et heure par contrôle de santé (§8) | oui | F57, F58 |
 | Actions disponibles calculées côté serveur (`allowed_actions`) et revérifiées à l'appel | oui | F55, F58, F51 |
-| Collecte en lecture seule par playbook approuvé, identité sans élévation, observations filtrées par type | oui | F60, F24 |
+| Collecte en lecture seule par playbook approuvé, identité sans élévation, observations filtrées par type | oui (`settings` + Rudder fictif lecture seule) | F60, F24 |
 | Inventaire logiciel (paquets observés × avis hors ligne × fin de support), comparaison Debian/Ubuntu | oui (`software_inventory`, import hors ligne) | F20 |
+| Profils de conformité versionnés, scans lecture seule, remédiation = brouillon de demande | oui (`compliance_*`, job `compliance_scan`) | F24, AT04 |
 | Correspondance approuvée entre niveau d'accès et groupe d'identité | oui (faux IdP local ; IdP réel : lot 4) | F59 |
 
 ### 12.1 Règles posées pour les fonctions utilisateur F51 à F60

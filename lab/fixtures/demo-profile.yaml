@@ -71,3 +71,5 @@ connectors:
   - {slug: terraform-cli, kind: terraform, mode: real}
   - {slug: ansible-runner, kind: ansible, mode: real}
   - {slug: model-fake, kind: model, mode: simulated}
+  # F24 / RAC-36 : Rudder optionnel, lecture seule ; observations fictives explicites (D2).
+  - {slug: rudder-fake, kind: rudder, mode: simulated}

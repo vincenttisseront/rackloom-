@@ -4946,6 +4946,33 @@
         ]
       }
     },
+    "/api/v1/compliance/profiles": {
+      "get": {
+        "description": "F24 : profils de conformité publiés (versionnés, immuables).",
+        "operationId": "list_compliance_profiles_api_v1_compliance_profiles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Compliance Profiles Api V1 Compliance Profiles Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Compliance Profiles",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
     "/api/v1/connector-rotations/{rotation_id}/cutover": {
       "post": {
         "operationId": "cutover_rotation_api_v1_connector_rotations__rotation_id__cutover_post",
@@ -7197,6 +7224,168 @@
         ]
       }
     },
+    "/api/v1/hosts/{host_id}/compliance": {
+      "get": {
+        "description": "F24 : dernier scan de conformité (lecture seule, aucune correction).",
+        "operationId": "get_host_compliance_api_v1_hosts__host_id__compliance_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "host_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Host Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Host Compliance Api V1 Hosts  Host Id  Compliance Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Host Compliance",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/hosts/{host_id}/compliance/remediate": {
+      "post": {
+        "description": "F24 : brouillon de demande de correction — aucun job d'écriture.",
+        "operationId": "remediate_host_compliance_api_v1_hosts__host_id__compliance_remediate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "host_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Host Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remediate Host Compliance Api V1 Hosts  Host Id  Compliance Remediate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remediate Host Compliance",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/hosts/{host_id}/compliance/scan": {
+      "post": {
+        "description": "F24 : scan synchrone + job `compliance_scan` (classe read, aucune écriture).",
+        "operationId": "scan_host_compliance_api_v1_hosts__host_id__compliance_scan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "host_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Host Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Scan Host Compliance Api V1 Hosts  Host Id  Compliance Scan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scan Host Compliance",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
     "/api/v1/hosts/{host_id}/observations": {
       "get": {
         "operationId": "host_observations_api_v1_hosts__host_id__observations_get",
@@ -7256,6 +7445,64 @@
           }
         },
         "summary": "Host Observations",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/hosts/{host_id}/rudder/import-observations": {
+      "post": {
+        "description": "F24 / RAC-36 : importe des observations Rudder fictives explicites (lecture seule).",
+        "operationId": "import_rudder_observations_api_v1_hosts__host_id__rudder_import_observations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "host_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Host Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Import Rudder Observations Api V1 Hosts  Host Id  Rudder Import Observations Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Rudder Observations",
         "tags": [
           "ressources"
         ]

@@ -3,7 +3,39 @@ const route = useRoute()
 const api = useApi()
 const host = ref<any>(null)
 const journals = ref<any[]>([])
+const compliance = ref<any>(null)
+const remediating = ref(false)
+const remediation = ref<any>(null)
 const error = ref<string | null>(null)
+
+const FINDING_LABEL: Record<string, string> = {
+  compliant: 'conforme',
+  noncompliant: 'non conforme',
+  not_applicable: 'non applicable',
+  missing_data: 'données absentes',
+}
+
+async function loadCompliance() {
+  compliance.value = await api.get(`/hosts/${route.params.id}/compliance`)
+}
+
+async function runScan() {
+  error.value = null
+  remediation.value = null
+  compliance.value = await api.post(`/hosts/${route.params.id}/compliance/scan`, {})
+}
+
+async function proposeRemediation() {
+  remediating.value = true
+  error.value = null
+  try {
+    remediation.value = await api.post(`/hosts/${route.params.id}/compliance/remediate`, {})
+  } catch (e) {
+    error.value = errorText(e)
+  } finally {
+    remediating.value = false
+  }
+}
 
 onMounted(async () => {
   try {
@@ -16,6 +48,7 @@ onMounted(async () => {
       seen.add(name)
       return true
     })
+    await loadCompliance()
   } catch (e) {
     error.value = errorText(e)
   }
@@ -65,9 +98,52 @@ onMounted(async () => {
           </dl>
         </section>
       </div>
+      <section class="card" aria-labelledby="compliance-title" data-testid="compliance-panel">
+        <h2 id="compliance-title">Conformité</h2>
+        <p class="small muted">Comparaison à un profil versionné. Lecture seule : aucune correction automatique.</p>
+        <div class="row gap" style="margin: 0.75rem 0">
+          <button type="button" class="btn" data-testid="compliance-scan" @click="runScan">Lancer un scan</button>
+          <button
+            v-if="compliance?.findings?.some((f: any) => f.status === 'noncompliant')"
+            type="button"
+            class="btn secondary"
+            data-testid="compliance-remediate"
+            :disabled="remediating"
+            @click="proposeRemediation"
+          >
+            Proposer une correction
+          </button>
+        </div>
+        <p v-if="!compliance || compliance.status === 'none'" class="empty">Aucun scan pour cette machine.</p>
+        <template v-else>
+          <p>
+            Statut :
+            <span
+              class="badge"
+              :class="compliance.status === 'ok' ? 'ok' : compliance.status === 'noncompliant' || compliance.status === 'partial' ? 'bad' : 'warn'"
+              data-testid="compliance-status"
+            >{{ compliance.status }}</span>
+            <span v-if="compliance.profile" class="small muted">
+              · {{ compliance.profile.slug }}@{{ compliance.profile.version }}
+            </span>
+          </p>
+          <ul class="plain" data-testid="compliance-findings">
+            <li v-for="f in compliance.findings" :key="f.rule_id" class="small">
+              <strong>{{ f.category }}</strong> {{ f.attribute }} :
+              <span>{{ FINDING_LABEL[f.status] || f.status }}</span>
+              <span class="muted"> (attendu {{ f.expected || '—' }}, observé {{ f.observed || '—' }})</span>
+            </li>
+          </ul>
+          <p v-if="remediation" class="banner ok" data-testid="compliance-remediation">
+            Brouillon {{ remediation.change?.ref || remediation.change_id }} créé —
+            aucune écriture fournisseur. <SimBadge />
+          </p>
+        </template>
+      </section>
       <section class="card" aria-labelledby="prov-title">
         <h2 id="prov-title">Provenance des données</h2>
         <p class="small">Source : {{ host.provenance.source }}. Parties simulées : {{ host.provenance.simulated_parts.join(', ') }} <SimBadge /></p>
+        <p v-if="host.provenance.rudder" class="small muted">{{ host.provenance.rudder }} <SimBadge /></p>
         <p class="small muted">Les valeurs collectées sur la machine sont des données non fiables : elles sont affichées, jamais interprétées.</p>
       </section>
       <section class="card" aria-labelledby="journal-title">

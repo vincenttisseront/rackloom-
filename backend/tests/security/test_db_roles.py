@@ -78,6 +78,9 @@ ALLOWED = {
         "SELECT end_of_support FROM software_eol_products",
         "SELECT content_digest FROM software_inventory_exports",
         "SELECT digest FROM diagnostic_packs",
+        "SELECT slug FROM compliance_profiles",
+        "SELECT status FROM compliance_scans",
+        "SELECT rule_id FROM compliance_findings",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -146,6 +149,9 @@ ALLOWED = {
         "SELECT end_of_support FROM software_eol_products",
         "SELECT content_digest FROM software_inventory_exports",
         "SELECT digest FROM diagnostic_packs",
+        "SELECT slug FROM compliance_profiles",
+        "SELECT status FROM compliance_scans",
+        "SELECT rule_id FROM compliance_findings",
     ],
 }
 

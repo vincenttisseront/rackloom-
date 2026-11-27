@@ -36,6 +36,16 @@ MATRIX: dict[str, dict[str, dict[str, Any]]] = {
         "configure": cap("real"), "test_connection": cap("simulated"), "inventory": cap(None),
         "plan": cap(None), "execute": cap(None), "track": cap(None), "cancel": cap(None),
     },
+    # F24 / RAC-36 : Rudder optionnel, lecture seule (rapports → observations). Remédiation hors scope.
+    "rudder": {
+        "configure": cap("real", "URL et jeton (référence de secret)"),
+        "test_connection": cap("simulated", "aucun appel réseau en fictif"),
+        "inventory": cap("simulated", "rapports de conformité → observations"),
+        "plan": cap(None, "remédiation Rudder hors périmètre F24"),
+        "execute": cap(None, "aucune écriture via Rudder"),
+        "track": cap(None),
+        "cancel": cap(None),
+    },
 }
 
 

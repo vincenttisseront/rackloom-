@@ -24,7 +24,7 @@ def _only(body: dict[str, Any], allowed: set[str]) -> None:
         raise ApiError(422, "unknown_field", f"champ « {key} » refusé", field=f"/{key}")
 
 
-OBSERVATION_KINDS = ("facts", "packages", "services", "probe", "journal", "ssh")
+OBSERVATION_KINDS = ("facts", "packages", "services", "probe", "journal", "ssh", "settings")
 
 
 @router.get("/inbox")
@@ -405,6 +405,110 @@ def host_observations(host_id: UUID, request: Request, kind: str | None = None) 
             (host["id"], kind) if kind else (host["id"],),
         ).fetchall()
         return [{**r, "collected_at": iso(r["collected_at"])} for r in rows]
+
+
+@router.get("/compliance/profiles")
+def list_compliance_profiles(request: Request) -> list[dict[str, Any]]:
+    """F24 : profils de conformité publiés (versionnés, immuables)."""
+    from .. import compliance
+
+    with unit_of_work(request) as u:
+        return compliance.list_profiles(u.conn)
+
+
+@router.get("/hosts/{host_id}/compliance")
+def get_host_compliance(host_id: UUID, request: Request) -> dict[str, Any]:
+    """F24 : dernier scan de conformité (lecture seule, aucune correction)."""
+    from .. import compliance
+
+    with unit_of_work(request) as u:
+        _host(u.conn, u.p, host_id)
+        latest = compliance.latest_for_host(u.conn, host_id)
+        if latest is None:
+            return {
+                "status": "none",
+                "findings": [],
+                "correction": False,
+                "notice": "Aucun scan de conformité pour cette machine.",
+            }
+        return latest
+
+
+@router.post("/hosts/{host_id}/compliance/scan")
+def scan_host_compliance(
+    host_id: UUID, request: Request, body: dict[str, Any] = Body(default={})
+) -> dict[str, Any]:
+    """F24 : scan synchrone + job `compliance_scan` (classe read, aucune écriture)."""
+    from .. import compliance
+    from ..executions import queue
+
+    _only(body, {"profile_slug", "profile_version", "source"})
+    with unit_of_work(request, write=True) as u:
+        host = _host(u.conn, u.p, host_id)
+        result = compliance.scan_host(
+            u.conn,
+            host_id=host["id"],
+            principal=u.p,
+            profile_slug=str(body.get("profile_slug") or "ubuntu-web-baseline"),
+            profile_version=body.get("profile_version"),
+            source=str(body.get("source") or "rackloom"),
+            actor_type="user",
+            actor_id=str(u.p.user_id),
+        )
+        job = queue.enqueue(
+            u.conn,
+            kind="compliance_scan",
+            change=None,
+            project_id=host["project_id"],
+            stack_id=None,
+            idempotency_key=f"compliance_scan:{host['id']}:{result['scan_id']}",
+            payload={
+                "host_id": str(host["id"]),
+                "already_scanned": result["scan_id"],
+                "profile_slug": result.get("profile", {}).get("slug"),
+            },
+        )
+        return {**result, "job_id": str(job["id"]), "write_jobs_created": 0}
+
+
+@router.post("/hosts/{host_id}/compliance/remediate")
+def remediate_host_compliance(
+    host_id: UUID, request: Request, body: dict[str, Any] = Body(default={})
+) -> dict[str, Any]:
+    """F24 : brouillon de demande de correction — aucun job d'écriture."""
+    from .. import compliance
+    from .views import change_view
+
+    _only(body, set())
+    with unit_of_work(request, write=True) as u:
+
+        def act() -> dict[str, Any]:
+            result = compliance.propose_remediation(
+                u.conn, u.p, host_id, request_id=u.request_id
+            )
+            change = u.conn.execute(
+                "SELECT * FROM changes WHERE id = %s", (UUID(result["change_id"]),)
+            ).fetchone()
+            return {**result, "change": change_view(u.conn, u.p, change)}
+
+        return idempotent(u, request, body, act)
+
+
+@router.post("/hosts/{host_id}/rudder/import-observations")
+def import_rudder_observations(
+    host_id: UUID, request: Request, body: dict[str, Any] = Body(default={})
+) -> dict[str, Any]:
+    """F24 / RAC-36 : importe des observations Rudder fictives explicites (lecture seule)."""
+    from ..compliance import rudder_fake
+
+    _only(body, {"report"})
+    with unit_of_work(request, write=True) as u:
+        report = body.get("report")
+        if report is not None and not isinstance(report, dict):
+            raise ApiError(422, "invalid_report", "report doit être un objet", field="/report")
+        return rudder_fake.import_observations(
+            u.conn, u.p, host_id, report=report, request_id=u.request_id
+        )
 
 
 @router.get("/dependency-graph")
