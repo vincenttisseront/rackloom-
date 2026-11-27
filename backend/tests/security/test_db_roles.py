@@ -62,6 +62,10 @@ ALLOWED = {
         "SELECT serial FROM ssh_certificate_issues",
         "SELECT slug FROM execution_zones",
         "SELECT status FROM site_runners",
+        "SELECT key_id FROM offline_bundle_trust_keys",
+        "SELECT status FROM offline_bundles",
+        "SELECT kind FROM offline_bundle_items",
+        "SELECT outcome FROM offline_bundle_imports",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -114,6 +118,10 @@ ALLOWED = {
         "SELECT serial FROM ssh_certificate_issues",
         "SELECT slug FROM execution_zones",
         "SELECT status FROM site_runners",
+        "SELECT key_id FROM offline_bundle_trust_keys",
+        "SELECT status FROM offline_bundles",
+        "SELECT kind FROM offline_bundle_items",
+        "SELECT outcome FROM offline_bundle_imports",
     ],
 }
 
