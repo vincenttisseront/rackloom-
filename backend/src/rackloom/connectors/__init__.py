@@ -46,6 +46,16 @@ MATRIX: dict[str, dict[str, dict[str, Any]]] = {
         "track": cap(None),
         "cancel": cap(None),
     },
+    # F30 : adaptateur de référence (contrat SDK, sans fournisseur externe).
+    "reference": {
+        "configure": cap("real"),
+        "test_connection": cap("real", "endpoint approuvé local, aucun appel externe"),
+        "inventory": cap(None),
+        "plan": cap(None),
+        "execute": cap(None),
+        "track": cap(None),
+        "cancel": cap(None),
+    },
 }
 
 

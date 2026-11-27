@@ -61,6 +61,11 @@ const links = computed(() => {
         title: 'Télémétrie',
         blurb: 'Agents mTLS, quotas et rétention par projet (passerelle F23).',
       },
+      {
+        to: '/admin/adaptateurs',
+        title: 'Adaptateurs',
+        blurb: 'SDK F30 : soumission, approbation et installation avec contrôle de provenance.',
+      },
     )
   }
   return items
