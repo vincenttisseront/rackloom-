@@ -47,7 +47,7 @@ def _approved(conn, demo, worker, **kw):
 
 
 def _freeze(conn, demo, who: str = "bruno", env: tuple[str, str] = ("vitrine", "dev"), reason: str = REASON):
-    res = freezes.freeze(conn, demo.principal(who), demo.env(*env)["id"], reason)
+    res = freezes.freeze(conn, demo.principal(who, step_up=True), demo.env(*env)["id"], reason)
     conn.commit()
     return res
 
@@ -105,7 +105,7 @@ def test_f28_gel_entre_admission_et_envoi(conn, demo, worker, worker_env, monkey
     def prepare_then_freeze(*args, **kwargs):
         work = original(*args, **kwargs)
         with transaction() as tx:
-            freezes.freeze(tx, demo.principal("bruno"), env_id, "Gel pendant la préparation du runner")
+            freezes.freeze(tx, demo.principal("bruno", step_up=True), env_id, "Gel pendant la préparation du runner")
         return work
 
     monkeypatch.setattr(handlers, "_prepare_tf", prepare_then_freeze)
@@ -126,7 +126,7 @@ def test_f28_gel_concurrent_serialise_avec_l_admission(conn, demo, worker, worke
     c, plan, job_id = _approved(conn, demo, worker)
     env_id = demo.env("vitrine", "dev")["id"]
     with psycopg.connect(db_url, row_factory=dict_row) as locker:
-        freezes.freeze(locker, demo.principal("bruno"), env_id, "Gel en cours de validation")
+        freezes.freeze(locker, demo.principal("bruno", step_up=True), env_id, "Gel en cours de validation")
         t = threading.Thread(target=worker.drain, kwargs={"kinds": ["tf_apply"]})
         t.start()
         time.sleep(2)
@@ -210,7 +210,7 @@ def test_f28_lecture_admise_et_approbation_suspendue(conn, demo, worker, api):
     connector = conn.execute("SELECT id FROM connectors WHERE slug = 'vsphere-fake'").fetchone()
     assert admin.post(f"{API}/connectors/{connector['id']}/inventory-refresh").status_code == 200
 
-    freezes.unfreeze(conn, demo.principal("bruno"), env["id"], "Incident clos")
+    freezes.unfreeze(conn, demo.principal("bruno", step_up=True), env["id"], "Incident clos")
     conn.commit()
     res = flows.approve(conn, demo, c["id"], plan)
     assert res["decision"] == "approved"
@@ -303,10 +303,10 @@ def test_f28_gel_d_un_environnement_n_affecte_pas_les_autres(conn, demo):
     assert freezes.active(conn, demo.env("vitrine", "dev")["id"]) is None
     assert freezes.active(conn, demo.env("compta", "dev")["id"]) is None
     with pytest.raises(ApiError) as exc:
-        freezes.freeze(conn, demo.principal("chloe"), demo.env("vitrine", "dev")["id"], REASON)
+        freezes.freeze(conn, demo.principal("chloe", step_up=True), demo.env("vitrine", "dev")["id"], REASON)
     assert exc.value.status == 404
     conn.rollback()
     with pytest.raises(ApiError) as exc:
-        freezes.freeze(conn, demo.principal("chloe"), demo.env("compta", "dev")["id"], REASON)
+        freezes.freeze(conn, demo.principal("chloe", step_up=True), demo.env("compta", "dev")["id"], REASON)
     assert exc.value.status == 403
     conn.rollback()

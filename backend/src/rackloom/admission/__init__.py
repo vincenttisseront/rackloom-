@@ -3,11 +3,10 @@
 Chaque job est réévalué au moment où un worker le réclame, quelle que soit sa date de mise en
 file (étape `start`). R065 (AT01) borne la configuration aux cibles approuvées. Les règles qui
 dépendent d'un état pouvant changer entre l'admission et l'envoi au fournisseur (gel, calendrier,
-capacité) sont rejouées dans la transaction qui marque cet envoi (étape `dispatch`). Emplacements
-réservés, non encore enregistrés : 100 (F11), 115 (F39),
-130 (F16), 135 (F38), 140 (F10). R095 (F37), R110 (F05), R120 (F03) et R125 (F34) sont enregistrées.
+capacité, droits temporaires, politiques) sont rejouées dans la transaction qui marque cet envoi
+(étape `dispatch`). Emplacements réservés, non encore enregistrés : 115 (F39), 130 (F16), 135 (F38).
+R095 (F37), R100 (F11), R110 (F05), R120 (F03), R125 (F34) et R140 (F10) sont enregistrées.
 """
-
 
 from __future__ import annotations
 
@@ -20,8 +19,10 @@ from uuid import UUID
 from .. import clock, ipam, licenses, policy
 from ..connectors import circuit
 from ..db import Conn, Jsonb
+from ..identity import temporary as temp_rights
 from ..identity.authz import Principal, load_bindings
 from ..inventory import capacity as capacity_check
+from ..policy import exceptions as policy_exc
 from ..projects import calendars, freezes
 
 STAGES = ("start", "dispatch")
@@ -32,6 +33,7 @@ class Verdict:
     ok: bool
     reason: str = ""
     code: str = ""
+    field: str = ""
 
 
 @dataclass
@@ -46,18 +48,21 @@ class Context:
     revision: dict[str, Any] | None = None
     # Calcul de l'empreinte courante, fourni par le worker (déchiffre et hache plan.bin).
     recompute_digest: Callable[[], str] | None = None
+    # F10 : overlay d'organisation pour simulation sans écrire.
+    organization_overlay: dict[str, Any] | None = None
+    dry_run: bool = False
 
 
 Rule = Callable[[Context], Verdict]
 REGISTRY: list[tuple[int, str, str, tuple[str, ...], Rule]] = []
 
 
-def rule(order: int, rule_id: str, job_class: str,
-         stages: tuple[str, ...] = ("start",)) -> Callable[[Rule], Rule]:
+def rule(order: int, rule_id: str, job_class: str, stages: tuple[str, ...] = ("start",)) -> Callable[[Rule], Rule]:
     def register(fn: Rule) -> Rule:
         REGISTRY.append((order, rule_id, job_class, stages, fn))
         REGISTRY.sort(key=lambda r: r[0])
         return fn
+
     return register
 
 
@@ -65,9 +70,15 @@ def _principal(conn: Conn, user_id) -> Principal | None:
     user = conn.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
     if user is None or user["status"] != "active":
         return None
-    return Principal(user_id=user["id"], email=user["email"], display_name=user["display_name"],
-                     session_id=user["id"], auth_method="admission", auth_time=datetime.now(UTC),
-                     bindings=load_bindings(conn, user["id"]))
+    return Principal(
+        user_id=user["id"],
+        email=user["email"],
+        display_name=user["display_name"],
+        session_id=user["id"],
+        auth_method="admission",
+        auth_time=datetime.now(UTC),
+        bindings=load_bindings(conn, user["id"]),
+    )
 
 
 @rule(10, "R010", "all")
@@ -80,32 +91,61 @@ def simulated_connector_in_production(ctx: Context) -> Verdict:
     return Verdict(True)
 
 
+def _revoked_or_expired(ctx: Context, user_id, role: str, *, revoked_code: str, revoked_reason: str) -> Verdict:
+    """F11 : un droit temporaire expiré prime sur « rôle révoqué » générique."""
+    assert ctx.change is not None
+    env_id = ctx.environment["id"] if ctx.environment else None
+    project_id = ctx.change["project_id"]
+    p = _principal(ctx.conn, user_id)
+    if p is not None and p.has_role(role, project_id, env_id):
+        return Verdict(True)
+    expired = temp_rights.expired_covering(ctx.conn, user_id, role=role, project_id=project_id, environment_id=env_id)
+    if expired:
+        return Verdict(
+            False,
+            f"droit temporaire {role} expiré ou révoqué (expirait le {expired['expires_at'].isoformat()})",
+            "temporary_right_expired",
+            field="/authorization/temporary_grant",
+        )
+    return Verdict(False, revoked_reason, revoked_code)
+
+
 @rule(20, "R020", "all")
 def requester_rights(ctx: Context) -> Verdict:
     if ctx.change is None:
         return Verdict(True)
     version = ctx.conn.execute(
         "SELECT created_by FROM request_versions WHERE change_id = %s AND version_no = %s",
-        (ctx.change["id"], ctx.change["current_version_no"])).fetchone()
+        (ctx.change["id"], ctx.change["current_version_no"]),
+    ).fetchone()
     author = version["created_by"] if version else ctx.change["created_by"]
-    p = _principal(ctx.conn, author)
-    env_id = ctx.environment["id"] if ctx.environment else None
-    if p is None or not p.has_role("operator", ctx.change["project_id"], env_id):
-        return Verdict(False, "le demandeur n'a plus le rôle opérateur sur ce projet", "requester_revoked")
-    return Verdict(True)
+    return _revoked_or_expired(
+        ctx,
+        author,
+        "operator",
+        revoked_code="requester_revoked",
+        revoked_reason="le demandeur n'a plus le rôle opérateur sur ce projet",
+    )
 
 
 @rule(30, "R030", "write")
 def approver_rights(ctx: Context) -> Verdict:
     if ctx.approval is None:
         return Verdict(False, "aucune approbation associée", "approval_missing")
-    p = _principal(ctx.conn, ctx.approval["decided_by"])
-    env_id = ctx.environment["id"] if ctx.environment else None
-    if p is None or not p.has_role("approver", ctx.change["project_id"], env_id):
-        return Verdict(False, "l'approbateur n'a plus le rôle approbateur sur ce projet", "approver_revoked")
+    assert ctx.change is not None
+    verdict = _revoked_or_expired(
+        ctx,
+        ctx.approval["decided_by"],
+        "approver",
+        revoked_code="approver_revoked",
+        revoked_reason="l'approbateur n'a plus le rôle approbateur sur ce projet",
+    )
+    if not verdict.ok:
+        return verdict
     author = ctx.conn.execute(
         "SELECT created_by FROM request_versions WHERE change_id = %s AND version_no = %s",
-        (ctx.change["id"], ctx.plan["version_no"] if ctx.plan else ctx.change["current_version_no"])).fetchone()
+        (ctx.change["id"], ctx.plan["version_no"] if ctx.plan else ctx.change["current_version_no"]),
+    ).fetchone()
     if author and author["created_by"] == ctx.approval["decided_by"]:
         return Verdict(False, "l'auteur de la version ne peut pas l'approuver", "self_approval")
     return Verdict(True)
@@ -120,14 +160,17 @@ def approval_valid(ctx: Context) -> Verdict:
         return Verdict(False, f"approbation révoquée ({a['revoked_reason']})", "approval_revoked")
     if ctx.execution is None:
         return Verdict(False, "approbation non liée à cette exécution", "approval_mismatch")
-    bound = ctx.execution["approval_id"] == a["id"] or (a["kind"] == "retry"
-                                                        and a["execution_id"] == ctx.execution["id"])
+    bound = ctx.execution["approval_id"] == a["id"] or (
+        a["kind"] == "retry" and a["execution_id"] == ctx.execution["id"]
+    )
     if not bound:
         return Verdict(False, "approbation non liée à cette exécution", "approval_mismatch")
     if ctx.job["kind"] == "tf_apply":
         other = ctx.conn.execute(
             "SELECT 1 FROM jobs WHERE kind = 'tf_apply' AND execution_id = %s AND id <> %s "
-            "AND dispatched_at IS NOT NULL", (ctx.execution["id"], ctx.job["id"])).fetchone()
+            "AND dispatched_at IS NOT NULL",
+            (ctx.execution["id"], ctx.job["id"]),
+        ).fetchone()
         if other:
             return Verdict(False, "approbation déjà consommée par une autre exécution", "approval_consumed")
     return Verdict(True)
@@ -143,13 +186,17 @@ def bundle_digest(ctx: Context) -> Verdict:
         current = ctx.recompute_digest()
     except Exception as exc:  # noqa: BLE001 - toute impossibilité de recalcul bloque
         return Verdict(False, f"empreinte non recalculable : {exc}", getattr(exc, "code", "bundle_mismatch"))
+    assert ctx.approval is not None and ctx.plan is not None
     if current != ctx.approval["bundle_digest"] or current != ctx.plan["bundle_digest"]:
         return Verdict(False, "le dossier d'exécution ne correspond plus à l'empreinte approuvée", "bundle_mismatch")
     return Verdict(True)
 
 
-RESOLVED_GRANTS_BASE = (("image", "/placement/image"), ("folder", "/placement/folder"),
-                        ("network", "/placement/network"))
+RESOLVED_GRANTS_BASE = (
+    ("image", "/placement/image"),
+    ("folder", "/placement/folder"),
+    ("network", "/placement/network"),
+)
 
 
 def _resolved_grants(values: dict[str, Any]) -> list[tuple[str, str]]:
@@ -171,25 +218,39 @@ def resolution_admissible(ctx: Context) -> Verdict:
     rev = ctx.revision
     if rev is None:
         return Verdict(False, "révision introuvable", "resolution_no_longer_admissible")
-    tpl = ctx.conn.execute("SELECT slug, version, status FROM template_versions WHERE id = %s",
-                           (rev["template_version_id"],)).fetchone()
+    tpl = ctx.conn.execute(
+        "SELECT slug, version, status FROM template_versions WHERE id = %s", (rev["template_version_id"],)
+    ).fetchone()
     if tpl is None or tpl["status"] == "withdrawn":
-        return Verdict(False, f"la version {tpl['version'] if tpl else '?'} du template a été retirée : "
-                       "une nouvelle révision explicite est nécessaire", "resolution_no_longer_admissible")
+        return Verdict(
+            False,
+            f"la version {tpl['version'] if tpl else '?'} du template a été retirée : "
+            "une nouvelle révision explicite est nécessaire",
+            "resolution_no_longer_admissible",
+        )
     values = rev["resolved"]["values"]
     for kind, pointer in _resolved_grants(values):
         entry = values.get(pointer)
         if entry is None:
-            return Verdict(False, f"placement {pointer} absent de la révision : "
-                           "une nouvelle révision explicite est nécessaire", "resolution_no_longer_admissible")
+            return Verdict(
+                False,
+                f"placement {pointer} absent de la révision : une nouvelle révision explicite est nécessaire",
+                "resolution_no_longer_admissible",
+            )
         stable_id = entry["value"]
+        assert ctx.change is not None
         granted = ctx.conn.execute(
             "SELECT 1 FROM resource_grants WHERE project_id = %s AND environment_id = %s AND kind = %s "
             "AND stable_id = %s AND revoked_at IS NULL",
-            (ctx.change["project_id"], rev["environment_id"], kind, stable_id)).fetchone()
+            (ctx.change["project_id"], rev["environment_id"], kind, stable_id),
+        ).fetchone()
         if granted is None:
-            return Verdict(False, f"{entry.get('label', stable_id)} n'est plus octroyé à cet environnement : "
-                           "une nouvelle révision explicite est nécessaire", "resolution_no_longer_admissible")
+            return Verdict(
+                False,
+                f"{entry.get('label', stable_id)} n'est plus octroyé à cet environnement : "
+                "une nouvelle révision explicite est nécessaire",
+                "resolution_no_longer_admissible",
+            )
     return Verdict(True)
 
 
@@ -332,6 +393,50 @@ def ipam_reservations_ready(ctx: Context) -> Verdict:
     return Verdict(True)
 
 
+@rule(100, "R100", "write", stages=("start", "dispatch"))
+def temporary_rights_still_valid(ctx: Context) -> Verdict:
+    """Droit temporaire encore valide entre l'approbation et l'exécution (F11)."""
+    from ..identity.authz import has_permanent_role
+
+    if ctx.change is None:
+        return Verdict(True)
+    env_id = ctx.environment["id"] if ctx.environment else None
+    project_id = ctx.change["project_id"]
+
+    def _check(user_id, role: str, label: str) -> Verdict | None:
+        if has_permanent_role(ctx.conn, user_id, role, project_id, env_id):
+            return None
+        p = _principal(ctx.conn, user_id)
+        if p is not None and p.has_role(role, project_id, env_id):
+            return None
+        expired = temp_rights.expired_covering(
+            ctx.conn, user_id, role=role, project_id=project_id, environment_id=env_id
+        )
+        if expired:
+            return Verdict(
+                False,
+                f"droit temporaire {role} du {label} expiré ou révoqué "
+                f"(expirait le {expired['expires_at'].isoformat()})",
+                "temporary_right_expired",
+                field="/authorization/temporary_grant",
+            )
+        return None
+
+    version = ctx.conn.execute(
+        "SELECT created_by FROM request_versions WHERE change_id = %s AND version_no = %s",
+        (ctx.change["id"], ctx.change["current_version_no"]),
+    ).fetchone()
+    author = version["created_by"] if version else ctx.change["created_by"]
+    v = _check(author, "operator", "demandeur")
+    if v is not None:
+        return v
+    if ctx.approval is not None:
+        v = _check(ctx.approval["decided_by"], "approver", "approbateur")
+        if v is not None:
+            return v
+    return Verdict(True)
+
+
 @rule(125, "R125", "write", stages=("start", "dispatch"))
 def licenses_available(ctx: Context) -> Verdict:
     """Licences du profil disponibles ou politique sur « non vérifié » (F34)."""
@@ -347,14 +452,48 @@ def licenses_available(ctx: Context) -> Verdict:
     return Verdict(False, message, code)
 
 
+@rule(140, "R140", "write", stages=("start", "dispatch"))
+def organization_policy(ctx: Context) -> Verdict:
+    """Contraintes d'organisation versionnées ; exception documentée et non expirée (F10)."""
+    if ctx.environment is None or ctx.change is None:
+        return Verdict(True)
+    constraints = policy.organization_constraints(ctx.organization_overlay)
+    kind = ctx.environment["kind"]
+    for constraint in constraints:
+        applies = constraint.get("applies_to_kinds") or []
+        if applies and kind not in applies:
+            continue
+        rule_id = constraint["id"]
+        field_path = constraint.get("field") or "/organization"
+        if constraint.get("waivable"):
+            waiver = policy_exc.active(
+                ctx.conn,
+                rule_id=rule_id,
+                project_id=ctx.change["project_id"],
+                environment_id=ctx.environment["id"],
+            )
+            if waiver:
+                continue
+        return Verdict(
+            False,
+            f"contrainte d'organisation {rule_id} : {constraint.get('title', rule_id)} (aucune exception valide)",
+            "org_policy_refused",
+            field=field_path,
+        )
+    return Verdict(True)
+
+
 @rule(900, "R900", "write")
 def stack_lock(ctx: Context) -> Verdict:
     if ctx.job["stack_id"] is None or ctx.job["kind"] != "tf_apply":
         return Verdict(True)
+    if ctx.dry_run:
+        return Verdict(True)
     row = ctx.conn.execute(
         "UPDATE stacks SET lock_job_id = %s, lock_epoch = lock_epoch + 1 "
         "WHERE id = %s AND (lock_job_id IS NULL OR lock_job_id = %s) RETURNING id",
-        (ctx.job["id"], ctx.job["stack_id"], ctx.job["id"])).fetchone()
+        (ctx.job["id"], ctx.job["stack_id"], ctx.job["id"]),
+    ).fetchone()
     if row is None:
         return Verdict(False, "stack verrouillée par un autre job", "stack_locked")
     return Verdict(True)
@@ -373,22 +512,40 @@ def evaluate(ctx: Context, stage: str = "start") -> dict[str, Any]:
         if stage not in stages:
             continue
         verdict = fn(ctx)
-        results.append({"id": rule_id, "order": order, "ok": verdict.ok, "reason": verdict.reason,
-                        "code": verdict.code})
+        results.append(
+            {
+                "id": rule_id,
+                "order": order,
+                "ok": verdict.ok,
+                "reason": verdict.reason,
+                "code": verdict.code,
+                "field": verdict.field or None,
+            }
+        )
         if not verdict.ok:
             outcome = "refused"
             refusal = results[-1]
             break
     active = policy.active()
-    ctx.conn.execute(
-        "INSERT INTO admission_decisions (job_id, change_id, outcome, policy_bundle_version, policy_bundle_digest, "
-        "rules, stage) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (ctx.job["id"], ctx.change["id"] if ctx.change else None, outcome, active["version"], active["digest"],
-         Jsonb(results), stage))
+    if not ctx.dry_run:
+        ctx.conn.execute(
+            "INSERT INTO admission_decisions (job_id, change_id, outcome, policy_bundle_version, "
+            "policy_bundle_digest, rules, stage) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (
+                ctx.job["id"],
+                ctx.change["id"] if ctx.change else None,
+                outcome,
+                active["version"],
+                active["digest"],
+                Jsonb(results),
+                stage,
+            ),
+        )
     return {"outcome": outcome, "rules": results, "refusal": refusal, "policy": active, "stage": stage}
 
 
 def release_stack(conn: Conn, job: dict[str, Any]) -> None:
     if job.get("stack_id"):
-        conn.execute("UPDATE stacks SET lock_job_id = NULL WHERE id = %s AND lock_job_id = %s",
-                     (job["stack_id"], job["id"]))
+        conn.execute(
+            "UPDATE stacks SET lock_job_id = NULL WHERE id = %s AND lock_job_id = %s", (job["stack_id"], job["id"])
+        )

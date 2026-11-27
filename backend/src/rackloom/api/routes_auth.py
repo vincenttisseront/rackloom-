@@ -1,4 +1,4 @@
-"""Amorçage, connexion, déconnexion, session courante."""
+"""Amorçage, connexion, déconnexion, session courante, réauthentification (F12)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..config import get_settings
 from ..errors import ApiError
+from ..identity import emergency, reauth
 from ..identity import service as identity
 from .deps import authenticate, check_origin, csrf_guard, session_token, unit_of_work
 
@@ -31,18 +32,43 @@ class BootstrapBody(Strict):
     password: str = Field(max_length=500)
 
 
+class ReauthBody(Strict):
+    password: str | None = Field(default=None, max_length=500)
+    idp_proof: dict[str, Any] | None = None
+
+
 def _set_cookie(response: Response, token: str) -> None:
     settings = get_settings()
-    response.set_cookie(identity.cookie_name(), token, httponly=True, secure=settings.cookie_secure,
-                        samesite="strict", path="/", max_age=settings.session_absolute_minutes * 60)
+    response.set_cookie(
+        identity.cookie_name(),
+        token,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="strict",
+        path="/",
+        max_age=settings.session_absolute_minutes * 60,
+    )
 
 
 def _session_body(unit_principal) -> dict[str, Any]:
     p = unit_principal
-    return {"user": {"id": str(p.user_id), "email": p.email, "display_name": p.display_name},
-            "roles": [{"role": b.role, "project_id": str(b.project_id) if b.project_id else None,
-                       "environment_id": str(b.environment_id) if b.environment_id else None} for b in p.bindings],
-            "csrf_token": p.csrf_token, "auth_method": p.auth_method, "auth_time": p.auth_time.isoformat()}
+    return {
+        "user": {"id": str(p.user_id), "email": p.email, "display_name": p.display_name},
+        "roles": [
+            {
+                "role": b.role,
+                "project_id": str(b.project_id) if b.project_id else None,
+                "environment_id": str(b.environment_id) if b.environment_id else None,
+                "source": getattr(b, "source", "permanent"),
+            }
+            for b in p.bindings
+        ],
+        "csrf_token": p.csrf_token,
+        "auth_method": p.auth_method,
+        "auth_time": p.auth_time.isoformat(),
+        "acr": getattr(p, "acr", "pwd"),
+        "amr": list(getattr(p, "amr", ["pwd"]) or ["pwd"]),
+    }
 
 
 @router.post("/auth/bootstrap")
@@ -67,12 +93,36 @@ def login(body: LoginBody, request: Request, response: Response) -> dict[str, An
     return _session_body(principal)
 
 
+@router.post("/auth/reauth", dependencies=[Depends(csrf_guard)])
+def reauthenticate(body: ReauthBody, request: Request) -> dict[str, Any]:
+    """F12 : preuve fraîche (mot de passe local ou IdP de test) pour actions sensibles."""
+    with unit_of_work(request, write=True) as u:
+        proof = reauth.step_up(
+            u.conn,
+            u.p,
+            password=body.password,
+            idp_proof=body.idp_proof,
+            request_id=u.request_id,
+        )
+        # Recharge le principal pour renvoyer l'état à jour.
+        token = session_token(request)
+        assert token is not None
+        principal = identity.resolve_session(u.conn, token, touch=False)
+        assert principal is not None
+        return {**_session_body(principal), **proof}
+
+
 @router.post("/auth/logout", dependencies=[Depends(csrf_guard)])
 def logout(request: Request, response: Response) -> dict[str, Any]:
     with unit_of_work(request, write=True) as u:
         identity.logout(u.conn, u.p)
-    response.delete_cookie(identity.cookie_name(), path="/", secure=get_settings().cookie_secure, httponly=True,
-                           samesite="strict")
+    response.delete_cookie(
+        identity.cookie_name(),
+        path="/",
+        secure=get_settings().cookie_secure,
+        httponly=True,
+        samesite="strict",
+    )
     return {"ok": True}
 
 
@@ -80,4 +130,6 @@ def logout(request: Request, response: Response) -> dict[str, Any]:
 def session(request: Request) -> dict[str, Any]:
     with unit_of_work(request, anonymous=True) as u:
         principal = authenticate(u.conn, request, write=False)
-        return _session_body(principal)
+        body = _session_body(principal)
+        body["sso_available"] = emergency.sso_available(u.conn)
+        return body

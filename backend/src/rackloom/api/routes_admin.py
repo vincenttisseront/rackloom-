@@ -20,6 +20,7 @@ from ..connectors import MATRIX, circuit, vsphere
 from ..db import Conn, Jsonb, get_pool
 from ..errors import ApiError, forbidden, not_found
 from ..events import emit
+from ..identity import reauth
 from ..identity import service as identity
 from ..identity.authz import ROLES, Principal, require_admin, require_auditor
 from ..ids import uuid7
@@ -317,6 +318,15 @@ def list_connectors(request: Request) -> list[dict[str, Any]]:
         return [_connector_view(r) for r in u.conn.execute("SELECT * FROM connectors ORDER BY slug").fetchall()]
 
 
+def _may_configure_connector(principal: Principal) -> None:
+    """F13 : platform_admin, ou connector_admin / project_admin sur au moins un projet."""
+    if principal.is_platform_admin:
+        return
+    if any(b.role in ("connector_admin", "project_admin") and b.project_id for b in principal.bindings):
+        return
+    raise forbidden("rôle connector_admin, project_admin ou administrateur de plateforme requis")
+
+
 @router.put("/connectors/{connector_id}")
 def update_connector(connector_id: UUID, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     _only(body, {"config"})
@@ -328,7 +338,8 @@ def update_connector(connector_id: UUID, request: Request, body: dict[str, Any] 
             raise ApiError(422, "secret_in_config", "un secret se saisit par la route des secrets, jamais dans la "
                            "configuration", field=f"/config/{key}")
     with unit_of_work(request, write=True) as u:
-        require_admin(u.p)
+        _may_configure_connector(u.p)
+        reauth.require_fresh(u.p, action="configurer un connecteur")
         row = _connector(u.conn, connector_id)
         if row["kind"] == "vsphere":
             config = _vsphere_config(u.conn, row, config)
@@ -350,7 +361,8 @@ def put_connector_secret(connector_id: UUID, name: str, request: Request,
     if not name.replace("_", "").isalnum() or len(name) > 40:
         raise ApiError(422, "invalid_secret_name", "nom de secret invalide")
     with unit_of_work(request, write=True) as u:
-        require_admin(u.p)
+        _may_configure_connector(u.p)
+        reauth.require_fresh(u.p, action="saisir un secret de connecteur")
         row = _connector(u.conn, connector_id)
         ref = f"secret://connectors/{row['slug']}/{name}"
         secrets.put(u.conn, ref, value.encode(), u.p.user_id)
@@ -359,6 +371,7 @@ def put_connector_secret(connector_id: UUID, name: str, request: Request,
                        (Jsonb(refs), row["id"]))
         audit.record(u.conn, actor_type="user", actor_id=str(u.p.user_id), action="connector.secret.put",
                      outcome="ok", targets={"connector": row["slug"], "secret": name}, request_id=u.request_id)
+        # F13 : jamais la valeur, seulement le statut « défini ».
         return {"connector": row["slug"], "secret": name, "status": "défini"}
 
 
@@ -491,10 +504,11 @@ def grant_role(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, 
         raise ApiError(422, "invalid_identifier", "identifiant invalide") from exc
     if role in ("platform_admin", "template_publisher", "template_author") and project_id is not None:
         raise ApiError(422, "global_role", "ce rôle est global", field="/project_id")
-    if role in ("operator", "approver") and project_id is None:
+    if role in ("operator", "approver", "project_admin", "connector_admin") and project_id is None:
         raise ApiError(422, "project_required", "ce rôle exige un projet", field="/project_id")
     with unit_of_work(request, write=True) as u:
         require_admin(u.p)
+        reauth.require_fresh(u.p, action="attribuer un rôle")
         if u.conn.execute("SELECT 1 FROM users WHERE id = %s", (user_id,)).fetchone() is None:
             raise not_found("utilisateur")
         if environment_id is not None:

@@ -152,7 +152,7 @@ def test_f31_state_local_inchange_apres_succes(conn, demo, worker, worker_env):
 def test_f31_classe_read_admet_pendant_gel(conn, demo):
     c = flows.create_and_submit(conn, demo)
     env = demo.env("vitrine", "dev")
-    freezes.freeze(conn, demo.principal("bruno"), env["id"], "gel F31")
+    freezes.freeze(conn, demo.principal("bruno", step_up=True), env["id"], "gel F31")
     conn.commit()
     job = flows.job(conn, c["job_id"])
     change = flows.change(conn, c["id"])

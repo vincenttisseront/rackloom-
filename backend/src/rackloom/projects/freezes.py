@@ -91,6 +91,9 @@ def _authorize(principal: Principal, env: dict[str, Any]) -> None:
 
 def freeze(conn: Conn, principal: Principal, environment_id: UUID, reason: Any,
            request_id: str | None = None) -> dict[str, Any]:
+    from ..identity import reauth
+
+    reauth.require_fresh(principal, action="geler un environnement")
     env = load(conn, principal, environment_id, for_update=True)
     _authorize(principal, env)
     text = _reason(reason, "reason")
@@ -116,6 +119,9 @@ def freeze(conn: Conn, principal: Principal, environment_id: UUID, reason: Any,
 
 def unfreeze(conn: Conn, principal: Principal, environment_id: UUID, reason: Any,
              request_id: str | None = None) -> dict[str, Any]:
+    from ..identity import reauth
+
+    reauth.require_fresh(principal, action="dégeler un environnement")
     env = load(conn, principal, environment_id, for_update=True)
     _authorize(principal, env)
     text = _reason(reason, "reason")

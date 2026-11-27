@@ -70,6 +70,9 @@ export async function login(page: Page, who: string): Promise<void> {
   await page.getByLabel('Mot de passe').fill(password(who))
   await page.getByLabel('Mot de passe').press('Enter')
   await expect(page.getByRole('heading', { level: 1, name: /Bonjour/ })).toBeVisible()
+  // F12 : preuve fraîche pour actions sensibles (approuver, geler, secrets).
+  const stepped = await api(page, 'POST', '/auth/reauth', { password: password(who) })
+  expect(stepped.status, JSON.stringify(stepped.body)).toBe(200)
 }
 
 export async function logout(page: Page): Promise<void> {
@@ -122,7 +125,14 @@ export async function session(who: string): Promise<Session> {
   const ctx = await request.newContext({ baseURL: BASE, extraHTTPHeaders: { Origin: BASE } })
   const r = await ctx.post('/api/v1/auth/login', { data: { email: `${who}@demo.invalid`, password: password(who) } })
   expect(r.status(), `connexion ${who}`).toBe(200)
-  const csrf = (await r.json()).csrf_token
+  let csrf = (await r.json()).csrf_token
+  // F12 : step-up immédiat pour les recettes qui approuvent ou gèlent via l'API.
+  const up = await ctx.fetch('/api/v1/auth/reauth', {
+    method: 'POST',
+    data: { password: password(who) },
+    headers: { 'X-CSRF-Token': csrf, 'Idempotency-Key': randomUUID() },
+  })
+  expect(up.status(), `reauth ${who}`).toBe(200)
   return {
     async call(method, path, data) {
       const res = await ctx.fetch(`/api/v1${path}`, {

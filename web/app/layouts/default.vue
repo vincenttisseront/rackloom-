@@ -7,6 +7,11 @@ const isAdmin = computed(() => hasRole(session.value, 'platform_admin'))
 const isPublisher = computed(() => hasRole(session.value, 'template_publisher'))
 const isAuthor = computed(() => hasRole(session.value, 'template_author'))
 const isAuditor = computed(() => hasRole(session.value, 'auditor'))
+const canConnectors = computed(() =>
+  isAdmin.value
+  || hasRole(session.value, 'connector_admin')
+  || hasRole(session.value, 'project_admin'),
+)
 
 async function logout() {
   try {
@@ -28,8 +33,9 @@ async function logout() {
           <NuxtLink to="/">Accueil</NuxtLink>
           <NuxtLink v-if="isAuthor || isPublisher || isAdmin" to="/atelier">Atelier</NuxtLink>
           <NuxtLink v-if="isPublisher" to="/admin/templates">Administration › Templates</NuxtLink>
-          <NuxtLink v-if="isAdmin" to="/admin/connecteurs">Administration › Connecteurs</NuxtLink>
+          <NuxtLink v-if="canConnectors" to="/admin/connecteurs">Administration › Connecteurs</NuxtLink>
           <NuxtLink v-if="isAdmin" to="/admin/environnements">Administration › Environnements</NuxtLink>
+          <NuxtLink v-if="isAdmin" to="/admin/gouvernance">Administration › Gouvernance</NuxtLink>
           <NuxtLink v-if="isAuditor || isAdmin" to="/audit">Audit</NuxtLink>
         </nav>
         <div v-if="session" class="who">

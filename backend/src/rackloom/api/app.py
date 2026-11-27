@@ -1,6 +1,5 @@
 """Application FastAPI : préfixe /api/v1, erreurs normalisées, en-têtes de sécurité, identifiant de requête."""
 
-
 from __future__ import annotations
 
 import logging
@@ -26,6 +25,7 @@ from . import (
     routes_ci,
     routes_environments,
     routes_follow,
+    routes_governance,
     routes_projects,
     routes_resources,
     routes_studio,
@@ -125,6 +125,7 @@ def create_app() -> FastAPI:
         routes_chat,
         routes_ci,
         routes_admin,
+        routes_governance,
         routes_studio,
     ):
         app.include_router(module.router, prefix=PREFIX)

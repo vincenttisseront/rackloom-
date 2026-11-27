@@ -61,6 +61,11 @@ export const BLOCK_REASONS: Record<string, string> = {
   simulated_in_prod: 'Connecteur simulé refusé en production',
   stack_locked: 'Stack verrouillée par un autre job',
   destructive: 'Plan avec suppression ou remplacement',
+  temporary_right_expired: 'Droit temporaire expiré ou révoqué : le job ne démarre pas',
+  org_policy_refused: "Contrainte d'organisation non satisfaite (aucune exception valide)",
+  reauth_required: 'Réauthentification forte requise',
+  reauth_stale: "Preuve d'authentification trop ancienne",
+  emergency_closed: "Connexion d'urgence fermée",
 }
 
 export const SERVICE_TONE: Record<string, string> = {

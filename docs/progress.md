@@ -8,6 +8,7 @@
 - **F31** fusionné (PR #12). **F37** fusionné (PR #13). **F46** fusionné (PR #14). **F47–F50** fusionné (PR #16). **F01** fusionné (PR #17). **F05** fusionné (PR #18). **F03** fusionné (PR #20). **F09** fusionné (PR #21).
 - **F51 à F54 et F56** (simplifier la demande et le suivi) : PR #15 (`cursor/f51-f56-demande-suivi-a149`), migration Alembic `0012`.
 - **F32–F35** : PR #22 (`cursor/f32-f35-placement-outputs-licenses-ci-5bfe`), migration Alembic `0013` (après #15 ; GRANT worker inclus).
+- **Lot C (F10–F14)** : branche `cursor/lot-c-f10-f14-4bfd`, migration Alembic `0014`, bundle `builtin@8` (R100, R140).
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -73,7 +74,12 @@
 | Sorties de déploiement réutilisables (F33) | livré | testé localement | `test_f33_outputs.py` ; `GET /deployments/{id}/outputs` ; allowlist ; hors projet → 404 ; jamais le state |
 | Contrôle des licences (F34, règle R125, bundle `builtin@7`) | livré | testé localement | `test_f34_licenses.py` ; source fictive ; `license_unavailable` / `license_unverified` ; pas de clé dans le besoin ; source réelle non faite (D11) |
 | Demandes depuis la CI/CD (F35) | livré | testé localement | `test_f35_ci.py` ; Bearer + `POST /ci/submissions` ; rejeu idempotent ; `locked_field` ; approbation refusée |
-| Fonctions F02 à F45 restantes / F58 à F59 et atelier AT02 à AT04 (hors F01, F03, F05, F09, F32–F35) | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances ; F58/F59 après lot 2 / OIDC |
+| Politiques versionnées et explicables (F10, R140, `builtin@8`) | livré | testé localement | `test_lot_c_f10_f14.py` ; exceptions propriétaire/périmètre/expiration ; simulation sans écriture ; refus avec `rule_id` + `field` |
+| Droits temporaires (F11, R100 / R020) | livré | testé localement | grant → expiration → `temporary_right_expired` ; audit create/revoke |
+| Réauthentification forte (F12) | livré | testé localement (IdP simulé) | step-up local + preuve IdP de test ; lecture OK sans preuve ; approbation refusée sans step-up ; IdP réel : non |
+| Administration déléguée (F13) | livré | testé localement | rôles `project_admin` / `connector_admin` ; secrets jamais lus ; artefact hors projet → 404 |
+| Accès d'urgence (F14) | livré | testé localement | `rackloom emergency` ; panne SSO simulée ; fermeture → `emergency_closed` ; `docs/emergency-access.md` |
+| Fonctions F02 à F45 restantes / F58 à F59 et atelier AT02 à AT04 (hors F01, F03, F05, F09, F32–F35, F10–F14) | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances ; F58/F59 après lot 2 / OIDC |
 
 ## Démonstrations D1 à D6
 
@@ -347,7 +353,7 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ## Prochain jalon
 
-1. Fusionner **#15 (F51–F56, `0012`)** puis **#22 (F32–F35, `0013`)** après CI verte (Vincent).
+1. Fusionner le **Lot C (F10–F14, `0014`, `builtin@8`)** après CI verte (Vincent).
 2. Ensuite selon le backlog (F02–F45 restantes, AT02–AT04).
-3. F58 / F59 après dépendances (lot 2 / OIDC pour F59).
+3. F58 / F59 après dépendances (lot 2 / OIDC pour F59) ; F12/F14 à rejouer contre l'IdP d'entreprise au lot 4.
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
