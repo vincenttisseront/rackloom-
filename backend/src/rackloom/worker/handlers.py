@@ -699,13 +699,8 @@ def _prepare_ansible(
             json.dumps({"rackloom_components": bundles.ansible_components_list(host_comps)})
         )
     else:
-        host_checks = resolution["health_checks"]
-        if targets and targets[0].get("composition_member"):
-            member_id = targets[0]["composition_member"]
-            for m in (resolution.get("composition") or {}).get("members") or []:
-                if m["id"] == member_id:
-                    host_checks = m.get("health_checks") or m.get("readiness") or host_checks
-                    break
+        # F02 : union des contrôles de tous les membres du lot (vague courante + antérieures).
+        host_checks = composition_mod.collect_checks_for_hosts(resolution, targets)
         (private_dir / "env" / "extravars").write_text(
             json.dumps({"rackloom_collect": registry.collect_spec(host_comps, host_checks)})
         )

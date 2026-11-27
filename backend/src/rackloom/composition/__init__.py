@@ -198,7 +198,7 @@ def readiness_for_member(contract: dict[str, Any], member_id: str) -> list[dict[
 
 
 def components_for_hosts(resolution: dict[str, Any], hosts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Composants Ansible à appliquer : intersection des membres des hôtes cibles."""
+    """Composants Ansible à appliquer : union des membres des hôtes cibles."""
     member_comps = resolution.get("member_components") or {}
     if not member_comps:
         return list(resolution["components"])
@@ -214,3 +214,44 @@ def components_for_hosts(resolution: dict[str, Any], hosts: list[dict[str, Any]]
                 seen.add(key)
                 out.append(c)
     return out or list(resolution["components"])
+
+
+def _check_dedupe_key(check: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        check.get("type"),
+        check.get("package"),
+        check.get("unit"),
+        check.get("process"),
+        check.get("jail"),
+        check.get("port"),
+        check.get("path"),
+    )
+
+
+def collect_checks_for_hosts(resolution: dict[str, Any], hosts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Contrôles à collecter pour un lot d'hôtes : union des checks des membres présents.
+
+    Le verify d'une vague re-évalue aussi les hôtes des vagues précédentes (scope cumulé).
+    La spec de collecte doit donc couvrir tous les membres ciblés, pas seulement le premier
+    (sinon un socle Fail2ban re-vérifié avec les checks Nginx rate `fail2ban-server` absent).
+    """
+    fallback = list(resolution.get("health_checks") or [])
+    members_meta = (resolution.get("composition") or {}).get("members") or []
+    if not members_meta:
+        return fallback
+    by_id = {m["id"]: m for m in members_meta}
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    any_member = False
+    for h in hosts:
+        mid = h.get("composition_member")
+        if not mid or mid not in by_id:
+            continue
+        any_member = True
+        m = by_id[mid]
+        for check in m.get("health_checks") or m.get("readiness") or []:
+            key = _check_dedupe_key(check)
+            if key not in seen:
+                seen.add(key)
+                out.append(check)
+    return out if any_member else fallback

@@ -17,9 +17,7 @@ from rackloom import approvals, graph
 
 
 def _hosts(conn, deployment_id):
-    return list(conn.execute(
-        "SELECT * FROM hosts WHERE deployment_id = %s ORDER BY name", (deployment_id,)
-    ).fetchall())
+    return list(conn.execute("SELECT * FROM hosts WHERE deployment_id = %s ORDER BY name", (deployment_id,)).fetchall())
 
 
 def _publish_app_base(conn, demo) -> None:
@@ -89,9 +87,7 @@ def test_f02_application_attend_le_socle_puis_reprise(conn, demo, worker, lab, w
     # Reprise ciblée : socle en échec + application encore bloquée (failed_steps_only).
     # Les vagues de composition sont reprises : socle d'abord, puis application.
     lab.exec(broken, "mv", "/root/rackloom-lab.list", "/etc/apt/sources.list.d/rackloom-lab.list")
-    retry = approvals.request_retry(
-        conn, demo.principal("alice"), c["id"], {"step": "ansible_configure"}
-    )
+    retry = approvals.request_retry(conn, demo.principal("alice"), c["id"], {"step": "ansible_configure"})
     conn.commit()
     assert set(retry["host_ids"]) == {str(hosts["base"]["id"]), str(hosts["application"]["id"])}
     approvals.decide(
@@ -107,10 +103,18 @@ def test_f02_application_attend_le_socle_puis_reprise(conn, demo, worker, lab, w
     conn.commit()
     assert worker.drain() == ["ansible_configure", "verify", "ansible_configure", "verify"]
     hosts = {h["composition_member"]: h for h in _hosts(conn, c["deployment_id"])}
-    assert hosts["base"]["deployment_state"] == "verified"
-    assert hosts["application"]["deployment_state"] == "verified"
+    dep = flows.deployment(conn, c["deployment_id"])
+    detail = {
+        "base": hosts["base"]["deployment_state"],
+        "application": hosts["application"]["deployment_state"],
+        "service_status": dep["service_status"],
+        "service_reason": dep.get("service_reason"),
+        "service_checks": dep.get("service_checks"),
+    }
+    assert hosts["base"]["deployment_state"] == "verified", detail
+    assert hosts["application"]["deployment_state"] == "verified", detail
     assert flows.change(conn, c["id"])["state"] == "succeeded"
-    assert flows.deployment(conn, c["deployment_id"])["service_status"] == "ready"
+    assert dep["service_status"] == "ready", detail
     # Aucune suppression après l'échec partiel.
     assert len(list(lab_dir.glob("*.json"))) == 2
     view = api("alice").get(f"/api/v1/deployments/{c['deployment_id']}")
