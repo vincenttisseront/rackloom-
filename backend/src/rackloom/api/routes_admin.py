@@ -8,8 +8,8 @@ from __future__ import annotations
 import base64
 import binascii
 import os
-from pathlib import Path
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -1022,6 +1022,7 @@ def start_restore_exercise(request: Request, body: dict[str, Any] = Body(...)) -
             verify_state_from_backup=body.get("verify_state", True) is not False,
         )
 
+
 @router.get("/platform/status")
 def platform_status(request: Request) -> dict[str, Any]:
     with unit_of_work(request) as u:
@@ -1048,33 +1049,37 @@ def platform_status(request: Request) -> dict[str, Any]:
             "WHERE r.status <> 'revoked' ORDER BY r.slug LIMIT 50"
         ).fetchall()
         latest_exercise = u.conn.execute(
-            "SELECT id, status, duration_ms, finished_at FROM restore_exercises "
-            "ORDER BY started_at DESC LIMIT 1"
+            "SELECT id, status, duration_ms, finished_at FROM restore_exercises ORDER BY started_at DESC LIMIT 1"
         ).fetchone()
-                return {"profile": settings.profile, "version": os.environ.get("RACKLOOM_VERSION", "dev"),
-                "workers": [{**w, "heartbeat_at": iso(w["heartbeat_at"])} for w in workers],
-                "workers_alive": len(alive), "jobs": {r["state"]: r["n"] for r in queue},
-                "inventory": inventory.freshness(u.conn, settings.inventory_max_age_hours),
-                "assistant": {"adapter": settings.chat_adapter, **((assistant or {}).get("value") or {})},
-                "audit": audit.verify(u.conn),
-                "execution_zones": [
-                    {**z, "environment_kinds": list(z["environment_kinds"])} for z in zones
-                ],
-                "site_runners": [
-                    {**r, "last_heartbeat_at": iso(r["last_heartbeat_at"]) if r["last_heartbeat_at"] else None}
-                    for r in runners_rows
-                ],
-                "dispatch": recovery.status(u.conn),
-                "restore_exercise": (
-                    {
-                        "id": str(latest_exercise["id"]),
-                        "status": latest_exercise["status"],
-                        "duration_ms": latest_exercise["duration_ms"],
-                        "finished_at": iso(latest_exercise["finished_at"]),
-                    }
-                    if latest_exercise
-                    else None
-                )}
+        return {
+            "profile": settings.profile,
+            "version": os.environ.get("RACKLOOM_VERSION", "dev"),
+            "workers": [{**w, "heartbeat_at": iso(w["heartbeat_at"])} for w in workers],
+            "workers_alive": len(alive),
+            "jobs": {r["state"]: r["n"] for r in queue},
+            "inventory": inventory.freshness(u.conn, settings.inventory_max_age_hours),
+            "assistant": {"adapter": settings.chat_adapter, **((assistant or {}).get("value") or {})},
+            "audit": audit.verify(u.conn),
+            "execution_zones": [{**z, "environment_kinds": list(z["environment_kinds"])} for z in zones],
+            "site_runners": [
+                {
+                    **r,
+                    "last_heartbeat_at": iso(r["last_heartbeat_at"]) if r["last_heartbeat_at"] else None,
+                }
+                for r in runners_rows
+            ],
+            "dispatch": recovery.status(u.conn),
+            "restore_exercise": (
+                {
+                    "id": str(latest_exercise["id"]),
+                    "status": latest_exercise["status"],
+                    "duration_ms": latest_exercise["duration_ms"],
+                    "finished_at": iso(latest_exercise["finished_at"]),
+                }
+                if latest_exercise
+                else None
+            ),
+        }
 
 
 health = APIRouter(tags=["santé"])
