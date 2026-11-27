@@ -12,6 +12,7 @@ const jobs = ref<any[]>([])
 const events = ref<RackloomEvent[]>([])
 const deployment = ref<any>(null)
 const estimate = ref<any>(null)
+const itsmBusy = ref(false)
 const error = ref<string | null>(null)
 const notice = ref<string | null>(null)
 const busy = ref(false)
@@ -206,6 +207,24 @@ async function downloadDiagnosticPack(packId: string) {
 }
 
 const serviceCard = computed(() => deployment.value?.service_card || service.value?.service_card || null)
+const itsmTickets = computed(() => change.value?.itsm?.tickets || [])
+
+async function syncItsm() {
+  itsmBusy.value = true
+  error.value = null
+  notice.value = null
+  try {
+    const res = await api.post(`/changes/${id.value}/itsm/sync`, {})
+    notice.value = res.ticket
+      ? `Ticket ${res.ticket.external_key} relié (ITSM fictif).`
+      : 'Synchronisation ITSM effectuée.'
+    await refresh()
+  } catch (e) {
+    error.value = errorText(e)
+  } finally {
+    itsmBusy.value = false
+  }
+}
 </script>
 
 <template>
@@ -262,6 +281,28 @@ const serviceCard = computed(() => deployment.value?.service_card || service.val
       role="status"
       data-testid="change-reason"
     >{{ change.reason }}</div>
+
+    <section class="card" aria-labelledby="itsm-title" data-testid="itsm-panel">
+      <div class="field-head">
+        <h2 id="itsm-title">Ticket ITSM</h2>
+        <button type="button" :disabled="busy || itsmBusy" data-testid="itsm-sync" @click="syncItsm">
+          {{ itsmTickets.length ? 'Mettre à jour' : 'Relier un ticket' }}
+        </button>
+      </div>
+      <p class="small muted">
+        Les notifications pointent vers cette page authentifiée. Répondre à une notification ne peut pas approuver le changement.
+        <SimBadge v-if="change.itsm?.simulated !== false" label="ITSM fictif" />
+      </p>
+      <p v-if="!itsmTickets.length" class="empty" data-testid="itsm-empty">Aucun ticket relié.</p>
+      <ul v-else class="small" data-testid="itsm-tickets">
+        <li v-for="t in itsmTickets" :key="t.id">
+          <strong>{{ t.external_key }}</strong>
+          <span class="badge">{{ t.status }}</span>
+          · {{ t.title }}
+          <span class="muted"> · {{ t.external_ticket_id }}</span>
+        </li>
+      </ul>
+    </section>
 
     <div class="grid-main">
       <div>

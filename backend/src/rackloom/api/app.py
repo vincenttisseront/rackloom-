@@ -27,6 +27,7 @@ from . import (
     routes_follow,
     routes_governance,
     routes_identity_audit,
+    routes_itsm,
     routes_projects,
     routes_resources,
     routes_runners,
@@ -131,10 +132,12 @@ def create_app() -> FastAPI:
         routes_identity_audit,
         routes_studio,
         routes_runners,
+        routes_itsm,
     ):
         app.include_router(module.router, prefix=PREFIX)
     app.include_router(routes_identity_audit.scim_router, prefix=PREFIX)
     app.include_router(routes_runners.runner_router, prefix=PREFIX)
+    app.include_router(routes_itsm.webhook_router, prefix=PREFIX)
     app.include_router(routes_admin.health, prefix=PREFIX)
     return app
 

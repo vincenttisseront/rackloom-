@@ -119,7 +119,8 @@
 | Inventaire logiciel et fin de support (F20) | livré (fixtures Ubuntu hors ligne) | testé localement | `test_f20_software_inventory.py` ; `test_f20_debian_versions.py` ; e2e `103-f20-inventaire-logiciel.spec.ts` ; migration `0029` (`down_revision=0028`) ; rétroportage ≠ vulnérable amont ; export filtré ; flux éditeur réel : non |
 | Dossier de diagnostic partageable (F22) | livré | testé localement | `test_f22_diagnostic.py` ; e2e `104-f22-diagnostic.spec.ts` ; migration `0030` (`down_revision=0029`) ; payload JSONB (API n'écrit pas le volume artefacts) ; preuves = métadonnées B ; canari absent export+résumé ; interprojet 404 |
 | Conformité des machines (F24) | livré (Rudder fictif) | testé localement | `test_f24_compliance.py` ; e2e `104-f24-conformite.spec.ts` ; migration `0031` (`down_revision=0030`) ; remédiation = brouillon, 0 job write ; labo Rudder : non |
-| Fonctions F25, F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
+| ITSM et notifications (F25) | livré (ITSM fictif) | testé localement | `test_f25_itsm.py` ; e2e `104-f25-itsm.spec.ts` ; migration `0032` (`down_revision=0031`) ; rejeu webhook sans 2e ticket ; `approval_forbidden` ; ITSM réel : non |
+| Fonctions F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6
 
@@ -528,7 +529,7 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F24 : conformité des machines (Lot F, 2026-11-27, heure de Paris)
 
-- Branche `cursor/f24-conformite-machines-4f9b` (PR #40). Migration Alembic **`0031`** (`down_revision=0030` après cascade F22). Aucun stub.
+- Fusionné (PR #40). Migration Alembic **`0031`** (`down_revision=0030` après cascade F22). Aucun stub.
 - Tables `compliance_profiles`, `compliance_scans`, `compliance_findings` ; kind d'observation `settings` ; job `compliance_scan` (classe `read`) ; GRANT `rackloom_api` / `rackloom_worker`.
 - Profil publié `ubuntu-web-baseline@1.0.0` (paquets, services, réglages) ; findings `compliant` / `noncompliant` / `not_applicable` / `missing_data`.
 - Remédiation = brouillon de demande `modify` ; **aucun job d'écriture**.
@@ -536,9 +537,18 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - API : `GET /compliance/profiles`, `GET|POST /hosts/{id}/compliance[/scan|/remediate]`, `POST …/rudder/import-observations` ; panneau fiche machine.
 - Preuves : `test_f24_compliance.py` ; e2e `104-f24-conformite.spec.ts`. Labo Rudder réel : non.
 
+### F25 : ITSM et notifications (Lot F, 2026-11-27, heure de Paris)
+
+- Branche `cursor/f25-itsm-notifications-5f31` (PR #44). Migration Alembic **`0032`** (`down_revision=0031` après cascade F24). Aucun stub.
+- Tables `itsm_adapters`, `itsm_tickets`, `itsm_deliveries`, `itsm_inbound_events`, `notifications` ; GRANT `rackloom_api` / `rackloom_worker` (SELECT/INSERT/UPDATE).
+- Adaptateur fictif `itsm-fake` : livraisons idempotentes (`dedupe_key`), reprise ; tickets reliés aux demandes/jobs ; notifications vers `/demandes/{id}` (URL publique sans secret).
+- Webhook entrant : rejeu → `duplicate` sans second ticket ; `approve` / `decision` → `403 approval_forbidden` (commit de l'événement rejeté). `POST /notifications/{id}/respond` ne peut pas approuver.
+- API : sync/liste ITSM sur demande, flush admin, notifications ; UI panneau demande + accueil.
+- Preuves : `test_f25_itsm.py` (8) ; e2e `104-f25-itsm.spec.ts` ; `test_db_roles`. ITSM réel : non (D11).
+
 ## Prochain jalon
 
-1. Fusionner **F24 (`0031`)** (PR #40) après CI verte post-rebase (`down_revision=0030`).
-2. Suite : F25, F30, AT02–AT04 selon dépendances.
+1. Fusionner **F25 (`0032`)** (PR #44) après CI verte post-rebase (`down_revision=0031`).
+2. Suite : F30, AT02–AT04 selon dépendances ; ISO (lot 3) après Lots F+G.
 3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
