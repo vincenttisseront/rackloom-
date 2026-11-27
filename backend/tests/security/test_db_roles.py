@@ -71,6 +71,8 @@ ALLOWED = {
         "SELECT slug FROM probe_segments",
         "SELECT target_pct FROM availability_objectives",
         "SELECT probe_health FROM probe_results",
+        "SELECT state FROM patch_campaigns",
+        "SELECT wave_index FROM patch_campaign_hosts",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -132,6 +134,8 @@ ALLOWED = {
         "SELECT slug FROM probe_segments",
         "SELECT target_pct FROM availability_objectives",
         "SELECT probe_health FROM probe_results",
+        "SELECT state FROM patch_campaigns",
+        "SELECT wave_index FROM patch_campaign_hosts",
     ],
 }
 

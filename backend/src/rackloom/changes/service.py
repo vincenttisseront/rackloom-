@@ -303,8 +303,8 @@ def submit(conn: Conn, principal: Principal, change_id: UUID, revision_no: int,
         change = transition(conn, dict(change), "validated", reason_code="submitted", actor_type="user",
                             actor_id=str(principal.user_id), detail={"revision_no": revision_no},
                             request_id=request_id)
-    # F40 / F58 / F06 : restauration, redémarrage ou retrait — plan simulé prêt à approuver.
-    if change["kind"] in ("restore", "restart", "retire"):
+    # F40 / F58 / F06 / F19 : restauration, redémarrage, retrait ou patch — plan simulé prêt.
+    if change["kind"] in ("restore", "restart", "retire", "patch"):
         from datetime import UTC, datetime, timedelta
 
         from .. import artifacts
@@ -346,6 +346,33 @@ def submit(conn: Conn, principal: Principal, change_id: UUID, revision_no: int,
                 "interruption": True,
                 "hosts": names,
             }
+        elif change["kind"] == "patch":
+            from .. import patching
+
+            campaign = patching.campaign_for_change(conn, change["id"])
+            if campaign is None:
+                raise ApiError(409, "campaign_missing", "aucune campagne de patch liée")
+            waves = campaign["waves"] or []
+            host_names = [n for w in waves for n in w]
+            reason_plan, reason_ready = "patch_plan", "patch_plan_ready"
+            plan_bytes = b'{"rackloom":"patch-plan","simulated":true,"waves":true}'
+            summary = {
+                "simulated": True,
+                "patch": True,
+                "destructive": False,
+                "no_changes": False,
+                "terraform_version": None,
+                "vm_counts": {"create": 0, "update": len(host_names), "delete": 0, "replace": 0},
+                "message": (
+                    "Patch par vagues (simulé) — pilote d'abord ; "
+                    "dégradation du pilote bloque la suite, aucun retour arrière automatique."
+                ),
+                "interruption": campaign["reboot_policy"] != "never",
+                "hosts": host_names,
+                "waves": waves,
+                "reboot_policy": campaign["reboot_policy"],
+            }
+            patching.mark_plan_ready(conn, change["id"])
         else:
             reason_plan, reason_ready = "restart_plan", "restart_plan_ready"
             plan_bytes = b'{"rackloom":"restart-plan","simulated":true,"impact":"interruption"}'

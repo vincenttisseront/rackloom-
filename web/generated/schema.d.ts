@@ -2510,6 +2510,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/patch-campaigns/{campaign_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Patch Campaign
+         * @description F19 : détail d'une campagne de patch (vagues, contrôles, écritures).
+         */
+        get: operations["get_patch_campaign_api_v1_patch_campaigns__campaign_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/status": {
         parameters: {
             query?: never;
@@ -2816,6 +2836,50 @@ export interface paths {
         };
         /** List Hosts */
         get: operations["list_hosts_api_v1_projects__project__hosts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/patch-campaigns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Patch Campaigns
+         * @description F19 : campagnes de patch du projet.
+         */
+        get: operations["list_patch_campaigns_api_v1_projects__project__patch_campaigns_get"];
+        put?: never;
+        /**
+         * Create Patch Campaign
+         * @description F19 : crée une campagne (pilote + vagues) ; plan et approbation avant écriture.
+         */
+        post: operations["create_patch_campaign_api_v1_projects__project__patch_campaigns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/patch-hosts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Patch Hosts
+         * @description F19 : machines enrôlées candidates à une campagne de patch.
+         */
+        get: operations["list_patch_hosts_api_v1_projects__project__patch_hosts_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8177,6 +8241,39 @@ export interface operations {
             };
         };
     };
+    get_patch_campaign_api_v1_patch_campaigns__campaign_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                campaign_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     platform_status_api_v1_platform_status_get: {
         parameters: {
             query?: never;
@@ -8868,6 +8965,113 @@ export interface operations {
     list_hosts_api_v1_projects__project__hosts_get: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_patch_campaigns_api_v1_projects__project__patch_campaigns_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_patch_campaign_api_v1_projects__project__patch_campaigns_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_patch_hosts_api_v1_projects__project__patch_hosts_get: {
+        parameters: {
+            query?: {
+                environment?: string | null;
+            };
             header?: never;
             path: {
                 project: string;

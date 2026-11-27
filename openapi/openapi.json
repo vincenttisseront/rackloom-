@@ -7103,6 +7103,52 @@
         ]
       }
     },
+    "/api/v1/patch-campaigns/{campaign_id}": {
+      "get": {
+        "description": "F19 : détail d'une campagne de patch (vagues, contrôles, écritures).",
+        "operationId": "get_patch_campaign_api_v1_patch_campaigns__campaign_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "campaign_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Campaign Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Patch Campaign Api V1 Patch Campaigns  Campaign Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Patch Campaign",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
     "/api/v1/platform/status": {
       "get": {
         "operationId": "platform_status_api_v1_platform_status_get",
@@ -8126,6 +8172,173 @@
           }
         },
         "summary": "List Hosts",
+        "tags": [
+          "projets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/patch-campaigns": {
+      "get": {
+        "description": "F19 : campagnes de patch du projet.",
+        "operationId": "list_patch_campaigns_api_v1_projects__project__patch_campaigns_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Patch Campaigns Api V1 Projects  Project  Patch Campaigns Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Patch Campaigns",
+        "tags": [
+          "projets"
+        ]
+      },
+      "post": {
+        "description": "F19 : crée une campagne (pilote + vagues) ; plan et approbation avant écriture.",
+        "operationId": "create_patch_campaign_api_v1_projects__project__patch_campaigns_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Patch Campaign Api V1 Projects  Project  Patch Campaigns Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Patch Campaign",
+        "tags": [
+          "projets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/patch-hosts": {
+      "get": {
+        "description": "F19 : machines enrôlées candidates à une campagne de patch.",
+        "operationId": "list_patch_hosts_api_v1_projects__project__patch_hosts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Environment"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Patch Hosts Api V1 Projects  Project  Patch Hosts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Patch Hosts",
         "tags": [
           "projets"
         ]

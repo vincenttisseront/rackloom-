@@ -2139,6 +2139,298 @@ def handle_tf_import(r: JobContext) -> None:
         )
 
 
+def handle_host_patch(r: JobContext) -> None:
+    """F19 : vague de patch simulée — pré-contrôle, écriture, post-contrôle, redémarrage borné."""
+    from .. import patching
+
+    with r.tx() as conn:
+        ctx = _load(conn, r.job)
+        _admit(r, conn, ctx)
+        change = ctx["change"]
+        payload = r.job["payload"] or {}
+        campaign_id = UUID(str(payload["campaign_id"]))
+        wave = int(payload.get("wave") or 0)
+        campaign = conn.execute(
+            "SELECT * FROM patch_campaigns WHERE id = %s FOR UPDATE", (campaign_id,)
+        ).fetchone()
+        if campaign is None:
+            raise Refused("campaign_missing", "campagne de patch introuvable")
+        waves = list(campaign["waves"] or payload.get("waves") or [])
+        if wave >= len(waves):
+            raise Refused("wave_out_of_range", f"vague {wave} hors plan")
+
+        conn.execute(
+            "UPDATE patch_campaigns SET state = 'running', current_wave = %s, updated_at = now() WHERE id = %s",
+            (wave, campaign_id),
+        )
+        if change["state"] == "approved":
+            change = transition(
+                conn,
+                change,
+                "executing",
+                reason_code="patch_started",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"wave": wave, "simulated": True},
+            )
+
+        wave_names = list(waves[wave])
+        host_rows = list(
+            conn.execute(
+                "SELECT * FROM patch_campaign_hosts WHERE campaign_id = %s AND wave_index = %s ORDER BY host_name",
+                (campaign_id, wave),
+            ).fetchall()
+        )
+        label = "pilote" if wave == 0 else f"vague {wave + 1}"
+
+        # --- Pré-contrôles (lecture) ---
+        pre_failed: list[str] = []
+        for h in host_rows:
+            check = patching.probe_status(conn, h["host_id"])
+            conn.execute(
+                "UPDATE patch_campaign_hosts SET pre_check = %s, state = %s WHERE campaign_id = %s AND host_id = %s",
+                (Jsonb(check), "pre_ok" if check["ok"] else "pre_failed", campaign_id, h["host_id"]),
+            )
+            if not check["ok"]:
+                pre_failed.append(h["host_name"])
+        if pre_failed:
+            reason = f"pré-contrôle échoué sur {label} : {', '.join(pre_failed)}"
+            patching.block_remaining_waves(conn, campaign, from_wave=wave, reason=reason)
+            # Pas d'écriture sur cette vague non plus.
+            r.step(
+                conn,
+                f"{label.capitalize()} · Pré-contrôle",
+                "failed",
+                simulated=True,
+                summary={"hosts": pre_failed, "phase": "pre", "writes": 0},
+            )
+            r.fenced(
+                conn,
+                "state = 'failed', finished_at = now(), result = %s, blocked_reason = %s",
+                (Jsonb({"phase": "pre", "failed": pre_failed, "simulated": True}), reason),
+            )
+            if change["state"] in ("approved", "executing", "verifying"):
+                transition(
+                    conn,
+                    change,
+                    "partially_succeeded",
+                    reason_code="patch_precheck_failed",
+                    actor_type="worker",
+                    actor_id=r.worker_id,
+                    detail={"wave": wave, "failed": pre_failed},
+                )
+            return
+
+        r.step(
+            conn,
+            f"{label.capitalize()} · Pré-contrôle",
+            "succeeded",
+            simulated=True,
+            summary={"hosts": wave_names, "phase": "pre", "ok": True},
+        )
+
+        # --- Application simulée (écriture) ---
+        for h in host_rows:
+            # Paquets de sécurité : redémarrage potentiel selon le sélecteur.
+            reboot_required = bool((campaign.get("package_selector") or {}).get("security"))
+            conn.execute(
+                """
+                UPDATE patch_campaign_hosts
+                SET state = 'patched', write_attempted = true, reboot_required = %s
+                WHERE campaign_id = %s AND host_id = %s
+                """,
+                (reboot_required, campaign_id, h["host_id"]),
+            )
+        r.step(
+            conn,
+            f"{label.capitalize()} · Patch (simulé)",
+            "succeeded",
+            simulated=True,
+            summary={
+                "hosts": wave_names,
+                "phase": "apply",
+                "simulated": True,
+                "notice": "Aucune écriture réelle sur le parc (D2).",
+            },
+        )
+
+        # --- Post-contrôles ---
+        degraded: list[str] = []
+        for h in host_rows:
+            check = patching.probe_status(conn, h["host_id"])
+            state = "post_ok" if check["ok"] else "degraded"
+            conn.execute(
+                "UPDATE patch_campaign_hosts SET post_check = %s, state = %s WHERE campaign_id = %s AND host_id = %s",
+                (Jsonb(check), state, campaign_id, h["host_id"]),
+            )
+            if not check["ok"]:
+                degraded.append(h["host_name"])
+
+            # Redémarrage borné (jamais hors fenêtre ; jamais de rollback).
+            host_now = conn.execute(
+                "SELECT reboot_required FROM patch_campaign_hosts WHERE campaign_id = %s AND host_id = %s",
+                (campaign_id, h["host_id"]),
+            ).fetchone()
+            reboot = patching.apply_reboot_rule(
+                conn,
+                environment_id=campaign["environment_id"],
+                reboot_policy=campaign["reboot_policy"],
+                reboot_required=bool(host_now and host_now["reboot_required"]),
+            )
+            if reboot.get("reboot_done"):
+                conn.execute(
+                    "UPDATE patch_campaign_hosts SET reboot_done = true WHERE campaign_id = %s AND host_id = %s",
+                    (campaign_id, h["host_id"]),
+                )
+
+        if degraded:
+            reason = (
+                f"dégradation sur {label} après patch : {', '.join(degraded)} "
+                "— vague suivante bloquée, aucun retour arrière automatique"
+            )
+            patching.block_remaining_waves(conn, campaign, from_wave=wave, reason=reason)
+            r.step(
+                conn,
+                f"{label.capitalize()} · Post-contrôle",
+                "failed",
+                simulated=True,
+                summary={"hosts": degraded, "phase": "post", "degraded": True, "rollback": False},
+            )
+            r.fenced(
+                conn,
+                "state = 'failed', finished_at = now(), result = %s, blocked_reason = %s",
+                (
+                    Jsonb(
+                        {
+                            "phase": "post",
+                            "degraded": degraded,
+                            "wave_blocked": True,
+                            "rollback": False,
+                            "writes": patching.count_writes(conn, campaign_id),
+                            "simulated": True,
+                        }
+                    ),
+                    reason,
+                ),
+            )
+            r.event(
+                conn,
+                "patch.wave_blocked",
+                {
+                    "wave": wave + 1,
+                    "degraded": degraded,
+                    "message": reason,
+                    "rollback": False,
+                },
+                severity="warning",
+            )
+            if change["state"] in ("approved", "executing", "verifying"):
+                transition(
+                    conn,
+                    change,
+                    "partially_succeeded",
+                    reason_code="patch_pilot_degraded",
+                    actor_type="worker",
+                    actor_id=r.worker_id,
+                    detail={"wave": wave, "degraded": degraded, "rollback": False},
+                )
+            return
+
+        r.step(
+            conn,
+            f"{label.capitalize()} · Post-contrôle",
+            "succeeded",
+            simulated=True,
+            summary={"hosts": wave_names, "phase": "post", "ok": True},
+        )
+
+        next_wave = wave + 1
+        if next_wave < len(waves):
+            run_after = calendars.schedule_run_after(conn, change["environment_id"])
+            queue.enqueue(
+                conn,
+                kind="host_patch",
+                change=change,
+                execution_id=r.job["execution_id"],
+                idempotency_key=f"host_patch:{change['id']}:w{next_wave}",
+                payload={
+                    "campaign_id": str(campaign_id),
+                    "wave": next_wave,
+                    "waves": waves,
+                    "simulated": True,
+                },
+                run_after=run_after,
+            )
+            r.fenced(
+                conn,
+                "state = 'succeeded', finished_at = now(), result = %s",
+                (Jsonb({"wave": wave, "next_wave": next_wave, "simulated": True}),),
+            )
+            return
+
+        conn.execute(
+            "UPDATE patch_campaigns SET state = 'succeeded', updated_at = now() WHERE id = %s",
+            (campaign_id,),
+        )
+        r.fenced(
+            conn,
+            "state = 'succeeded', finished_at = now(), result = %s",
+            (
+                Jsonb(
+                    {
+                        "wave": wave,
+                        "complete": True,
+                        "writes": patching.count_writes(conn, campaign_id),
+                        "simulated": True,
+                    }
+                ),
+            ),
+        )
+        if change["state"] in ("approved", "executing"):
+            change = transition(
+                conn,
+                change,
+                "verifying",
+                reason_code="patch_verify",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"simulated": True},
+            )
+        if change["state"] == "verifying":
+            transition(
+                conn,
+                change,
+                "succeeded",
+                reason_code="patch_succeeded",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"simulated": True, "waves": len(waves)},
+            )
+
+
+def handle_patch_check(r: JobContext) -> None:
+    """F19 : contrôle de sonde isolé (lecture) — réservé aux reprises / diagnostics."""
+    from .. import patching
+
+    with r.tx() as conn:
+        ctx = _load(conn, r.job)
+        _admit(r, conn, ctx)
+        host_id = UUID(str((r.job["payload"] or {})["host_id"]))
+        check = patching.probe_status(conn, host_id)
+        r.step(
+            conn,
+            "Contrôle de sonde",
+            "succeeded" if check["ok"] else "failed",
+            simulated=True,
+            summary=check,
+        )
+        r.fenced(
+            conn,
+            "state = %s, finished_at = now(), result = %s",
+            ("succeeded" if check["ok"] else "failed", Jsonb(check)),
+        )
+
+
 HANDLERS = {
     "preflight": handle_preflight,
     "tf_plan": handle_tf_plan,
@@ -2152,6 +2444,8 @@ HANDLERS = {
     "service_restart": handle_service_restart,
     "lease_retire": handle_lease_retire,
     "tf_import": handle_tf_import,
+    "host_patch": handle_host_patch,
+    "patch_check": handle_patch_check,
 }
 
 

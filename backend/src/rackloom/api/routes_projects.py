@@ -237,6 +237,41 @@ def project_consumption(project: str, request: Request) -> dict[str, Any]:
         return consumption.project_report(u.conn, u.p, project)
 
 
+@router.get("/projects/{project}/patch-hosts")
+def list_patch_hosts(project: str, request: Request, environment: str | None = None) -> list[dict[str, Any]]:
+    """F19 : machines enrôlées candidates à une campagne de patch."""
+    from .. import patching
+
+    with unit_of_work(request) as u:
+        return patching.enrolled_hosts(u.conn, u.p, project, environment_slug=environment)
+
+
+@router.get("/projects/{project}/patch-campaigns")
+def list_patch_campaigns(project: str, request: Request) -> list[dict[str, Any]]:
+    """F19 : campagnes de patch du projet."""
+    from .. import patching
+
+    with unit_of_work(request) as u:
+        return patching.list_campaigns(u.conn, u.p, project)
+
+
+@router.post("/projects/{project}/patch-campaigns")
+def create_patch_campaign(project: str, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F19 : crée une campagne (pilote + vagues) ; plan et approbation avant écriture."""
+    from .. import patching
+
+    allowed = {"title", "host_ids", "pilot_size", "wave_size", "reboot_policy", "package_selector"}
+    extra = set(body) - allowed
+    if extra:
+        raise ApiError(422, "unknown_field", f"champ « {sorted(extra)[0]} » refusé", field=f"/{sorted(extra)[0]}")
+    with unit_of_work(request, write=True) as u:
+
+        def act() -> dict[str, Any]:
+            return patching.create_campaign(u.conn, u.p, project, body, request_id=u.request_id)
+
+        return idempotent(u, request, body, act)
+
+
 @router.get("/projects/{project}/adoptions/candidates")
 def list_adoption_candidates(project: str, request: Request, environment: str = "dev") -> dict[str, Any]:
     """F08 : VM existantes octroyées (inventaire fictif), candidates à l'adoption."""

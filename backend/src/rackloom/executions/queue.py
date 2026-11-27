@@ -30,6 +30,8 @@ JOB_CLASS = {
     "service_restart": "write",
     "lease_retire": "write",
     "tf_import": "write",
+    "host_patch": "write",
+    "patch_check": "read",
 }
 
 JOB_LABELS = {
@@ -47,6 +49,8 @@ JOB_LABELS = {
     "service_restart": "Redémarrage de service (simulé)",
     "lease_retire": "Retrait de labo (simulé)",
     "tf_import": "Import Terraform (adoption, simulé)",
+    "host_patch": "Patch hôte (vague, simulé)",
+    "patch_check": "Contrôle de sonde (patch)",
 }
 
 
