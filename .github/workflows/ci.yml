@@ -76,7 +76,15 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Outils NSS (magasin de certificats du navigateur de test)
-        run: sudo apt-get update -q && sudo apt-get install -y -q libnss3-tools
+        run: |
+          # L'image ubuntu-24.04 ajoute parfois packages.microsoft.com ; un 403 sur ce
+          # miroir fait échouer `apt-get update` alors que libnss3-tools est dans Ubuntu.
+          # Playwright --with-deps réutilise ensuite apt : on neutralise ces sources d'abord.
+          sudo find /etc/apt/sources.list.d -maxdepth 1 -type f \
+            \( -iname '*microsoft*' -o -iname '*azure-cli*' -o -iname '*edge*' \) \
+            -exec mv {} {}.disabled \; 2>/dev/null || true
+          sudo apt-get update -q
+          sudo apt-get install -y -q libnss3-tools
       - run: make venv
       - name: Chromium pour Playwright
         working-directory: web
