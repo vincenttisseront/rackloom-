@@ -5,16 +5,24 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import Response
 
-from .. import artifacts, audit
+from .. import artifacts, audit, workflow
 from ..changes import service
-from ..errors import not_found
-from .deps import csrf_guard, unit_of_work
-from .views import deployment_view, host_view, iso
+from ..errors import ApiError, not_found
+from .deps import csrf_guard, idempotent, unit_of_work
+from .views import change_view, deployment_view, host_view, iso
 
 router = APIRouter(tags=["ressources"], dependencies=[Depends(csrf_guard)])
+
+
+def _only(body: dict[str, Any], allowed: set[str]) -> None:
+    extra = set(body) - allowed
+    if extra:
+        key = sorted(extra)[0]
+        raise ApiError(422, "unknown_field", f"champ « {key} » refusé", field=f"/{key}")
+
 
 OBSERVATION_KINDS = ("facts", "packages", "services", "probe", "journal", "ssh")
 
@@ -52,6 +60,115 @@ def get_service_card(deployment_id: UUID, request: Request) -> dict[str, Any]:
         return service_card.for_principal(u.conn, u.p, deployment_id)
 
 
+@router.post("/deployments/{deployment_id}/actions/{action_id}")
+def start_service_action(
+    deployment_id: UUID, action_id: str, request: Request, body: dict[str, Any] = Body(default={})
+) -> dict[str, Any]:
+    """F58 : ouvre une demande préremplie (capacité, redémarrage) — jamais une commande directe."""
+    from ..deployments import actions as service_actions
+
+    _only(body, set())
+    with unit_of_work(request, write=True) as u:
+        dep = service.get_deployment(u.conn, u.p, deployment_id)
+
+        def act() -> dict[str, Any]:
+            # require_action est aussi appelé dans start ; double contrôle explicite ici.
+            workflow.require_action(u.conn, u.p, "deployment", dep, action_id)
+            result = service_actions.start(u.conn, u.p, deployment_id, action_id, request_id=u.request_id)
+            change = result["change"]
+            return {
+                **{k: v for k, v in result.items() if k != "change"},
+                "change": change_view(u.conn, u.p, change),
+            }
+
+        return idempotent(u, request, body, act)
+
+
+@router.get("/deployments/{deployment_id}/access-requests")
+def list_access_requests(deployment_id: UUID, request: Request) -> dict[str, Any]:
+    """F59 : demandes d'accès du déploiement."""
+    from .. import access
+
+    with unit_of_work(request) as u:
+        return {
+            "items": access.list_for_deployment(u.conn, u.p, deployment_id),
+            "levels": access.levels_available(u.conn, service.get_deployment(u.conn, u.p, deployment_id)),
+        }
+
+
+@router.post("/deployments/{deployment_id}/access-requests")
+def create_access_request(
+    deployment_id: UUID, request: Request, body: dict[str, Any] = Body(default={})
+) -> dict[str, Any]:
+    """F59 : demander un niveau d'accès (groupe résolu côté serveur)."""
+    from .. import access
+
+    with unit_of_work(request, write=True) as u:
+
+        def act() -> dict[str, Any]:
+            return access.create_request(u.conn, u.p, deployment_id, body, request_id=u.request_id)
+
+        return idempotent(u, request, body, act)
+
+
+@router.get("/access-requests/{request_id}")
+def get_access_request(request_id: UUID, request: Request) -> dict[str, Any]:
+    from .. import access
+
+    with unit_of_work(request) as u:
+        return access.get_request(u.conn, u.p, request_id)
+
+
+@router.post("/access-requests/{request_id}/approve")
+def approve_access_request(
+    request_id: UUID, request: Request, body: dict[str, Any] = Body(default={})
+) -> dict[str, Any]:
+    from .. import access
+
+    _only(body, set())
+    with unit_of_work(request, write=True) as u:
+
+        def act() -> dict[str, Any]:
+            return access.approve(u.conn, u.p, request_id, request_id_http=u.request_id)
+
+        return idempotent(u, request, body, act)
+
+
+@router.post("/access-requests/{request_id}/reject")
+def reject_access_request(
+    request_id: UUID, request: Request, body: dict[str, Any] = Body(default={})
+) -> dict[str, Any]:
+    from .. import access
+
+    _only(body, {"comment"})
+    with unit_of_work(request, write=True) as u:
+
+        def act() -> dict[str, Any]:
+            return access.reject(
+                u.conn,
+                u.p,
+                request_id,
+                comment=str(body.get("comment") or ""),
+                request_id_http=u.request_id,
+            )
+
+        return idempotent(u, request, body, act)
+
+
+@router.post("/access-requests/{request_id}/retry-sync")
+def retry_access_sync(request_id: UUID, request: Request, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    """F59 : relance la sync IdP avec la même clé d'idempotence (pas de doublon)."""
+    from .. import access
+
+    _only(body, set())
+    with unit_of_work(request, write=True) as u:
+
+        def act() -> dict[str, Any]:
+            return access.sync_to_idp(u.conn, u.p, request_id, request_id_http=u.request_id)
+
+        return idempotent(u, request, body, act)
+
+
 @router.get("/deployments/{deployment_id}/outputs")
 def get_deployment_outputs(deployment_id: UUID, request: Request) -> dict[str, Any]:
     """F33 : sorties typées versionnées (allowlist) ; hors périmètre → 404 ; jamais le state."""
@@ -70,8 +187,12 @@ def get_drift(deployment_id: UUID, request: Request) -> dict[str, Any]:
         dep = service.get_deployment(u.conn, u.p, deployment_id)
         latest = drift.latest_for_deployment(u.conn, dep["id"])
         if latest is None:
-            return {"status": "none", "findings": [], "correction": False,
-                    "notice": "Aucun scan de dérive pour ce déploiement."}
+            return {
+                "status": "none",
+                "findings": [],
+                "correction": False,
+                "notice": "Aucun scan de dérive pour ce déploiement.",
+            }
         return latest
 
 
@@ -125,8 +246,10 @@ def host_observations(host_id: UUID, request: Request, kind: str | None = None) 
             return []
         rows = u.conn.execute(
             "SELECT id, kind, data, status, source, collected_at FROM host_observations WHERE host_id = %s "
-            + ("AND kind = %s " if kind else "") + "ORDER BY collected_at DESC LIMIT 100",
-            (host["id"], kind) if kind else (host["id"],)).fetchall()
+            + ("AND kind = %s " if kind else "")
+            + "ORDER BY collected_at DESC LIMIT 100",
+            (host["id"], kind) if kind else (host["id"],),
+        ).fetchall()
         return [{**r, "collected_at": iso(r["collected_at"])} for r in rows]
 
 
@@ -137,9 +260,22 @@ def get_artifact(artifact_id: UUID, request: Request) -> Response:
         if row is None or row["key_class"] != "B" or not u.p.can_see_project(row["project_id"]):
             raise not_found("artefact")
         content = artifacts.read(row)
-        audit.record(u.conn, actor_type="user", actor_id=str(u.p.user_id), action="artifact.download",
-                     outcome="ok", project_id=row["project_id"], correlation_id=row["change_id"],
-                     targets={"artifact": str(artifact_id), "kind": row["kind"]}, request_id=u.request_id)
-    return Response(content, media_type="application/json" if row["kind"].endswith("json") else "text/plain",
-                    headers={"Content-Disposition": f'attachment; filename="{row["kind"]}-{artifact_id}.txt"',
-                             "Cache-Control": "no-store"})
+        audit.record(
+            u.conn,
+            actor_type="user",
+            actor_id=str(u.p.user_id),
+            action="artifact.download",
+            outcome="ok",
+            project_id=row["project_id"],
+            correlation_id=row["change_id"],
+            targets={"artifact": str(artifact_id), "kind": row["kind"]},
+            request_id=u.request_id,
+        )
+    return Response(
+        content,
+        media_type="application/json" if row["kind"].endswith("json") else "text/plain",
+        headers={
+            "Content-Disposition": f'attachment; filename="{row["kind"]}-{artifact_id}.txt"',
+            "Cache-Control": "no-store",
+        },
+    )

@@ -10,7 +10,8 @@
 - **F32–F35** : PR #22 (`cursor/f32-f35-placement-outputs-licenses-ci-5bfe`), migration Alembic `0013` (après #15 ; GRANT worker inclus).
 - **Lot C (F10–F14)** : fusionné (PR #24), migration Alembic `0014`, bundle `builtin@8` (R100, R140).
 - **F36–F40 (résilience)** : fusionné (PR #25), migration Alembic `0015`, bundle `builtin@9` (R115, R135).
-- **F41–F45 (identités et audit)** : branche `cursor/f41-f45-identites-audit-7aae`, migration Alembic `0016` (SCIM, revue d'accès, rotation, copie d'audit, certificats TLS).
+- **F41–F45 (identités et audit)** : fusionné (PR #26), migration Alembic `0016` (SCIM, revue d'accès, rotation, copie d'audit, certificats TLS).
+- **F58–F59 (agir sur le service livré)** : branche `cursor/f58-f59-actions-acces-6117`, migration Alembic `0017` (actions fiche, redémarrage simulé, demandes d'accès + faux IdP).
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -90,7 +91,9 @@
 | Rotation identifiants connecteurs (F43) | livré (test simulé) | testé localement | candidat invalide → pas de bascule, canari absent ; retire après fin des jobs |
 | Copie d'audit hors appliance (F44) | livré (stockage local verrouillé) | testé localement | reprise sans doublon ; écrasement refusé si object_lock ; canari masqué |
 | Registre certificats TLS (F45) | livré | testé localement | scan endpoint approuvé ; alerte `expiring_soon` au propriétaire ; TLS toujours vérifié |
-| Fonctions F02 à F45 restantes / F58 à F59 et atelier AT02 à AT04 (hors F01, F03, F05, F09, F32–F45, F10–F14) | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances ; F58/F59 après lot 2 / OIDC |
+| Actions courantes depuis la fiche service (F58) | livré (redémarrage simulé) | testé localement | `test_f58_f59_service_actions.py` ; e2e `101-f58-f59-actions-acces.spec.ts` ; migration `0017` ; remplacement annoncé et plan bloqué ; L2 non fait |
+| Demande d'accès à un service (F59) | livré (faux IdP) | testé localement | correspondances approuvées ; `group` → 422 ; sync échouée visible ; relance idempotente ; IdP réel : non (D22) |
+| Fonctions F02 à F04, F06–F08, F15–F20, F22–F26, F29–F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6
 
@@ -350,8 +353,15 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - **F53** : `POST /projects/{p}/changes/similar` ; dépôt scopé avant similarité (U1) ; aucune fusion.
 - **F54** : migration `0012` (`change_reviews`, après `0011` F09) ; sollicitation / réponse ; events F21 ; aucun `role_binding`.
 - **F56** : `GET /changes/{id}/estimate` ; approbation / créneau F27 / fourchette historique ; file F36 branchée (`idle`/`ready`/`waiting`) ; `model_used: false`.
-- **Non démarré** : F58, F59 (attendent lot 2 / OIDC).
 - Preuves : `test_f51_examples.py` … `test_f56_estimate.py` (15) ; e2e `91`–`94`, `99` ; CI. Labo réel : non (D2).
+
+### F58–F59 : agir sur le service livré (2026-11-27, heure de Paris)
+
+- Branche `cursor/f58-f59-actions-acces-6117` depuis `main` (après F41–F45 / `0016`).
+- Migration `0017` : kinds `restart` / `service_restart` ; tables `service_access_mappings`, `service_access_requests`, `service_access_assignments`, `idp_fake_state` ; GRANT api/worker.
+- **F58** : `service_actions` sur le template ; `workflow.available_actions` + `POST /deployments/{id}/actions/{action}` ; capacité → modify prérempli ; redémarrage → plan simulé + job ; impact remplacement/interruption visible ; sans droit → 403/404.
+- **F59** : niveaux `access_levels` ; correspondances publiées (démo) ; `group`/`idp_group` saisis → 422 ; « accès accordé » après faux IdP ; sync_failed visible ; relance idempotente.
+- Preuves : `test_f58_f59_service_actions.py` ; e2e `101-f58-f59-actions-acces.spec.ts`. IdP / labo réels : non (D2, D22).
 
 ### F36–F40 résilience (2026-11-27, heure de Paris)
 
@@ -388,7 +398,7 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ## Prochain jalon
 
-1. Fusionner **F41–F45 (`0016`)** après CI verte (Vincent).
-2. Ensuite selon le backlog (F02–F40 restantes hors livrés, AT02–AT04, F46–F50 déjà faits).
-3. F58 / F59 après dépendances (lot 2 / OIDC pour F59) ; F12/F14/F41 à rejouer contre l'IdP d'entreprise au lot 4.
+1. Fusionner **F58–F59 (`0017`)** après CI verte (Vincent).
+2. Ensuite selon le backlog (F02–F04, F06–F08, F15–F20, F22–F26, F29–F30, AT02–AT04).
+3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

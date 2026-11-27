@@ -62,6 +62,12 @@ deployment_policy:
   # anti_affinity: {scope: cluster}  # F32 : activé seulement quand le profil l'exige
 terraform: {module: lab-vm, version: 1.0.0}
 outputs_allowlist: [name, vm_uuid]        # sorties publiables : F33
+service_actions:
+  - {id: increase_capacity, label: "Augmenter la capacité"}
+  - {id: request_restart, label: "Demander un redémarrage"}
+access_levels:
+  - {id: read, label: Lecture}
+  - {id: operate, label: Exploitation}
 preview_limits:
   - "Les VM n'existent pas encore : le check mode Ansible ne couvre aucune tâche."
 simulated_steps: [vm_inventory, guest_customization, ip_assignment]

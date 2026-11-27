@@ -186,6 +186,14 @@ def plan_view(conn: Conn, plan: dict[str, Any], revision: dict[str, Any]) -> dic
                 "ressources : approbation impossible au lot 1.",
             }
         )
+    if summary.get("interruption"):
+        risks.append(
+            {
+                "code": "interruption",
+                "level": "warning",
+                "text": "Redémarrage : interruption de service pendant l'exécution (jamais masquée).",
+            }
+        )
     if resolution["environment"]["is_production"]:
         risks.append({"code": "production", "level": "warning", "text": "Déploiement en production."})
     risks.append(
@@ -216,6 +224,8 @@ def plan_view(conn: Conn, plan: dict[str, Any], revision: dict[str, Any]) -> dic
             {"address": r["address"], "type": r["type"], "action": r["action"]} for r in summary.get("resources", [])
         ],
         "destructive": summary.get("destructive", False),
+        "interruption": bool(summary.get("interruption")),
+        "restart": bool(summary.get("restart")),
         "risks": risks,
         "details": plan_details(resolution),
         "ansible": ansible_contract(resolution),
@@ -286,7 +296,10 @@ def change_view(conn: Conn, principal: Principal, change: dict[str, Any]) -> dic
             "SELECT * FROM request_revisions WHERE change_id = %s AND revision_no = %s",
             (change["id"], plan["revision_no"])).fetchone()) if plan else None,
         "deployment": (
-            {**deployment_summary(conn, deployment), "service_card": _service_card(conn, deployment)}
+            {
+                **deployment_summary(conn, deployment),
+                "service_card": _service_card(conn, deployment, principal),
+            }
             if deployment
             else None
         ),
@@ -312,10 +325,10 @@ def deployment_summary(conn: Conn, dep: dict[str, Any]) -> dict[str, Any]:
             "created_at": iso(dep["created_at"])}
 
 
-def _service_card(conn: Conn, dep: dict[str, Any]) -> dict[str, Any]:
+def _service_card(conn: Conn, dep: dict[str, Any], principal: Principal | None = None) -> dict[str, Any]:
     from ..deployments import service_card
 
-    return service_card.build(conn, dep)
+    return service_card.build(conn, dep, principal=principal)
 
 
 def deployment_view(conn: Conn, principal: Principal, dep: dict[str, Any]) -> dict[str, Any]:
@@ -327,7 +340,7 @@ def deployment_view(conn: Conn, principal: Principal, dep: dict[str, Any]) -> di
         **deployment_summary(conn, dep),
         "project_id": str(dep["project_id"]),
         "service_checks": dep["service_checks"],
-        "service_card": service_card.build(conn, dep),
+        "service_card": service_card.build(conn, dep, principal=principal),
         "hosts": [
             {
                 "id": str(h["id"]),

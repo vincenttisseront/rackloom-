@@ -1,5 +1,5 @@
-"""Déploiements, sorties publiables (F33) et fiche service (F57)."""
+"""Déploiements, sorties publiables (F33), fiche service (F57) et actions (F58)."""
 
-from . import outputs, service_card
+from . import actions, outputs, service_card
 
-__all__ = ["outputs", "service_card"]
+__all__ = ["actions", "outputs", "service_card"]

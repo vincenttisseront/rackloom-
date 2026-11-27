@@ -32,6 +32,8 @@ LABELS = {
     "cancel_job": "Demander l'annulation",
     "modify": "Modifier ce déploiement",
     "restore": "Restaurer une VM (réseau isolé)",
+    "increase_capacity": "Augmenter la capacité",
+    "request_restart": "Demander un redémarrage",
     "freeze": "Geler l'environnement",
     "unfreeze": "Dégeler l'environnement",
     "manage_calendar": "Gérer le calendrier",
@@ -45,6 +47,7 @@ ROLES = {
     "approve_retry": ("approver",), "reject_retry": ("approver",), "replan": ("operator",),
     "duplicate": ("operator",), "cancel_job": ("operator", "approver"), "modify": ("operator",),
     "restore": ("operator",),
+    "increase_capacity": ("operator",), "request_restart": ("operator",),
     "freeze": ("approver", "platform_admin"), "unfreeze": ("approver", "platform_admin"),
     "manage_calendar": ("approver", "platform_admin"),
 }
@@ -189,6 +192,8 @@ def _deployment_actions(conn: Conn, deployment: dict[str, Any]) -> dict[str, str
         return {
             "modify": "seul un déploiement actif peut être modifié",
             "restore": "seul un déploiement actif peut être restauré",
+            "increase_capacity": "seul un déploiement actif accepte des actions",
+            "request_restart": "seul un déploiement actif accepte des actions",
         }
     busy = conn.execute("SELECT 1 FROM changes WHERE deployment_id = %s AND state = ANY(%s) LIMIT 1",
                         (deployment["id"], list(DEPLOYMENT_BUSY))).fetchone()
@@ -196,7 +201,12 @@ def _deployment_actions(conn: Conn, deployment: dict[str, Any]) -> dict[str, str
     restore_reason = reason
     if not (deployment.get("instances") or []):
         restore_reason = "aucune instance à restaurer"
-    return {"modify": reason, "restore": restore_reason}
+    out: dict[str, str | None] = {"modify": reason, "restore": restore_reason}
+    # F58 : actions template / état du service (revérifiées à l'appel).
+    from .deployments import actions as service_actions
+
+    out.update(service_actions.evaluate_service_actions(conn, deployment))
+    return out
 
 
 def _environment_actions(conn: Conn, env: dict[str, Any]) -> dict[str, str | None]:
