@@ -1,5 +1,5 @@
 import {
-  compose, expect, login, planViaApi, press, session, test, waitState,
+  compose, expect, login, logout, planViaApi, press, session, test, waitState,
 } from './helpers'
 
 // F37 : plan approuvé en file (worker arrêté) ; ouverture du disjoncteur via l'API admin ;
@@ -94,8 +94,12 @@ test('F37 — disjoncteur : write bloqué, read inventaire admis', async ({ page
       return job ? [job.state, job.blocked_reason, job.dispatched_at] : null
     }, { timeout: 120_000, intervals: [1000] }).toEqual(['blocked', 'connector_circuit_open', null])
 
+    // Session fraîche après l'attente worker : évite change-state introuvable (flake CI, comme F27).
+    await logout(page)
+    await login(page, 'bruno')
     await page.goto(`/demandes/${planned.id}`)
-    await waitState(page, "Bloquée à l'admission", 60_000)
+    await expect(page.getByTestId('change-state')).toBeVisible({ timeout: 60_000 })
+    await waitState(page, "Bloquée à l'admission", 120_000)
     const apply = page.getByTestId('job').filter({ hasText: 'Application du plan' })
     await expect(apply).toContainText('Bloqué', { timeout: 30_000 })
     await expect(page.getByTestId('timeline')).toContainText('R095')
