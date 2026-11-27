@@ -31,6 +31,7 @@ LABELS = {
     "duplicate": "Dupliquer",
     "cancel_job": "Demander l'annulation",
     "modify": "Modifier ce déploiement",
+    "restore": "Restaurer une VM (réseau isolé)",
     "freeze": "Geler l'environnement",
     "unfreeze": "Dégeler l'environnement",
     "manage_calendar": "Gérer le calendrier",
@@ -43,6 +44,7 @@ ROLES = {
     "approve": ("approver",), "reject": ("approver",), "request_retry": ("operator",),
     "approve_retry": ("approver",), "reject_retry": ("approver",), "replan": ("operator",),
     "duplicate": ("operator",), "cancel_job": ("operator", "approver"), "modify": ("operator",),
+    "restore": ("operator",),
     "freeze": ("approver", "platform_admin"), "unfreeze": ("approver", "platform_admin"),
     "manage_calendar": ("approver", "platform_admin"),
 }
@@ -184,10 +186,17 @@ def _change_actions(conn: Conn, principal: Principal, change: dict[str, Any], no
 
 def _deployment_actions(conn: Conn, deployment: dict[str, Any]) -> dict[str, str | None]:
     if deployment["status"] != "active":
-        return {"modify": "seul un déploiement actif peut être modifié"}
+        return {
+            "modify": "seul un déploiement actif peut être modifié",
+            "restore": "seul un déploiement actif peut être restauré",
+        }
     busy = conn.execute("SELECT 1 FROM changes WHERE deployment_id = %s AND state = ANY(%s) LIMIT 1",
                         (deployment["id"], list(DEPLOYMENT_BUSY))).fetchone()
-    return {"modify": "un changement est déjà en cours sur ce déploiement" if busy else None}
+    reason = "un changement est déjà en cours sur ce déploiement" if busy else None
+    restore_reason = reason
+    if not (deployment.get("instances") or []):
+        restore_reason = "aucune instance à restaurer"
+    return {"modify": reason, "restore": restore_reason}
 
 
 def _environment_actions(conn: Conn, env: dict[str, Any]) -> dict[str, str | None]:

@@ -31,6 +31,8 @@ export const JOB_LABELS: Record<string, string> = {
   verify: 'Vérification',
   reconcile: 'Réconciliation',
   inventory_refresh: "Rafraîchissement de l'inventaire",
+  drift_scan: 'Détection de dérive',
+  vm_restore: 'Restauration VM (réseau isolé)',
 }
 
 export const JOB_STATES: Record<string, string> = {
@@ -66,6 +68,16 @@ export const BLOCK_REASONS: Record<string, string> = {
   reauth_required: 'Réauthentification forte requise',
   reauth_stale: "Preuve d'authentification trop ancienne",
   emergency_closed: "Connexion d'urgence fermée",
+  project_quota_saturated: 'Quota de concurrence du projet saturé',
+  environment_quota_saturated: "Quota de concurrence de l'environnement saturé",
+  compatibility_incompatible: 'Combinaison de versions incompatible',
+  compatibility_unverified: 'Combinaison de versions non vérifiée',
+  backup_missing: 'Sauvegarde introuvable',
+  backup_stale: 'Sauvegarde périmée',
+  backup_unverified: 'Sauvegarde non vérifiable',
+  backup_snapshot_not_proof: 'Snapshot vSphere refusé comme preuve de sauvegarde',
+  license_unavailable: 'Licence indisponible',
+  license_unverified: 'Licence non vérifiée',
 }
 
 export const SERVICE_TONE: Record<string, string> = {

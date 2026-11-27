@@ -28,8 +28,13 @@ items:
      attributes: {role: app, vlan: 101}}
   - {kind: network, stable_id: network-102, name: net-dev-vitrine-b, parent: datacenter-1,
      attributes: {role: app, vlan: 102}}
+  # Réseau de quarantaine isolé (F40) — jamais rattaché automatiquement à la production.
+  - {kind: network, stable_id: network-190, name: net-dev-quarantine, parent: datacenter-1,
+     attributes: {role: quarantine, vlan: 190}}
   - {kind: network, stable_id: network-301, name: net-prod-vitrine, parent: datacenter-1,
      attributes: {role: app, vlan: 301}}
+  - {kind: network, stable_id: network-390, name: net-prod-quarantine, parent: datacenter-1,
+     attributes: {role: quarantine, vlan: 390}}
   - {kind: image, stable_id: vm-500, name: img-ubuntu-2404-std, parent: datacenter-1,
      attributes: {os: ubuntu-24.04, layout_id: std-v1, vmware_tools: true, cloud_init: true,
                   guest_os: "Ubuntu 24.04 LTS"}}

@@ -2,7 +2,7 @@
 
 Distingue attente d'approbation, prochain créneau autorisé et durée d'exécution.
 Fourchettes fondées sur des exécutions comparables ; jamais inventées par un modèle (U10).
-File d'attente (F36) : non disponible tant que F36 n'est pas livré.
+File d'attente (F36) : quotas et raison d'attente via `executions.quotas`.
 """
 
 from __future__ import annotations
@@ -190,6 +190,8 @@ def _execution_block(conn: Conn, change: dict[str, Any]) -> dict[str, Any]:
 
 def estimate(conn: Conn, principal: Principal, change: dict[str, Any]) -> dict[str, Any]:
     """Estimation structurée ; aucun appel au modèle."""
+    from ..executions import quotas as fair
+
     # principal déjà scopé via get_change.
     _ = principal
     known_blockers: list[str] = []
@@ -204,14 +206,12 @@ def estimate(conn: Conn, principal: Principal, change: dict[str, Any]) -> dict[s
         "approval": _approval_block(conn, change),
         "schedule": _schedule_block(conn, change),
         "execution": _execution_block(conn, change),
-        "queue": {
-            "status": "unavailable",
-            "reason": "file équitable (F36) non livrée",
-        },
+        "queue": fair.status_for_change(conn, change),
         "known_blockers": known_blockers,
         "model_used": False,
         "notice": (
             "Attente d'approbation, créneau et durée d'exécution sont distincts. "
-            "Aucune estimation n'est demandée à un modèle."
+            "Aucune estimation n'est demandée à un modèle. "
+            "La file n'offre aucun choix de runner."
         ),
     }

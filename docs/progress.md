@@ -8,7 +8,8 @@
 - **F31** fusionné (PR #12). **F37** fusionné (PR #13). **F46** fusionné (PR #14). **F47–F50** fusionné (PR #16). **F01** fusionné (PR #17). **F05** fusionné (PR #18). **F03** fusionné (PR #20). **F09** fusionné (PR #21).
 - **F51 à F54 et F56** (simplifier la demande et le suivi) : PR #15 (`cursor/f51-f56-demande-suivi-a149`), migration Alembic `0012`.
 - **F32–F35** : PR #22 (`cursor/f32-f35-placement-outputs-licenses-ci-5bfe`), migration Alembic `0013` (après #15 ; GRANT worker inclus).
-- **Lot C (F10–F14)** : branche `cursor/lot-c-f10-f14-4bfd`, migration Alembic `0014`, bundle `builtin@8` (R100, R140).
+- **Lot C (F10–F14)** : fusionné (PR #24), migration Alembic `0014`, bundle `builtin@8` (R100, R140).
+- **F36–F40 (résilience)** : branche `cursor/f36-f40-resilience-fd86`, migration Alembic `0015`, bundle `builtin@9` (R115, R135).
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -69,7 +70,11 @@
 | Comparateur de choix métier (F52) | livré | testé localement | `test_f52_compare.py` ; e2e `92-f52-comparateur.spec.ts` ; coût/capacité omis (F05/F29/F32) |
 | Demandes similaires (F53) | livré | testé localement | `test_f53_similar.py` ; e2e `93-f53-similaires.spec.ts` ; U1 |
 | Passer la main / revues (F54) | livré | testé localement | `test_f54_reviews.py` ; e2e `94-f54-passer-la-main.spec.ts` ; migration `0012` |
-| Estimation de mise à disposition (F56) | livré (file F36 non livrée → `unavailable`) | testé localement | `test_f56_estimate.py` ; e2e `99-f56-estimation.spec.ts` ; aucun modèle |
+| Estimation de mise à disposition (F56) | livré (file F36 branchée) | testé localement | `test_f56_estimate.py` ; e2e `99-f56-estimation.spec.ts` ; aucun modèle |
+| File d'exécution équitable (F36) | livré | testé localement | `test_f36_fair_queue.py` ; quotas projet ; `wait_reason` ; estimate `queue` |
+| Matrice de compatibilité (F38, R135, `builtin@9`) | livré | testé localement | `test_f38_compatibility.py` ; incompatible → blocage ; absent → non vérifié |
+| Vérification sauvegardes VM (F39, R115) | livré (source fictive) | testé localement | `test_f39_backups.py` ; snapshot ≠ preuve ; labo réel non (D2) |
+| Restauration VM réseau isolé (F40) | livré (simulé) | testé localement | `test_f40_restore.py` ; quarantaine ; nom distinct ; labo réel non (D2) |
 | Placement multi-cluster et anti-affinité (F32) | livré | testé localement | `test_f32_placement.py` ; deux clusters → réplicas séparés, digest stable ; un cluster → `anti_affinity_unsatisfiable` ; cluster refusé dans le besoin ; L2 non fait |
 | Sorties de déploiement réutilisables (F33) | livré | testé localement | `test_f33_outputs.py` ; `GET /deployments/{id}/outputs` ; allowlist ; hors projet → 404 ; jamais le state |
 | Contrôle des licences (F34, règle R125, bundle `builtin@7`) | livré | testé localement | `test_f34_licenses.py` ; source fictive ; `license_unavailable` / `license_unverified` ; pas de clé dans le besoin ; source réelle non faite (D11) |
@@ -79,7 +84,7 @@
 | Réauthentification forte (F12) | livré | testé localement (IdP simulé) | step-up local + preuve IdP de test ; lecture OK sans preuve ; approbation refusée sans step-up ; IdP réel : non |
 | Administration déléguée (F13) | livré | testé localement | rôles `project_admin` / `connector_admin` ; secrets jamais lus ; artefact hors projet → 404 |
 | Accès d'urgence (F14) | livré | testé localement | `rackloom emergency` ; panne SSO simulée ; fermeture → `emergency_closed` ; `docs/emergency-access.md` |
-| Fonctions F02 à F45 restantes / F58 à F59 et atelier AT02 à AT04 (hors F01, F03, F05, F09, F32–F35, F10–F14) | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances ; F58/F59 après lot 2 / OIDC |
+| Fonctions F02 à F45 restantes / F58 à F59 et atelier AT02 à AT04 (hors F01, F03, F05, F09, F32–F40, F10–F14) | à faire | non vérifié | `docs/backlog.md` ; prochain pas : selon dépendances ; F58/F59 après lot 2 / OIDC |
 
 ## Démonstrations D1 à D6
 
@@ -338,9 +343,20 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - **F52** : `POST /projects/{p}/comparisons` ; services / environnements / niveaux ; critères non vérifiés omis ; mode `auto` si une seule option.
 - **F53** : `POST /projects/{p}/changes/similar` ; dépôt scopé avant similarité (U1) ; aucune fusion.
 - **F54** : migration `0012` (`change_reviews`, après `0011` F09) ; sollicitation / réponse ; events F21 ; aucun `role_binding`.
-- **F56** : `GET /changes/{id}/estimate` ; approbation / créneau F27 / fourchette historique ; file F36 → `unavailable` ; `model_used: false`.
+- **F56** : `GET /changes/{id}/estimate` ; approbation / créneau F27 / fourchette historique ; file F36 branchée (`idle`/`ready`/`waiting`) ; `model_used: false`.
 - **Non démarré** : F58, F59 (attendent lot 2 / OIDC).
 - Preuves : `test_f51_examples.py` … `test_f56_estimate.py` (15) ; e2e `91`–`94`, `99` ; CI. Labo réel : non (D2).
+
+### F36–F40 résilience (2026-11-27, heure de Paris)
+
+- Branche `cursor/f36-f40-resilience-fd86` depuis `main` (après Lot C / `0014`).
+- Migration `0015` : `execution_quotas`, `compatibility_matrix`, `backup_proofs`, `jobs.wait_reason`, kinds `restore` / `vm_restore` ; GRANT api/worker.
+- Bundle `builtin@9` : R115 (F39), R135 (F38).
+- **F36** : claim saute les projets au quota ; estimate expose `queue` ; aucun choix de runner.
+- **F38** : matrice `matrix@1` ; providers du lockfile ; incompatible → `compatibility_incompatible`.
+- **F39** : source fictive ; snapshot vSphere → `backup_snapshot_not_proof` ; observations `simulated=true`.
+- **F40** : `restore_profile` + réseau quarantaine ; `POST /deployments/{id}/restore` ; job `vm_restore` simulé.
+- Preuves : `test_f36_fair_queue.py`, `test_f38_compatibility.py`, `test_f39_backups.py`, `test_f40_restore.py` ; e2e `96-f36-f40-resilience.spec.ts`. Labo réel / produit sauvegarde : non (D2).
 
 ### F32–F35 placement, sorties, licences, CI (2026-11-26, heure de Paris)
 
@@ -353,7 +369,7 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ## Prochain jalon
 
-1. Fusionner le **Lot C (F10–F14, `0014`, `builtin@8`)** après CI verte (Vincent).
+1. Fusionner **F36–F40 (`0015`, `builtin@9`)** après CI verte (Vincent).
 2. Ensuite selon le backlog (F02–F45 restantes, AT02–AT04).
 3. F58 / F59 après dépendances (lot 2 / OIDC pour F59) ; F12/F14 à rejouer contre l'IdP d'entreprise au lot 4.
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

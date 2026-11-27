@@ -344,9 +344,14 @@ def deployment_view(conn: Conn, principal: Principal, dep: dict[str, Any]) -> di
 
 
 def job_view(conn: Conn, job: dict[str, Any]) -> dict[str, Any]:
+    from ..executions import quotas as fair
+
     steps = conn.execute("SELECT * FROM job_steps WHERE job_id = %s ORDER BY seq", (job["id"],)).fetchall()
+    wait = job.get("wait_reason")
     return {"id": str(job["id"]), "kind": job["kind"], "class": job["class"], "state": job["state"],
             "attempts": job["attempts"], "blocked_reason": job["blocked_reason"],
+            "wait_reason": wait,
+            "wait_reason_label": fair.waiting_reason_label(wait),
             "dispatched_at": iso(job["dispatched_at"]), "cancel_requested_at": iso(job["cancel_requested_at"]),
             "created_at": iso(job["created_at"]), "finished_at": iso(job["finished_at"]),
             "steps": [{"seq": s["seq"], "name": s["name"], "state": s["state"], "simulated": s["simulated"],

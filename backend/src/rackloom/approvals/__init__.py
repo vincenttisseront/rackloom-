@@ -139,9 +139,34 @@ def decide(conn: Conn, principal: Principal, change_id: UUID, body: dict[str, An
                         actor_id=str(principal.user_id),
                         detail={"bundle_digest": plan["bundle_digest"][:12]}, request_id=request_id)
     run_after = calendars.schedule_run_after(conn, change["environment_id"])
-    job = queue.enqueue(conn, kind="tf_apply", change=change, stack_id=plan["stack_id"], execution_id=execution_id,
-                        idempotency_key=f"tf_apply:{execution_id}", payload={"plan_id": str(plan_id)},
-                        run_after=run_after)
+    # F40 : restauration → job vm_restore (simulé, réseau isolé) ; sinon tf_apply.
+    if change["kind"] == "restore":
+        from .. import restore as restore_mod
+
+        job = restore_mod.enqueue_restore(conn, change, approval_id=approval_id)
+        conn.execute(
+            "UPDATE jobs SET execution_id = %s, stack_id = %s, run_after = %s, "
+            "payload = payload || %s::jsonb WHERE id = %s",
+            (
+                execution_id,
+                plan["stack_id"],
+                run_after,
+                Jsonb({"plan_id": str(plan_id)}),
+                job["id"],
+            ),
+        )
+        job = conn.execute("SELECT * FROM jobs WHERE id = %s", (job["id"],)).fetchone()
+    else:
+        job = queue.enqueue(
+            conn,
+            kind="tf_apply",
+            change=change,
+            stack_id=plan["stack_id"],
+            execution_id=execution_id,
+            idempotency_key=f"tf_apply:{execution_id}",
+            payload={"plan_id": str(plan_id)},
+            run_after=run_after,
+        )
     return {"approval_id": approval_id, "decision": decision, "execution_id": execution_id, "job_id": job["id"],
             "change": change, "run_after": run_after}
 

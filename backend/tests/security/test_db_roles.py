@@ -30,6 +30,9 @@ ALLOWED = {
         "SELECT role FROM temporary_grants",
         "SELECT reason FROM emergency_interventions",
         "SELECT user_id FROM emergency_allowlist",
+        "SELECT max_concurrent FROM execution_quotas",
+        "SELECT status FROM compatibility_matrix",
+        "SELECT proof_kind FROM backup_proofs",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -50,6 +53,9 @@ ALLOWED = {
         "SELECT role FROM temporary_grants",
         "SELECT reason FROM emergency_interventions",
         "SELECT user_id FROM emergency_allowlist",
+        "SELECT max_concurrent FROM execution_quotas",
+        "SELECT status FROM compatibility_matrix",
+        "SELECT proof_kind FROM backup_proofs",
     ],
 }
 

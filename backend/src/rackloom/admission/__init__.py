@@ -4,8 +4,9 @@ Chaque job est réévalué au moment où un worker le réclame, quelle que soit 
 file (étape `start`). R065 (AT01) borne la configuration aux cibles approuvées. Les règles qui
 dépendent d'un état pouvant changer entre l'admission et l'envoi au fournisseur (gel, calendrier,
 capacité, droits temporaires, politiques) sont rejouées dans la transaction qui marque cet envoi
-(étape `dispatch`). Emplacements réservés, non encore enregistrés : 115 (F39), 130 (F16), 135 (F38).
-R095 (F37), R100 (F11), R110 (F05), R120 (F03), R125 (F34) et R140 (F10) sont enregistrées.
+(étape `dispatch`). Emplacement réservé, non encore enregistré : 130 (F16).
+R095 (F37), R100 (F11), R110 (F05), R115 (F39), R120 (F03), R125 (F34), R135 (F38) et R140 (F10)
+sont enregistrées.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from .. import clock, ipam, licenses, policy
+from .. import backups, clock, compatibility, ipam, licenses, policy
 from ..connectors import circuit
 from ..db import Conn, Jsonb
 from ..identity import temporary as temp_rights
@@ -437,6 +438,25 @@ def temporary_rights_still_valid(ctx: Context) -> Verdict:
     return Verdict(True)
 
 
+
+@rule(115, "R115", "write", stages=("start", "dispatch"))
+def backup_verified(ctx: Context) -> Verdict:
+    """Sauvegarde vérifiée pour un changement sensible (F39). Snapshot vSphere ≠ preuve."""
+    resolved = ctx.revision["resolved"] if ctx.revision else None
+    reqs = backups.requirements_from(resolved)
+    if not reqs:
+        return Verdict(True)
+    result = backups.check(ctx.conn, reqs)
+    if result["status"] == "ok":
+        return Verdict(True)
+    if result["status"] == "unverified" and backups.unverified_policy() == "continue":
+        return Verdict(True)
+    if result["status"] == "stale" and backups.stale_policy() == "continue":
+        return Verdict(True)
+    code, message = backups.refusal(result)
+    return Verdict(False, message, code)
+
+
 @rule(125, "R125", "write", stages=("start", "dispatch"))
 def licenses_available(ctx: Context) -> Verdict:
     """Licences du profil disponibles ou politique sur « non vérifié » (F34)."""
@@ -449,6 +469,27 @@ def licenses_available(ctx: Context) -> Verdict:
     if result["status"] == "unverified" and licenses.unverified_policy() == "continue":
         return Verdict(True)
     code, message = licenses.refusal(result)
+    return Verdict(False, message, code)
+
+
+
+@rule(135, "R135", "write", stages=("start", "dispatch"))
+def compatibility_matrix(ctx: Context) -> Verdict:
+    """Versions réellement utilisées vs matrice versionnée (F38)."""
+    resolved = ctx.revision["resolved"] if ctx.revision else None
+    compatibility.ensure_seeded(ctx.conn)
+    if resolved is not None and "runner_images" not in resolved:
+        from ..executions import bundle as bundles
+
+        enriched = dict(resolved)
+        enriched["runner_images"] = bundles.runner_images(ctx.conn)
+        resolved = enriched
+    result = compatibility.check(ctx.conn, resolved)
+    if result["status"] == "ok":
+        return Verdict(True)
+    if result["status"] == "unverified" and compatibility.unverified_policy() == "continue":
+        return Verdict(True)
+    code, message = compatibility.refusal(result)
     return Verdict(False, message, code)
 
 

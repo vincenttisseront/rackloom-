@@ -42,7 +42,12 @@ environments:
     placement: {cluster_tags: {env: prod}, datastore_tags: {tier: standard}, network_role: app, folder: "{project}/{environment}"}
     tie_break: [rank, stable_id]
     naming: "{project_code}-prd-web-{nn}"
-    backup: {policy: daily-14d}           # vérification : F39
+    backup: {policy: daily-14d, max_age_hours: 36}   # vérification : F39
+restore_profile:
+  network_role: quarantine
+  naming: "{project_code}-{environment}-rst-{nn}"
+  backup: {policy: restore-verify, max_age_hours: 24}
+  # rattachement production : toujours interdit (F40)
 secret_refs: []
 health_checks:
   - {type: package_installed, package: nginx}

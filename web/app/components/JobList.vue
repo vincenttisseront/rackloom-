@@ -16,6 +16,9 @@ const ACTIVE = ['queued', 'leased', 'running']
         </span>
       </div>
       <p v-if="j.blocked_reason" class="field-error" data-testid="job-blocked-reason">{{ BLOCK_REASONS[j.blocked_reason] || j.blocked_reason }}</p>
+      <p v-if="j.state === 'queued' && j.wait_reason" class="small muted" data-testid="job-wait-reason">
+        En attente : {{ j.wait_reason_label || BLOCK_REASONS[j.wait_reason] || j.wait_reason }}
+      </p>
       <p v-if="j.cancel_requested_at" class="small">Annulation demandée le {{ dateTime(j.cancel_requested_at) }} (non garantie)</p>
       <ul class="small">
         <li v-for="s in j.steps" :key="s.seq">
