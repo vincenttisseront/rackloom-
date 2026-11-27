@@ -40,7 +40,9 @@ test('F06 — baux temporaires : renouvellement et signalement', async ({ page }
   expect(lease.status, JSON.stringify(lease.body)).toBe(200)
   expect(lease.body.state).toBe('active')
   expect(lease.body.expires_on).toBe(inDays(10))
+  const beforeExpires = lease.body.expires_on as string
 
+  // API : prolonger explicitement (plafond absolu depuis aujourd'hui).
   const renewed = await alice.call('POST', `/deployments/${deploymentId}/lease/renew`, {
     days: 14,
     reason: 'Renouvellement e2e F06',
@@ -57,8 +59,17 @@ test('F06 — baux temporaires : renouvellement et signalement', async ({ page }
   await expect(page.getByTestId('service-card')).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId('lease-panel')).toBeVisible()
   await expect(page.getByTestId('lease-renew')).toBeVisible()
+  // UI : prolonge depuis expires_on courant (+7 j.) — ne doit pas renvoyer not_extended.
   await press(page.getByTestId('lease-renew'))
   await expect(page.getByTestId('notice')).toContainText(/renouvelé/i, { timeout: 20_000 })
+  await expect(page.getByTestId('error')).toHaveCount(0)
+
+  const after = await alice.call('GET', `/deployments/${deploymentId}/lease`)
+  expect(after.status).toBe(200)
+  expect(after.body.expires_on > beforeExpires).toBe(true)
+  // UI ajoute 7 jours à la date courante du bail (après renew API à J+14 → J+21).
+  expect(after.body.expires_on).toBe(inDays(21))
+
   await expectAccessible(page, 'F06 bail fiche')
 
   await logout(page)

@@ -109,8 +109,17 @@ async function onRenewLease() {
   error.value = null
   notice.value = null
   try {
+    // Prolonge à partir de la date courante du bail (pas un plafond absolu depuis aujourd'hui),
+    // sinon un second renouvellement à N jours échoue en not_extended.
+    const current = deployment.value?.service_card?.lease?.expires_on as string | undefined
+    const base = current ? new Date(`${current}T00:00:00Z`) : new Date()
+    const today = new Date()
+    today.setUTCHours(0, 0, 0, 0)
+    const from = base.getTime() > today.getTime() ? base : today
+    from.setUTCDate(from.getUTCDate() + 7)
+    const expiresOn = from.toISOString().slice(0, 10)
     const res = await api.post(`/deployments/${route.params.id}/lease/renew`, {
-      days: 14,
+      expires_on: expiresOn,
       reason: 'Renouvellement depuis la fiche service',
     })
     notice.value = `Bail renouvelé jusqu'au ${res.expires_on}`
