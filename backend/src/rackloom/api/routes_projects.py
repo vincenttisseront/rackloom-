@@ -272,6 +272,28 @@ def create_patch_campaign(project: str, request: Request, body: dict[str, Any] =
         return idempotent(u, request, body, act)
 
 
+@router.get("/projects/{project}/software-inventory")
+def project_software_inventory(project: str, request: Request) -> dict[str, Any]:
+    """F20 : inventaire logiciel du projet (paquets × avis × fin de support)."""
+    from .. import software_inventory
+
+    with unit_of_work(request) as u:
+        return software_inventory.build_inventory(u.conn, u.p, project)
+
+
+@router.post("/projects/{project}/software-inventory/export")
+def export_software_inventory(project: str, request: Request) -> dict[str, Any]:
+    """F20 : export filtré au périmètre projet (hors périmètre → 404)."""
+    from .. import software_inventory
+
+    with unit_of_work(request, write=True) as u:
+
+        def act() -> dict[str, Any]:
+            return software_inventory.export_inventory(u.conn, u.p, project)
+
+        return idempotent(u, request, {"project": project}, act)
+
+
 @router.get("/projects/{project}/adoptions/candidates")
 def list_adoption_candidates(project: str, request: Request, environment: str = "dev") -> dict[str, Any]:
     """F08 : VM existantes octroyées (inventaire fictif), candidates à l'adoption."""

@@ -2565,6 +2565,85 @@
         ]
       }
     },
+    "/api/v1/admin/software-advisories": {
+      "get": {
+        "description": "F20 : imports hors ligne d'avis éditeur (USN / fin de support).",
+        "operationId": "list_software_advisories_api_v1_admin_software_advisories_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Software Advisories Api V1 Admin Software Advisories Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Software Advisories",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/software-advisories/import": {
+      "post": {
+        "description": "F20 : importe un flux d'avis hors ligne (fixture Ubuntu si corps vide / `fixture`).",
+        "operationId": "import_software_advisories_api_v1_admin_software_advisories_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Import Software Advisories Api V1 Admin Software Advisories Import Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Software Advisories",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
     "/api/v1/admin/templates": {
       "get": {
         "operationId": "list_templates_api_v1_admin_templates_get",
@@ -8486,6 +8565,96 @@
           }
         },
         "summary": "List Services",
+        "tags": [
+          "projets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/software-inventory": {
+      "get": {
+        "description": "F20 : inventaire logiciel du projet (paquets × avis × fin de support).",
+        "operationId": "project_software_inventory_api_v1_projects__project__software_inventory_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Software Inventory Api V1 Projects  Project  Software Inventory Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Project Software Inventory",
+        "tags": [
+          "projets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/software-inventory/export": {
+      "post": {
+        "description": "F20 : export filtré au périmètre projet (hors périmètre → 404).",
+        "operationId": "export_software_inventory_api_v1_projects__project__software_inventory_export_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Export Software Inventory Api V1 Projects  Project  Software Inventory Export Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Software Inventory",
         "tags": [
           "projets"
         ]

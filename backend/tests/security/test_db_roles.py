@@ -73,6 +73,10 @@ ALLOWED = {
         "SELECT probe_health FROM probe_results",
         "SELECT state FROM patch_campaigns",
         "SELECT wave_index FROM patch_campaign_hosts",
+        "SELECT content_digest FROM software_advisory_imports",
+        "SELECT advisory_id FROM software_advisories",
+        "SELECT end_of_support FROM software_eol_products",
+        "SELECT content_digest FROM software_inventory_exports",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -136,6 +140,10 @@ ALLOWED = {
         "SELECT probe_health FROM probe_results",
         "SELECT state FROM patch_campaigns",
         "SELECT wave_index FROM patch_campaign_hosts",
+        "SELECT content_digest FROM software_advisory_imports",
+        "SELECT advisory_id FROM software_advisories",
+        "SELECT end_of_support FROM software_eol_products",
+        "SELECT content_digest FROM software_inventory_exports",
     ],
 }
 

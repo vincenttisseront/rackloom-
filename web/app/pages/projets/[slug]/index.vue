@@ -13,12 +13,22 @@ const prefBusy = ref(false)
 const prefNotice = ref<string | null>(null)
 const consumption = ref<any | null>(null)
 const patchCampaigns = ref<any[]>([])
+const softwareInventory = ref<any | null>(null)
+const softwareExportBusy = ref(false)
+const softwareExportNotice = ref<string | null>(null)
 const error = ref<string | null>(null)
 
 const KIND_LABEL: Record<string, string> = {
   allocation: 'Allocation',
   measurement: 'Mesure',
   estimation: 'Estimation',
+}
+
+const ADVISORY_LABEL: Record<string, string> = {
+  not_affected: 'Non affecté (correctif distribution)',
+  vulnerable: 'Vulnérable',
+  unfixed: 'Sans correctif distribution',
+  uncertain: 'Incertain',
 }
 
 const canPublishPrefs = computed(() => {
@@ -46,6 +56,11 @@ onMounted(async () => {
       patchCampaigns.value = []
     }
     try {
+      softwareInventory.value = await api.get(`/projects/${slug.value}/software-inventory`)
+    } catch {
+      softwareInventory.value = null
+    }
+    try {
       preferences.value = await api.get(`/projects/${slug.value}/preferences`)
       const cur = preferences.value?.current?.preferences || {}
       if (cur.default_size_tier) prefForm.value.default_size_tier = cur.default_size_tier
@@ -57,6 +72,21 @@ onMounted(async () => {
     error.value = errorText(e)
   }
 })
+
+async function exportSoftwareInventory() {
+  softwareExportBusy.value = true
+  softwareExportNotice.value = null
+  error.value = null
+  try {
+    const result = await api.post(`/projects/${slug.value}/software-inventory/export`, {})
+    softwareInventory.value = result.inventory
+    softwareExportNotice.value = `Export ${result.export_id.slice(0, 8)}… · empreinte ${result.content_digest.slice(0, 12)}…`
+  } catch (e) {
+    error.value = errorText(e)
+  } finally {
+    softwareExportBusy.value = false
+  }
+}
 
 async function publishPreferences() {
   prefBusy.value = true
@@ -252,6 +282,68 @@ function envChanged(updated: any) {
           </tr>
         </tbody>
       </table>
+    </section>
+
+    <section
+      v-if="softwareInventory"
+      class="card"
+      aria-labelledby="software-title"
+      data-testid="software-inventory-panel"
+    >
+      <h2 id="software-title">Inventaire logiciel</h2>
+      <p class="small muted">{{ softwareInventory.notice }}</p>
+      <p class="small" data-testid="software-summary">
+        {{ softwareInventory.summary.host_count }} machine(s) ·
+        {{ softwareInventory.summary.package_count }} paquet(s) ·
+        {{ softwareInventory.summary.finding_count }} signalement(s)
+        <span v-if="!softwareInventory.summary.feed_imported" class="badge warn">avis non importés</span>
+      </p>
+      <p v-if="softwareExportNotice" class="banner ok" role="status" data-testid="software-export-notice">
+        {{ softwareExportNotice }}
+      </p>
+      <div class="actions">
+        <button
+          type="button"
+          class="primary"
+          :disabled="softwareExportBusy"
+          data-testid="software-export"
+          @click="exportSoftwareInventory"
+        >Exporter (périmètre projet)</button>
+      </div>
+      <table v-if="softwareInventory.findings.length">
+        <thead>
+          <tr>
+            <th scope="col">Machine</th>
+            <th scope="col">Paquet</th>
+            <th scope="col">État</th>
+            <th scope="col">Avis</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="f in softwareInventory.findings"
+            :key="`${f.host_id}-${f.package}-${f.advisory_id}`"
+            :data-testid="`software-finding-${f.package}`"
+          >
+            <td>{{ f.host_name }}</td>
+            <td>{{ f.package }} {{ f.version || '—' }}</td>
+            <td>
+              <span class="badge" :class="f.status === 'vulnerable' ? 'bad' : 'warn'">
+                {{ ADVISORY_LABEL[f.status] || f.status }}
+              </span>
+              <span v-if="f.naive_upstream_would_flag" class="small muted">
+                (amont seule aurait faussement signalé)
+              </span>
+            </td>
+            <td class="small">{{ f.advisory_id }} · {{ f.reason }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="empty">Aucun signalement (ou pas encore d'observations / d'avis).</p>
+      <p class="small muted" data-testid="software-provenance">
+        Provenance : comparaison sur la version de distribution ;
+        jamais sur la seule version amont.
+      </p>
     </section>
 
     <section class="card" aria-labelledby="deps-title">
