@@ -87,11 +87,13 @@ services:
       - >-
         rackloom keys init --dir /keys/worker
         && cp /keys/worker/artifact-b.key /keys/worker/secrets-box.pub /keys/api/
+        && cp /keys/worker/offline-bundle-sign.key /keys/worker/offline-bundle-sign.pub /keys/api/
         && chown -R 10001:10001 /keys/worker /keys/api /keys/lab
-        && chmod 0600 /keys/api/artifact-b.key
+        && chmod 0600 /keys/api/artifact-b.key /keys/api/offline-bundle-sign.key
+        && chmod 0644 /keys/api/offline-bundle-sign.pub
         && chmod 0755 /keys/lab
-        && chown 10001:10001 /vol/workspaces /vol/artifacts /vol/audit-export
-        && chmod 0770 /vol/workspaces /vol/artifacts /vol/audit-export
+        && chown 10001:10001 /vol/workspaces /vol/artifacts /vol/audit-export /vol/offline-bundles
+        && chmod 0770 /vol/workspaces /vol/artifacts /vol/audit-export /vol/offline-bundles
     volumes:
       - keys-worker:/keys/worker
       - keys-api:/keys/api
@@ -99,6 +101,7 @@ services:
       - workspaces:/vol/workspaces
       - artifacts:/vol/artifacts
       - audit-export:/vol/audit-export
+      - offline-bundles:/vol/offline-bundles
 
   api:
     <<: *hardened
@@ -114,6 +117,8 @@ services:
       - artifacts:/var/lib/rackloom/artifacts:ro
       # F44 : copie d'audit locale (API en lecture seule ailleurs ; volume dédié écriture).
       - audit-export:/var/lib/rackloom/audit-export
+      # F17 : lots hors ligne inspectés / à importer (volume dédié, API en lecture seule ailleurs).
+      - offline-bundles:/var/lib/rackloom/offline-bundles
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3).status != 200)"]
       interval: 3s
@@ -184,6 +189,7 @@ volumes:
   keys-api: {name: rackloom_keys_api}
   artifacts: {name: rackloom_artifacts}
   audit-export: {name: rackloom_audit_export}
+  offline-bundles: {name: rackloom_offline_bundles}
   workspaces: {name: rackloom_workspaces}
   tfstate: {name: rackloom_tfstate}
   demo-infra: {name: rackloom_demo_infra}

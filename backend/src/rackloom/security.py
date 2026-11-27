@@ -61,11 +61,16 @@ KEY_FILES = {
     "artifact-b": "artifact-b.key",  # rapports téléchargeables : worker écrit, api lit
     "secrets-box-private": "secrets-box.key",  # worker seul
     "secrets-box-public": "secrets-box.pub",  # api (scelle sans pouvoir lire)
+    # F17 : signature des lots hors ligne (Ed25519). Copiée vers keys-api pour build/inspect.
+    "offline-bundle-sign": "offline-bundle-sign.key",
+    "offline-bundle-sign-public": "offline-bundle-sign.pub",
 }
 
 
 def generate_keys(directory: Path) -> list[Path]:
     """Crée les clés manquantes (0600). Ne remplace jamais une clé existante."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
     directory.mkdir(parents=True, exist_ok=True)
     created = []
     for name in ("artifact-a", "artifact-b"):
@@ -77,12 +82,31 @@ def generate_keys(directory: Path) -> list[Path]:
     pub_path = directory / KEY_FILES["secrets-box-public"]
     if not priv_path.exists():
         private = X25519PrivateKey.generate()
-        _write_secret_file(priv_path, private.private_bytes(
-            serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()))
-        pub_path.write_bytes(private.public_key().public_bytes(
-            serialization.Encoding.Raw, serialization.PublicFormat.Raw))
+        _write_secret_file(
+            priv_path,
+            private.private_bytes(
+                serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()
+            ),
+        )
+        pub_path.write_bytes(
+            private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        )
         os.chmod(pub_path, 0o644)
         created += [priv_path, pub_path]
+    # F17 : paire Ed25519 pour lots hors ligne (ne remplace jamais).
+    ob_priv = directory / KEY_FILES["offline-bundle-sign"]
+    ob_pub = directory / KEY_FILES["offline-bundle-sign-public"]
+    if not ob_priv.exists():
+        ed = Ed25519PrivateKey.generate()
+        _write_secret_file(ob_priv, ed.private_bytes_raw())
+        ob_pub.write_bytes(ed.public_key().public_bytes_raw())
+        os.chmod(ob_pub, 0o644)
+        created += [ob_priv, ob_pub]
+    elif not ob_pub.exists():
+        ed = Ed25519PrivateKey.from_private_bytes(ob_priv.read_bytes())
+        ob_pub.write_bytes(ed.public_key().public_bytes_raw())
+        os.chmod(ob_pub, 0o644)
+        created.append(ob_pub)
     return created
 
 
@@ -102,6 +126,7 @@ def load_key(directory: Path, name: str) -> bytes:
 
 # --- Artefacts (AES-256-GCM) ------------------------------------------------------------
 
+
 def encrypt_artifact(key: bytes, key_class: str, plaintext: bytes, aad: bytes) -> bytes:
     nonce = os.urandom(12)
     return ARTIFACT_MAGIC + key_class.encode() + nonce + AESGCM(key).encrypt(nonce, plaintext, aad)
@@ -115,6 +140,7 @@ def decrypt_artifact(key: bytes, blob: bytes, aad: bytes) -> bytes:
 
 
 # --- Boîte scellée (X25519 + HKDF + ChaCha20-Poly1305) -----------------------------------
+
 
 def key_id_for(public_raw: bytes) -> str:
     return hashlib.sha256(public_raw).hexdigest()[:16]

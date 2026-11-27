@@ -40,24 +40,44 @@ TRUST_LABEL_DEMO = "clé de démo F17 (sites déconnectés)"
 
 
 def _bundles_dir() -> Path:
+    """Stockage des lots inspectés. Volume dédié en Compose (API read_only ailleurs)."""
     path = get_settings().data_dir / "offline-bundles"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def _signing_keys_dir() -> Path:
-    """Clés de signature hors base. Préfère keys_dir ; repli data_dir (tests / seed)."""
-    preferred = get_settings().keys_dir
     try:
-        preferred.mkdir(parents=True, exist_ok=True)
-        probe = preferred / ".rackloom-write-probe"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    except OSError as exc:
+        raise ApiError(
+            500,
+            "bundle_storage_unavailable",
+            "stockage des lots hors ligne indisponible (volume offline-bundles)",
+        ) from exc
+
+
+def _dir_writable(directory: Path) -> bool:
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        probe = directory / ".rackloom-write-probe"
         probe.write_bytes(b"ok")
         probe.unlink(missing_ok=True)
-        return preferred
+        return True
     except OSError:
-        fallback = get_settings().data_dir / "offline-bundle-keys"
-        fallback.mkdir(parents=True, exist_ok=True)
+        return False
+
+
+def _signing_keys_dir(*, create: bool = False) -> Path | None:
+    """Répertoire des clés F17. Sur l'API (keys :ro) : lecture seule ; création via `keys init`."""
+    preferred = get_settings().keys_dir
+    if (preferred / SIGN_KEY_FILE).exists() or (preferred / f"{SIGN_KEY_NAME}.pub").exists():
+        return preferred
+    if create and _dir_writable(preferred):
+        return preferred
+    # Tests locaux : data_dir est souvent le seul volume writable.
+    fallback = get_settings().data_dir / "offline-bundle-keys"
+    if (fallback / SIGN_KEY_FILE).exists() or (fallback / f"{SIGN_KEY_NAME}.pub").exists():
         return fallback
+    if create and _dir_writable(fallback):
+        return fallback
+    return preferred if preferred.exists() else None
 
 
 def _parse_semver(value: str) -> tuple[int, int, int]:
@@ -79,10 +99,34 @@ def key_id_for(public_raw: bytes) -> str:
     return hashlib.sha256(public_raw).hexdigest()[:16]
 
 
+def load_signing_public(keys_dir: Path | None = None) -> bytes | None:
+    """Lit la clé publique F17 depuis le volume de clés (sans écrire)."""
+    directory = keys_dir or _signing_keys_dir(create=False)
+    if directory is None:
+        return None
+    pub_path = directory / f"{SIGN_KEY_NAME}.pub"
+    if pub_path.exists():
+        data = pub_path.read_bytes()
+        return data if len(data) == 32 else None
+    priv_path = directory / SIGN_KEY_FILE
+    if priv_path.exists():
+        private = Ed25519PrivateKey.from_private_bytes(priv_path.read_bytes())
+        return private.public_key().public_bytes_raw()
+    return None
+
+
 def ensure_signing_keypair(keys_dir: Path | None = None) -> tuple[bytes, bytes]:
-    """Crée la paire Ed25519 de labo si absente. Ne remplace jamais une clé existante."""
-    directory = keys_dir or _signing_keys_dir()
-    directory.mkdir(parents=True, exist_ok=True)
+    """Charge ou crée la paire Ed25519. Ne remplace jamais une clé existante.
+
+    Sur l'API (volume keys en lecture seule) : la paire doit déjà exister (`keys init`).
+    """
+    directory = keys_dir or _signing_keys_dir(create=True)
+    if directory is None:
+        raise ApiError(
+            500,
+            "signing_key_missing",
+            "clé de signature offline-bundle absente ; exécuter rackloom keys init",
+        )
     priv_path = directory / SIGN_KEY_FILE
     pub_path = directory / f"{SIGN_KEY_NAME}.pub"
     if priv_path.exists():
@@ -91,10 +135,13 @@ def ensure_signing_keypair(keys_dir: Path | None = None) -> tuple[bytes, bytes]:
             raise ApiError(500, "signing_key_invalid", "clé de signature offline-bundle invalide")
         private = Ed25519PrivateKey.from_private_bytes(private_raw)
         public_raw = private.public_key().public_bytes_raw()
-        if not pub_path.exists():
-            pub_path.write_bytes(public_raw)
-            os.chmod(pub_path, 0o644)
         return private_raw, public_raw
+    if not _dir_writable(directory):
+        raise ApiError(
+            500,
+            "signing_key_missing",
+            "clé de signature offline-bundle absente sur volume en lecture seule",
+        )
     private = Ed25519PrivateKey.generate()
     private_raw = private.private_bytes_raw()
     public_raw = private.public_key().public_bytes_raw()
@@ -107,9 +154,16 @@ def ensure_signing_keypair(keys_dir: Path | None = None) -> tuple[bytes, bytes]:
 
 
 def ensure_trust_key(conn: Conn, *, public_raw: bytes | None = None, label: str = TRUST_LABEL_DEMO) -> dict[str, Any]:
-    """Enregistre la clé publique de confiance (démo) si absente."""
+    """Enregistre la clé publique de confiance (démo) si absente. N'écrit pas sur un FS en lecture seule."""
     if public_raw is None:
-        _, public_raw = ensure_signing_keypair()
+        public_raw = load_signing_public()
+        if public_raw is None:
+            # Tests / labo natif : crée la paire si le volume est writable.
+            try:
+                _, public_raw = ensure_signing_keypair()
+            except ApiError:
+                # Aucune clé disque : amorce une confiance éphémère (inspect/import de lots pré-signés).
+                public_raw = Ed25519PrivateKey.generate().public_key().public_bytes_raw()
     kid = key_id_for(public_raw)
     row = conn.execute("SELECT * FROM offline_bundle_trust_keys WHERE key_id = %s", (kid,)).fetchone()
     if row:
@@ -125,12 +179,16 @@ def ensure_trust_key(conn: Conn, *, public_raw: bytes | None = None, label: str 
 
 
 def ensure_seeded(conn: Conn) -> None:
-    """Amorce la clé de confiance de démo. Aucun bundle pré-importé (site déconnecté = import explicite)."""
+    """Amorce la clé de confiance depuis keys_dir (sans écrire de clé privée)."""
     if not conn.execute(
         "SELECT 1 FROM information_schema.tables WHERE table_name = 'offline_bundle_trust_keys'"
     ).fetchone():
         return
-    ensure_trust_key(conn)
+    public_raw = load_signing_public()
+    if public_raw is None:
+        # Volume keys non monté (tests unitaires sans init) : pas bloquant pour le seed.
+        return
+    ensure_trust_key(conn, public_raw=public_raw)
 
 
 def _signing_payload(manifest_body: dict[str, Any]) -> bytes:
