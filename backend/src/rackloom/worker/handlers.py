@@ -110,11 +110,7 @@ def _admit(r: JobContext, conn: Conn, ctx: dict[str, Any], recompute=None, stage
                 (refusal["code"],),
             )
             admission.release_stack(conn, r.job)
-            label = (
-                "Admission (envois suspendus)"
-                if stage == "start"
-                else "Contrôle avant envoi (envois suspendus)"
-            )
+            label = "Admission (envois suspendus)" if stage == "start" else "Contrôle avant envoi (envois suspendus)"
             r.step(conn, label, "failed", summary={"rule": refusal["id"], "reason": refusal["reason"]})
             r.event(
                 conn,
@@ -1304,7 +1300,11 @@ def evaluate_checks(
 
 
 def service_status(host_results: list[dict[str, Any]]) -> tuple[str, str]:
-    """État du service calculé par le serveur, distinct du succès des jobs (docs/architecture.md §8)."""
+    """État du service calculé par le serveur, distinct du succès des jobs (docs/architecture.md §8).
+
+    F18 : si le service OS est actif et seule la sonde échoue depuis le segment prévu →
+    `unavailable` (indisponible), pas seulement « créé, pas prêt ».
+    """
     if not host_results:
         return "failed", "aucune ressource attendue n'a été créée"
     incomplete = [h for h in host_results if h["state"] == "incomplete"]
@@ -1316,7 +1316,18 @@ def service_status(host_results: list[dict[str, Any]]) -> tuple[str, str]:
             f" : {blocked[0]['reason']}" if blocked else ""
         )
     if failing:
-        # La sonde HTTP est le symptôme visible par l'utilisateur : elle mène la raison affichée.
+        from .. import probes as probes_mod
+
+        # Recette F18 : systemd/processus actif + sonde KO → unavailable.
+        probe_only_active = []
+        for h in failing:
+            checks = h.get("checks") or []
+            failed = [c for c in checks if not c.get("ok")]
+            if failed and all(c.get("type") == "http_probe" for c in failed):
+                if probes_mod.service_state_from_checks(checks) == "active":
+                    probe_only_active.append(h)
+        if probe_only_active and len(probe_only_active) == len(failing):
+            return "unavailable", "service actif, sonde en échec depuis le segment prévu"
         failed = sorted(
             (c for h in failing for c in h["checks"] if not c["ok"]), key=lambda c: c["type"] != "http_probe"
         )
@@ -1511,11 +1522,42 @@ def handle_verify(r: JobContext) -> None:
                         member_checks = m.get("health_checks") or m.get("readiness") or member_checks
                         break
             results = evaluate_checks(member_checks, report, probes.get(h["name"]), at)
+            # F18 : segment filtrant → la sonde échoue même si le runner a obtenu un 200.
+            from .. import probes as probes_mod
+
+            probe = probes.get(h["name"])
+            recorded = probes_mod.record_from_verify(
+                conn,
+                dep=dep,
+                host=h,
+                checks=results,
+                raw_probe=probe,
+                health_checks=member_checks,
+                job_id=r.job["id"],
+            )
+            if recorded is not None and recorded["probe_health"] in ("failed", "error"):
+                for entry in results:
+                    if entry.get("type") == "http_probe":
+                        entry["ok"] = False
+                        entry["failure"] = CHECK_FAILURES["http_probe"]
+                        evidence = recorded.get("evidence") or {}
+                        if evidence.get("error") == "segment_filtered":
+                            entry["evidence"] = "sonde : segment filtrant"
+                        elif not entry.get("evidence") or entry["evidence"].startswith("HTTP"):
+                            entry["evidence"] = f"sonde : {evidence.get('error', 'échec')}"
             ok = all(x["ok"] for x in results)
             _observe_report(r, conn, h, report, results)
-            probe = probes.get(h["name"])
-            if probe is not None:
-                hosts.observe(conn, h, "probe", probe, "ok" if probe.get("ok") else "error", "probe", r.job["id"])
+            if probe is not None or recorded is not None:
+                payload = (recorded or {}).get("evidence") or probe or {}
+                hosts.observe(
+                    conn,
+                    h,
+                    "probe",
+                    payload,
+                    "ok" if (recorded and recorded["probe_health"] == "ok") or (probe or {}).get("ok") else "error",
+                    "probe",
+                    r.job["id"],
+                )
             conn.execute(
                 "UPDATE hosts SET deployment_state = %s WHERE id = %s", ("verified" if ok else "verify_failed", h["id"])
             )

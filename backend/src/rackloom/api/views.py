@@ -20,6 +20,7 @@ SERVICE_STATUS = {
     "created_not_ready": "Créé, pas prêt",
     "failed": "Échec",
     "verification_unavailable": "Vérification indisponible",
+    "unavailable": "Indisponible",
 }
 
 

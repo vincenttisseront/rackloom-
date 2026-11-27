@@ -740,6 +740,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/probe-segments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Probe Segments
+         * @description F18 : segments réseau depuis lesquels les sondes sont autorisées.
+         */
+        get: operations["list_probe_segments_api_v1_admin_probe_segments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/restore-exercises": {
         parameters: {
             query?: never;
@@ -1978,6 +1998,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/deployments/{deployment_id}/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Availability
+         * @description F18 : disponibilité — état du service, santé de la sonde et fraîcheur distincts.
+         */
+        get: operations["get_availability_api_v1_deployments__deployment_id__availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/deployments/{deployment_id}/changes": {
         parameters: {
             query?: never;
@@ -2109,6 +2149,26 @@ export interface paths {
         get: operations["get_deployment_outputs_api_v1_deployments__deployment_id__outputs_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/deployments/{deployment_id}/probes/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Deployment Probe
+         * @description F18 : lance une sonde depuis le segment prévu (aucune écriture fournisseur).
+         */
+        post: operations["run_deployment_probe_api_v1_deployments__deployment_id__probes_run_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4689,6 +4749,28 @@ export interface operations {
             };
         };
     };
+    list_probe_segments_api_v1_admin_probe_segments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+    };
     list_restore_exercises_api_v1_admin_restore_exercises_get: {
         parameters: {
             query?: {
@@ -7139,6 +7221,39 @@ export interface operations {
             };
         };
     };
+    get_availability_api_v1_deployments__deployment_id__availability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     modify_deployment_api_v1_deployments__deployment_id__changes_post: {
         parameters: {
             query?: never;
@@ -7365,6 +7480,45 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_deployment_probe_api_v1_deployments__deployment_id__probes_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -231,6 +231,44 @@ def get_deployment_outputs(deployment_id: UUID, request: Request) -> dict[str, A
         return deployment_outputs.latest(u.conn, u.p, deployment_id)
 
 
+@router.get("/deployments/{deployment_id}/availability")
+def get_availability(deployment_id: UUID, request: Request) -> dict[str, Any]:
+    """F18 : disponibilité — état du service, santé de la sonde et fraîcheur distincts."""
+    from .. import probes
+
+    with unit_of_work(request) as u:
+        # get_deployment applique le périmètre (404 hors projet).
+        service.get_deployment(u.conn, u.p, deployment_id)
+        return probes.availability_report(u.conn, u.p, deployment_id)
+
+
+@router.post("/deployments/{deployment_id}/probes/run")
+def run_deployment_probe(
+    deployment_id: UUID, request: Request, body: dict[str, Any] = Body(default={})
+) -> dict[str, Any]:
+    """F18 : lance une sonde depuis le segment prévu (aucune écriture fournisseur)."""
+    from .. import probes
+
+    with unit_of_work(request, write=True) as u:
+        dep = service.get_deployment(u.conn, u.p, deployment_id)
+        _only(body, {"segment", "force_probe_ok", "service_state"})
+        force_ok = body.get("force_probe_ok")
+        if force_ok is not None and not isinstance(force_ok, bool):
+            raise ApiError(422, "invalid_request", "force_probe_ok doit être un booléen")
+        service_state = body.get("service_state")
+        if service_state is not None and service_state not in ("active", "inactive", "unknown"):
+            raise ApiError(422, "invalid_request", "service_state invalide")
+        return probes.run_check(
+            u.conn,
+            dep=dep,
+            actor_type="user",
+            actor_id=str(u.p.user_id),
+            force_segment=body.get("segment"),
+            force_probe_ok=force_ok,
+            service_state_override=service_state,
+        )
+
+
 @router.get("/deployments/{deployment_id}/drift")
 def get_drift(deployment_id: UUID, request: Request) -> dict[str, Any]:
     """F09 : dernier scan de dérive (lecture seule, aucune correction)."""

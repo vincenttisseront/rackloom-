@@ -1034,6 +1034,7 @@ def platform_status(request: Request) -> dict[str, Any]:
         alive = [w for w in workers if w["heartbeat_at"] > datetime.now(UTC) - timedelta(seconds=60)]
         queue = u.conn.execute("SELECT state, count(*) AS n FROM jobs GROUP BY state").fetchall()
         assistant = u.conn.execute("SELECT value FROM platform_settings WHERE key = 'assistant'").fetchone()
+        from .. import probes
         from .. import runners as site_runners
 
         site_runners.ensure_zones(u.conn)
@@ -1068,6 +1069,7 @@ def platform_status(request: Request) -> dict[str, Any]:
                 }
                 for r in runners_rows
             ],
+            "probe_segments": probes.segments_view(u.conn),
             "dispatch": recovery.status(u.conn),
             "restore_exercise": (
                 {
@@ -1080,6 +1082,16 @@ def platform_status(request: Request) -> dict[str, Any]:
                 else None
             ),
         }
+
+
+@router.get("/admin/probe-segments")
+def list_probe_segments(request: Request) -> list[dict[str, Any]]:
+    """F18 : segments réseau depuis lesquels les sondes sont autorisées."""
+    from .. import probes
+
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        return probes.segments_view(u.conn)
 
 
 health = APIRouter(tags=["santé"])

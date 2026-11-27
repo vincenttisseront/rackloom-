@@ -68,6 +68,9 @@ ALLOWED = {
         "SELECT outcome FROM offline_bundle_imports",
         "SELECT status FROM restore_exercises",
         "SELECT amount_minor FROM pricing_rates",
+        "SELECT slug FROM probe_segments",
+        "SELECT target_pct FROM availability_objectives",
+        "SELECT probe_health FROM probe_results",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -126,6 +129,9 @@ ALLOWED = {
         "SELECT outcome FROM offline_bundle_imports",
         "SELECT status FROM restore_exercises",
         "SELECT amount_minor FROM pricing_rates",
+        "SELECT slug FROM probe_segments",
+        "SELECT target_pct FROM availability_objectives",
+        "SELECT probe_health FROM probe_results",
     ],
 }
 

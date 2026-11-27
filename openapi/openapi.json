@@ -2188,6 +2188,33 @@
         ]
       }
     },
+    "/api/v1/admin/probe-segments": {
+      "get": {
+        "description": "F18 : segments réseau depuis lesquels les sondes sont autorisées.",
+        "operationId": "list_probe_segments_api_v1_admin_probe_segments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Probe Segments Api V1 Admin Probe Segments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Probe Segments",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
     "/api/v1/admin/restore-exercises": {
       "get": {
         "description": "F26 : historiques des exercices de restauration isolés.",
@@ -5701,6 +5728,52 @@
         ]
       }
     },
+    "/api/v1/deployments/{deployment_id}/availability": {
+      "get": {
+        "description": "F18 : disponibilité — état du service, santé de la sonde et fraîcheur distincts.",
+        "operationId": "get_availability_api_v1_deployments__deployment_id__availability_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Availability Api V1 Deployments  Deployment Id  Availability Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Availability",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
     "/api/v1/deployments/{deployment_id}/changes": {
       "post": {
         "operationId": "modify_deployment_api_v1_deployments__deployment_id__changes_post",
@@ -6053,6 +6126,64 @@
           }
         },
         "summary": "Get Deployment Outputs",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/deployments/{deployment_id}/probes/run": {
+      "post": {
+        "description": "F18 : lance une sonde depuis le segment prévu (aucune écriture fournisseur).",
+        "operationId": "run_deployment_probe_api_v1_deployments__deployment_id__probes_run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deployment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Deployment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "default": {},
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Run Deployment Probe Api V1 Deployments  Deployment Id  Probes Run Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Deployment Probe",
         "tags": [
           "ressources"
         ]
