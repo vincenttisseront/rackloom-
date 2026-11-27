@@ -14,7 +14,7 @@ ALTER TABLE jobs DROP CONSTRAINT IF EXISTS jobs_kind_check;
 ALTER TABLE jobs ADD CONSTRAINT jobs_kind_check
     CHECK (kind IN ('inventory_refresh', 'preflight', 'tf_plan', 'tf_apply', 'tf_state_read',
                     'guest_ready', 'ansible_configure', 'verify', 'reconcile', 'drift_scan',
-                    'vm_restore', 'service_restart', 'tf_import'));
+                    'vm_restore', 'service_restart', 'lease_retire', 'tf_import'));
 
 -- Revendications de propriété Terraform (Rackloom ou externe) sur une VM.
 -- Une seule revendication active par vm_stable_id : sert à détecter la gestion concurrente.

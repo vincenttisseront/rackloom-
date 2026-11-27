@@ -56,7 +56,7 @@ ALLOWED = {
         "SELECT outcome FROM image_build_tests",
         "SELECT environment_kind FROM image_build_promotions",
         "SELECT state FROM vm_adoptions",
-        "SELECT kind FROM adoption_observations",
+        "SELECT status FROM adoption_observations",
         "SELECT state_id FROM terraform_resource_claims",
     ],
     "rackloom_worker": [
@@ -104,7 +104,7 @@ ALLOWED = {
         "SELECT outcome FROM image_build_tests",
         "SELECT environment_kind FROM image_build_promotions",
         "SELECT state FROM vm_adoptions",
-        "SELECT kind FROM adoption_observations",
+        "SELECT status FROM adoption_observations",
         "SELECT state_id FROM terraform_resource_claims",
     ],
 }
