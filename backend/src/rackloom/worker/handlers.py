@@ -1961,6 +1961,60 @@ def handle_lease_retire(r: JobContext) -> None:
         )
 
 
+def handle_tf_import(r: JobContext) -> None:
+    """F08 : import Terraform d'adoption — simulé, aucune écriture vSphere réelle."""
+    with r.tx() as conn:
+        ctx = _load(conn, r.job)
+        payload = r.job.get("payload") or {}
+        adoption_id = payload.get("adoption_id")
+        if adoption_id:
+            adoption = conn.execute(
+                "SELECT * FROM vm_adoptions WHERE id = %s", (UUID(str(adoption_id)),)
+            ).fetchone()
+            if adoption is not None:
+                ctx["env"] = conn.execute(
+                    "SELECT * FROM environments WHERE id = %s", (adoption["environment_id"],)
+                ).fetchone()
+        _admit(r, conn, ctx)
+        r.step(
+            conn,
+            "Import Terraform (simulé)",
+            "succeeded",
+            simulated=True,
+            summary={
+                "adoption_id": payload.get("adoption_id"),
+                "vm_stable_id": payload.get("vm_stable_id"),
+                "simulated": True,
+                "notice": "Aucun import réel : revendication locale seulement (D2).",
+            },
+            source="terraform",
+        )
+        r.fenced(
+            conn,
+            "state = 'succeeded', finished_at = now(), result = %s",
+            (
+                Jsonb(
+                    {
+                        "simulated": True,
+                        "adoption_id": payload.get("adoption_id"),
+                        "vm_stable_id": payload.get("vm_stable_id"),
+                        "proposal_sha256": payload.get("proposal_sha256"),
+                    }
+                ),
+            ),
+        )
+        r.event(
+            conn,
+            "adoption.import_job_done",
+            {
+                "message": "Job d'import d'adoption terminé (simulé)",
+                "adoption_id": payload.get("adoption_id"),
+                "simulated": True,
+            },
+            source="terraform",
+        )
+
+
 HANDLERS = {
     "preflight": handle_preflight,
     "tf_plan": handle_tf_plan,
@@ -1973,6 +2027,7 @@ HANDLERS = {
     "vm_restore": handle_vm_restore,
     "service_restart": handle_service_restart,
     "lease_retire": handle_lease_retire,
+    "tf_import": handle_tf_import,
 }
 
 

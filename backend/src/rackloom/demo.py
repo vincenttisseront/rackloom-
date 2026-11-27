@@ -139,13 +139,23 @@ def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
                 "SELECT * FROM users WHERE id = %s", (minted["user_id"],)
             ).fetchone()
 
-    from . import access, compatibility, factory
+    from . import access, adoption, compatibility, factory
 
     compatibility.ensure_seeded(conn)
     # F59 : correspondances niveau d'accès → groupe IdP (faux IdP local).
     access.ensure_demo_mappings(conn, published_by=users["admin"]["id"])
     # F07 : image labo prête (fabrique fictive) alignée sur le filtre ubuntu-web.
     factory.ensure_seeded(conn)
+    # F08 : revendication externe fictive sur vm-9002 (conflit d'adoption).
+    if conn.execute(
+        "SELECT 1 FROM information_schema.tables WHERE table_name = 'terraform_resource_claims'"
+    ).fetchone():
+        adoption.seed_external_claim(
+            conn,
+            vm_stable_id="vm-9002",
+            state_id="ext-state-demo",
+            note="State Terraform externe fictif (F08)",
+        )
 
     audit.record(conn, actor_type="system", actor_id="demo-seed", action="demo.seed", outcome="ok",
                  targets={"projects": sorted(projs), "users": len(users)},

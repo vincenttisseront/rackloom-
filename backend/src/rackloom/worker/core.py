@@ -115,6 +115,7 @@ class JobContext:
             "tf_plan": "terraform",
             "tf_apply": "terraform",
             "tf_state_read": "terraform",
+            "tf_import": "terraform",
             "guest_ready": "vcenter",
             "ansible_configure": "ansible",
             "verify": "verification",

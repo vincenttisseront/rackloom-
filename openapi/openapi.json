@@ -2302,6 +2302,282 @@
         ]
       }
     },
+    "/api/v1/adoptions/{adoption_id}": {
+      "get": {
+        "description": "F08 : détail d'une adoption (observation fictive, proposition, état).",
+        "operationId": "get_adoption_api_v1_adoptions__adoption_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "adoption_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Adoption Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Adoption Api V1 Adoptions  Adoption Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Adoption",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/adoptions/{adoption_id}/approve": {
+      "post": {
+        "description": "F08 : approuve la proposition figée (empreinte).",
+        "operationId": "approve_adoption_import_api_v1_adoptions__adoption_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "adoption_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Adoption Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Approve Adoption Import Api V1 Adoptions  Adoption Id  Approve Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Adoption Import",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/adoptions/{adoption_id}/import": {
+      "post": {
+        "description": "F08 : exécute l'import simulé ; conflit de propriété → 409.",
+        "operationId": "execute_adoption_import_api_v1_adoptions__adoption_id__import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "adoption_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Adoption Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Execute Adoption Import Api V1 Adoptions  Adoption Id  Import Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Execute Adoption Import",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/adoptions/{adoption_id}/observe": {
+      "post": {
+        "description": "F08 : rafraîchit l'observation fictive (lecture seule).",
+        "operationId": "observe_adoption_api_v1_adoptions__adoption_id__observe_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "adoption_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Adoption Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Observe Adoption Api V1 Adoptions  Adoption Id  Observe Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Observe Adoption",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/adoptions/{adoption_id}/preview": {
+      "post": {
+        "description": "F08 : aperçu d'import Terraform — ne modifie pas la VM.",
+        "operationId": "preview_adoption_import_api_v1_adoptions__adoption_id__preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "adoption_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Adoption Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Preview Adoption Import Api V1 Adoptions  Adoption Id  Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Adoption Import",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
+    "/api/v1/adoptions/{adoption_id}/propose-import": {
+      "post": {
+        "description": "F08 : enregistre la proposition d'import (séparée de l'exécution).",
+        "operationId": "propose_adoption_import_api_v1_adoptions__adoption_id__propose_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "adoption_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Adoption Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Propose Adoption Import Api V1 Adoptions  Adoption Id  Propose Import Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose Adoption Import",
+        "tags": [
+          "ressources"
+        ]
+      }
+    },
     "/api/v1/artifacts/{artifact_id}": {
       "get": {
         "operationId": "get_artifact_api_v1_artifacts__artifact_id__get",
@@ -6259,6 +6535,164 @@
         "summary": "Create Temporary Grant",
         "tags": [
           "gouvernance"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/adoptions": {
+      "get": {
+        "description": "F08 : adoptions en cours ou terminées du projet.",
+        "operationId": "list_adoptions_api_v1_projects__project__adoptions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Adoptions Api V1 Projects  Project  Adoptions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Adoptions",
+        "tags": [
+          "projets"
+        ]
+      },
+      "post": {
+        "description": "F08 : enrôlement pour observation en lecture seule (aucune mutation VM).",
+        "operationId": "enroll_adoption_api_v1_projects__project__adoptions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Enroll Adoption Api V1 Projects  Project  Adoptions Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enroll Adoption",
+        "tags": [
+          "projets"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/adoptions/candidates": {
+      "get": {
+        "description": "F08 : VM existantes octroyées (inventaire fictif), candidates à l'adoption.",
+        "operationId": "list_adoption_candidates_api_v1_projects__project__adoptions_candidates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "title": "Project",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment",
+            "required": false,
+            "schema": {
+              "default": "dev",
+              "title": "Environment",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Adoption Candidates Api V1 Projects  Project  Adoptions Candidates Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Adoption Candidates",
+        "tags": [
+          "projets"
         ]
       }
     },

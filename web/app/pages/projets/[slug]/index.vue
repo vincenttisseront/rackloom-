@@ -75,7 +75,15 @@ function envChanged(updated: any) {
         <h1>{{ project?.name || slug }}</h1>
         <p v-if="project" class="small muted">Code {{ project.code }} · référent {{ project.referent }}</p>
       </div>
-      <NuxtLink v-if="project?.roles.includes('operator')" class="button primary" :to="`/projets/${slug}/nouvelle`" data-testid="new-request">Nouvelle demande</NuxtLink>
+      <div class="actions">
+        <NuxtLink
+          v-if="project?.roles.includes('operator')"
+          class="button"
+          :to="`/projets/${slug}/adoption`"
+          data-testid="open-adoption"
+        >Adoption de VM</NuxtLink>
+        <NuxtLink v-if="project?.roles.includes('operator')" class="button primary" :to="`/projets/${slug}/nouvelle`" data-testid="new-request">Nouvelle demande</NuxtLink>
+      </div>
     </div>
     <div v-if="error" class="banner bad" role="alert" data-testid="error">{{ error }}</div>
     <div v-for="e in environments.filter(x => x.frozen)" :key="`frozen-${e.id}`" class="banner warn" role="status" data-testid="project-freeze-banner">

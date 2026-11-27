@@ -41,6 +41,16 @@ items:
   - {kind: image, stable_id: vm-501, name: img-windows-2022, parent: datacenter-1,
      attributes: {os: windows-2022, layout_id: std-v1, vmware_tools: true, cloud_init: false,
                   guest_os: "Windows Server 2022"}}
+  # F08 : VM existantes fictives (observations explicites, pas de labo vSphere réel).
+  # orphan-web-legacy : non gérée — candidat d'adoption nominal.
+  - {kind: vm, stable_id: vm-9001, name: orphan-web-legacy, parent: group-v21,
+     attributes: {power: poweredOn, guest_os: "Ubuntu 24.04 LTS", vcpu: 2, memory_mb: 4096,
+                  disk_gb: 40, cluster: domain-c10, observation: fictional}}
+  # external-tf-managed : déjà revendiquée par un autre state Terraform (conflit F08).
+  - {kind: vm, stable_id: vm-9002, name: external-tf-managed, parent: group-v21,
+     attributes: {power: poweredOn, guest_os: "Ubuntu 24.04 LTS", vcpu: 2, memory_mb: 2048,
+                  disk_gb: 30, cluster: domain-c10, managed_by: "terraform:other-state",
+                  terraform_state_id: "ext-state-demo", observation: fictional}}
 # Nœuds de labo qui jouent le rôle des invités (adresse SIMULÉE : le vCenter fictif
 # associe chaque instance créée par Terraform au premier nœud libre).
 lab_nodes:

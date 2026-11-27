@@ -140,6 +140,9 @@ def requester_rights(ctx: Context) -> Verdict:
 
 @rule(30, "R030", "write")
 def approver_rights(ctx: Context) -> Verdict:
+    # F08 : l'import d'adoption porte sa propre approbation (empreinte de proposition).
+    if ctx.job["kind"] == "tf_import":
+        return Verdict(True)
     if ctx.approval is None:
         return Verdict(False, "aucune approbation associée", "approval_missing")
     assert ctx.change is not None
@@ -163,6 +166,9 @@ def approver_rights(ctx: Context) -> Verdict:
 
 @rule(40, "R040", "write")
 def approval_valid(ctx: Context) -> Verdict:
+    # F08 : voir R145 pour l'approbation liée à la proposition d'adoption.
+    if ctx.job["kind"] == "tf_import":
+        return Verdict(True)
     a = ctx.approval
     if a is None or a["decision"] != "approved":
         return Verdict(False, "approbation absente ou refusée", "approval_missing")
@@ -225,6 +231,9 @@ def _resolved_grants(values: dict[str, Any]) -> list[tuple[str, str]]:
 @rule(55, "R055", "write")
 def resolution_admissible(ctx: Context) -> Verdict:
     """La résolution approuvée reste admissible ; on ne la recalcule jamais."""
+    # F08 : l'import d'adoption n'a pas de révision de besoin (voir R145).
+    if ctx.job["kind"] == "tf_import":
+        return Verdict(True)
     rev = ctx.revision
     if rev is None:
         return Verdict(False, "révision introuvable", "resolution_no_longer_admissible")
@@ -529,6 +538,35 @@ def organization_policy(ctx: Context) -> Verdict:
             f"contrainte d'organisation {rule_id} : {constraint.get('title', rule_id)} (aucune exception valide)",
             "org_policy_refused",
             field=field_path,
+        )
+    return Verdict(True)
+
+
+@rule(145, "R145", "write")
+def adoption_import_approved(ctx: Context) -> Verdict:
+    """F08 : l'import d'adoption exige une approbation liée à l'empreinte de la proposition."""
+    if ctx.job["kind"] != "tf_import":
+        return Verdict(True)
+    adoption_id = (ctx.job.get("payload") or {}).get("adoption_id")
+    proposal_sha = (ctx.job.get("payload") or {}).get("proposal_sha256")
+    if not adoption_id or not proposal_sha:
+        return Verdict(False, "payload d'adoption incomplet", "adoption_payload_missing")
+    row = ctx.conn.execute(
+        "SELECT state, approved_at, approval_proposal_sha256, import_proposal_sha256, ownership "
+        "FROM vm_adoptions WHERE id = %s",
+        (UUID(str(adoption_id)),),
+    ).fetchone()
+    if row is None:
+        return Verdict(False, "adoption introuvable", "adoption_missing")
+    if row["ownership"] == "conflict" or row["state"] == "blocked_conflict":
+        return Verdict(False, "conflit de propriété : import bloqué", "ownership_conflict")
+    if row["approved_at"] is None:
+        return Verdict(False, "proposition d'adoption non approuvée", "approval_missing")
+    if row["approval_proposal_sha256"] != proposal_sha or row["import_proposal_sha256"] != proposal_sha:
+        return Verdict(
+            False,
+            "empreinte de proposition d'adoption invalide ou périmée",
+            "adoption_proposal_mismatch",
         )
     return Verdict(True)
 

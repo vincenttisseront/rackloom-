@@ -55,6 +55,9 @@ ALLOWED = {
         "SELECT status FROM image_builds",
         "SELECT outcome FROM image_build_tests",
         "SELECT environment_kind FROM image_build_promotions",
+        "SELECT state FROM vm_adoptions",
+        "SELECT status FROM adoption_observations",
+        "SELECT state_id FROM terraform_resource_claims",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -100,6 +103,9 @@ ALLOWED = {
         "SELECT status FROM image_builds",
         "SELECT outcome FROM image_build_tests",
         "SELECT environment_kind FROM image_build_promotions",
+        "SELECT state FROM vm_adoptions",
+        "SELECT status FROM adoption_observations",
+        "SELECT state_id FROM terraform_resource_claims",
     ],
 }
 

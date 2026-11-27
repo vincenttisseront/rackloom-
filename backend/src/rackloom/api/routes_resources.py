@@ -285,6 +285,60 @@ def _host(conn, principal, host_id: UUID) -> dict[str, Any]:
     return host
 
 
+@router.get("/adoptions/{adoption_id}")
+def get_adoption(adoption_id: UUID, request: Request) -> dict[str, Any]:
+    """F08 : détail d'une adoption (observation fictive, proposition, état)."""
+    from .. import adoption
+
+    with unit_of_work(request) as u:
+        return adoption.get(u.conn, u.p, adoption_id)
+
+
+@router.post("/adoptions/{adoption_id}/observe")
+def observe_adoption(adoption_id: UUID, request: Request) -> dict[str, Any]:
+    """F08 : rafraîchit l'observation fictive (lecture seule)."""
+    from .. import adoption
+
+    with unit_of_work(request, write=True) as u:
+        return adoption.observe(u.conn, u.p, adoption_id)
+
+
+@router.post("/adoptions/{adoption_id}/preview")
+def preview_adoption_import(adoption_id: UUID, request: Request) -> dict[str, Any]:
+    """F08 : aperçu d'import Terraform — ne modifie pas la VM."""
+    from .. import adoption
+
+    with unit_of_work(request, write=True) as u:
+        return adoption.preview_import(u.conn, u.p, adoption_id)
+
+
+@router.post("/adoptions/{adoption_id}/propose-import")
+def propose_adoption_import(adoption_id: UUID, request: Request) -> dict[str, Any]:
+    """F08 : enregistre la proposition d'import (séparée de l'exécution)."""
+    from .. import adoption
+
+    with unit_of_work(request, write=True) as u:
+        return adoption.propose_import(u.conn, u.p, adoption_id)
+
+
+@router.post("/adoptions/{adoption_id}/approve")
+def approve_adoption_import(adoption_id: UUID, request: Request) -> dict[str, Any]:
+    """F08 : approuve la proposition figée (empreinte)."""
+    from .. import adoption
+
+    with unit_of_work(request, write=True) as u:
+        return adoption.approve_import(u.conn, u.p, adoption_id)
+
+
+@router.post("/adoptions/{adoption_id}/import")
+def execute_adoption_import(adoption_id: UUID, request: Request) -> dict[str, Any]:
+    """F08 : exécute l'import simulé ; conflit de propriété → 409."""
+    from .. import adoption
+
+    with unit_of_work(request, write=True) as u:
+        return adoption.execute_import(u.conn, u.p, adoption_id)
+
+
 @router.get("/hosts/{host_id}")
 def get_host(host_id: UUID, request: Request) -> dict[str, Any]:
     with unit_of_work(request) as u:
