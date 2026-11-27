@@ -22,7 +22,7 @@ Les jobs exécutent Terraform et Ansible avec des identifiants puissants et parl
 
 - Un seul composant concentre le pouvoir de lancer des conteneurs ; il doit rester petit, sans dépendances lourdes, testé pour chaque refus.
 - Le worker reste dans la base de confiance : il choisit quel job lancer (voir `docs/threat-model.md` R9).
-- Champ `zone` présent dans l'API (valeur `local`), prêt pour des runners par site (F16).
+- Champ `zone` dans l'API du launcher (slugs `dev` / `prod` / … ; défaut `local`). F16 : enrôlement mTLS, claim filtré par zone, R130.
 
 ## Alternatives écartées
 

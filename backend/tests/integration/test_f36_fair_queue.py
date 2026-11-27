@@ -27,7 +27,7 @@ def _queued_job(conn, *, project_id, change_id=None, kind="tf_apply", priority=1
 
 def test_f36_autre_projet_demarre_malgre_quota(conn, demo):
     """20 jobs projet A (quota 2) + 1 job projet B → B démarre sans attendre."""
-    assert BUILTIN_VERSION == "builtin@9"
+    assert BUILTIN_VERSION == "builtin@10"
     vit = demo.project("vitrine")["id"]
     cpt = demo.project("compta")["id"]
     # Même priorité : les jobs vitrine sont en tête de file ; le claim doit les

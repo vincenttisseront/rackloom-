@@ -57,7 +57,7 @@ def test_f38_incompatible_bloque(conn, demo):
         verdict = fn(ctx)
         assert not verdict.ok
         assert verdict.code == "compatibility_incompatible"
-        assert BUILTIN_VERSION == "builtin@9"
+        assert BUILTIN_VERSION == "builtin@10"
     finally:
         compatibility.set_status(conn, kind="terraform_provider", name=PROVIDER, version=VERSION, status="verified")
         conn.commit()

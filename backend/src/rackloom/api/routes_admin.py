@@ -711,12 +711,33 @@ def platform_status(request: Request) -> dict[str, Any]:
         alive = [w for w in workers if w["heartbeat_at"] > datetime.now(UTC) - timedelta(seconds=60)]
         queue = u.conn.execute("SELECT state, count(*) AS n FROM jobs GROUP BY state").fetchall()
         assistant = u.conn.execute("SELECT value FROM platform_settings WHERE key = 'assistant'").fetchone()
+        from .. import runners as site_runners
+
+        site_runners.ensure_zones(u.conn)
+        zones = u.conn.execute(
+            "SELECT z.slug, z.name, z.environment_kinds, "
+            "count(r.id) FILTER (WHERE r.status <> 'revoked') AS runners "
+            "FROM execution_zones z LEFT JOIN site_runners r ON r.zone_id = z.id "
+            "GROUP BY z.id ORDER BY z.slug"
+        ).fetchall()
+        runners_rows = u.conn.execute(
+            "SELECT r.slug, r.status, r.last_heartbeat_at, z.slug AS zone "
+            "FROM site_runners r JOIN execution_zones z ON z.id = r.zone_id "
+            "WHERE r.status <> 'revoked' ORDER BY r.slug LIMIT 50"
+        ).fetchall()
         return {"profile": settings.profile, "version": os.environ.get("RACKLOOM_VERSION", "dev"),
                 "workers": [{**w, "heartbeat_at": iso(w["heartbeat_at"])} for w in workers],
                 "workers_alive": len(alive), "jobs": {r["state"]: r["n"] for r in queue},
                 "inventory": inventory.freshness(u.conn, settings.inventory_max_age_hours),
                 "assistant": {"adapter": settings.chat_adapter, **((assistant or {}).get("value") or {})},
-                "audit": audit.verify(u.conn)}
+                "audit": audit.verify(u.conn),
+                "execution_zones": [
+                    {**z, "environment_kinds": list(z["environment_kinds"])} for z in zones
+                ],
+                "site_runners": [
+                    {**r, "last_heartbeat_at": iso(r["last_heartbeat_at"]) if r["last_heartbeat_at"] else None}
+                    for r in runners_rows
+                ]}
 
 
 health = APIRouter(tags=["santé"])

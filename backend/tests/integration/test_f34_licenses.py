@@ -31,7 +31,7 @@ def test_f34_non_verifie_et_politique(conn):
     code, message = licenses.refusal(result)
     assert code == "license_unverified"
     assert "non vérifié" in message
-    assert BUILTIN_VERSION == "builtin@9"
+    assert BUILTIN_VERSION == "builtin@10"
 
 
 def test_f34_r125_refuse_a_admission(conn, demo):

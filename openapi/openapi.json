@@ -72,6 +72,72 @@
         "title": "CiSubmitBody",
         "type": "object"
       },
+      "ClaimBody": {
+        "additionalProperties": false,
+        "properties": {
+          "kinds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kinds"
+          },
+          "lease_seconds": {
+            "default": 60,
+            "maximum": 600.0,
+            "minimum": 10.0,
+            "title": "Lease Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "ClaimBody",
+        "type": "object"
+      },
+      "EnrollBody": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "pattern": "^[a-z][a-z0-9-]{1,40}$",
+            "title": "Slug",
+            "type": "string"
+          },
+          "zone": {
+            "pattern": "^[a-z][a-z0-9-]{1,40}$",
+            "title": "Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "zone",
+          "capabilities"
+        ],
+        "title": "EnrollBody",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -83,6 +149,25 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HeartbeatBody": {
+        "additionalProperties": false,
+        "properties": {
+          "worker_id": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Id"
+          }
+        },
+        "title": "HeartbeatBody",
         "type": "object"
       },
       "LoginBody": {
@@ -135,6 +220,22 @@
           }
         },
         "title": "ReauthBody",
+        "type": "object"
+      },
+      "RevokeBody": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "RevokeBody",
         "type": "object"
       },
       "ValidationError": {
@@ -1249,6 +1350,32 @@
         ]
       }
     },
+    "/api/v1/admin/execution-zones": {
+      "get": {
+        "operationId": "list_zones_api_v1_admin_execution_zones_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Zones Api V1 Admin Execution Zones Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Zones",
+        "tags": [
+          "runners"
+        ]
+      }
+    },
     "/api/v1/admin/images": {
       "get": {
         "description": "F07 : liste des versions d'images de la fabrique.",
@@ -1698,6 +1825,130 @@
         "summary": "Simulate Policy",
         "tags": [
           "gouvernance"
+        ]
+      }
+    },
+    "/api/v1/admin/runners": {
+      "get": {
+        "operationId": "list_runners_api_v1_admin_runners_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Runners Api V1 Admin Runners Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Runners",
+        "tags": [
+          "runners"
+        ]
+      }
+    },
+    "/api/v1/admin/runners/enroll": {
+      "post": {
+        "operationId": "enroll_runner_api_v1_admin_runners_enroll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Enroll Runner Api V1 Admin Runners Enroll Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enroll Runner",
+        "tags": [
+          "runners"
+        ]
+      }
+    },
+    "/api/v1/admin/runners/{runner_id}/revoke": {
+      "post": {
+        "operationId": "revoke_runner_api_v1_admin_runners__runner_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runner_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Runner Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revoke Runner Api V1 Admin Runners  Runner Id  Revoke Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Runner",
+        "tags": [
+          "runners"
         ]
       }
     },
@@ -7443,6 +7694,96 @@
         "summary": "Revoke Role",
         "tags": [
           "administration"
+        ]
+      }
+    },
+    "/api/v1/runners/me/claim": {
+      "post": {
+        "description": "Le runner tire un job compatible avec sa zone et ses capacités.",
+        "operationId": "runner_claim_api_v1_runners_me_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimBody",
+                "default": {
+                  "lease_seconds": 60
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Runner Claim Api V1 Runners Me Claim Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Runner Claim",
+        "tags": [
+          "runners-mtls"
+        ]
+      }
+    },
+    "/api/v1/runners/me/heartbeat": {
+      "post": {
+        "description": "Le runner initie le heartbeat (connexion sortante, mTLS).",
+        "operationId": "runner_heartbeat_api_v1_runners_me_heartbeat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatBody",
+                "default": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Runner Heartbeat Api V1 Runners Me Heartbeat Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Runner Heartbeat",
+        "tags": [
+          "runners-mtls"
         ]
       }
     },

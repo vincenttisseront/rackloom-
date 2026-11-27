@@ -4,9 +4,8 @@ Chaque job est réévalué au moment où un worker le réclame, quelle que soit 
 file (étape `start`). R065 (AT01) borne la configuration aux cibles approuvées. Les règles qui
 dépendent d'un état pouvant changer entre l'admission et l'envoi au fournisseur (gel, calendrier,
 capacité, droits temporaires, politiques) sont rejouées dans la transaction qui marque cet envoi
-(étape `dispatch`). Emplacement réservé, non encore enregistré : 130 (F16).
-R095 (F37), R100 (F11), R110 (F05), R115 (F39), R120 (F03), R125 (F34), R135 (F38) et R140 (F10)
-sont enregistrées.
+(étape `dispatch`). R095 (F37), R100 (F11), R110 (F05), R115 (F39), R120 (F03), R125 (F34), R130 (F16), R135 (F38)
+et R140 (F10) sont enregistrées.
 """
 
 from __future__ import annotations
@@ -489,6 +488,17 @@ def licenses_available(ctx: Context) -> Verdict:
     code, message = licenses.refusal(result)
     return Verdict(False, message, code)
 
+
+
+@rule(130, "R130", "all", stages=("start", "dispatch"))
+def runner_zone_allowed(ctx: Context) -> Verdict:
+    """Zone du runner autorisée pour l'environnement (F16)."""
+    from .. import runners
+
+    ok, reason, code = runners.admission_zone_verdict(ctx.conn, ctx.job, ctx.environment)
+    if ok:
+        return Verdict(True)
+    return Verdict(False, reason, code or "runner_zone_refused", field="/runner/zone")
 
 
 @rule(135, "R135", "write", stages=("start", "dispatch"))

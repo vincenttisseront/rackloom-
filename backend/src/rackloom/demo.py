@@ -139,8 +139,13 @@ def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
                 "SELECT * FROM users WHERE id = %s", (minted["user_id"],)
             ).fetchone()
 
-    from . import access, adoption, compatibility, factory
+    from . import access, adoption, compatibility, factory, runners
 
+    # F16 : zones d'exécution builtin (dev ≠ prod).
+    if conn.execute(
+        "SELECT 1 FROM information_schema.tables WHERE table_name = 'execution_zones'"
+    ).fetchone():
+        runners.ensure_zones(conn)
     compatibility.ensure_seeded(conn)
     # F59 : correspondances niveau d'accès → groupe IdP (faux IdP local).
     access.ensure_demo_mappings(conn, published_by=users["admin"]["id"])

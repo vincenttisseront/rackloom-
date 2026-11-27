@@ -29,6 +29,7 @@ from . import (
     routes_identity_audit,
     routes_projects,
     routes_resources,
+    routes_runners,
     routes_studio,
 )
 
@@ -129,9 +130,11 @@ def create_app() -> FastAPI:
         routes_governance,
         routes_identity_audit,
         routes_studio,
+        routes_runners,
     ):
         app.include_router(module.router, prefix=PREFIX)
     app.include_router(routes_identity_audit.scim_router, prefix=PREFIX)
+    app.include_router(routes_runners.runner_router, prefix=PREFIX)
     app.include_router(routes_admin.health, prefix=PREFIX)
     return app
 

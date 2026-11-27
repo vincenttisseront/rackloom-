@@ -7,6 +7,7 @@ import signal
 import socket
 import threading
 import time
+from datetime import timedelta
 from typing import Any
 
 from .. import connectors, events
@@ -47,7 +48,13 @@ class Worker:
 
     def claim(self, kinds: list[str] | None = None) -> dict[str, Any] | None:
         with transaction() as conn:
-            return queue.claim(conn, self.worker_id, self.settings.job_lease_seconds, kinds)
+            return queue.claim(
+                conn,
+                self.worker_id,
+                self.settings.job_lease_seconds,
+                kinds,
+                zone=self.settings.runner_zone,
+            )
 
     def process(self, job: dict[str, Any]) -> None:
         ctx = JobContext(job, self.settings, self.launcher, self.worker_id)
@@ -127,6 +134,12 @@ class Worker:
     def reap(self) -> int:
         count = 0
         with transaction() as conn:
+            # F16 : runners de site sans heartbeat → stale + écritures envoyées → uncertain.
+            from .. import runners as site_runners
+
+            site_runners.mark_stale_and_uncertain(
+                conn, stale_after=timedelta(seconds=self.settings.runner_stale_seconds)
+            )
             for job in queue.expired_leases(conn):
                 count += 1
                 if job["kind"] == "reconcile":
