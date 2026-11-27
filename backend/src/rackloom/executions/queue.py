@@ -29,6 +29,7 @@ JOB_CLASS = {
     "vm_restore": "write",
     "service_restart": "write",
     "lease_retire": "write",
+    "tf_import": "write",
 }
 
 JOB_LABELS = {
@@ -45,6 +46,7 @@ JOB_LABELS = {
     "vm_restore": "Restauration VM (réseau isolé)",
     "service_restart": "Redémarrage de service (simulé)",
     "lease_retire": "Retrait de labo (simulé)",
+    "tf_import": "Import Terraform (adoption, simulé)",
 }
 
 

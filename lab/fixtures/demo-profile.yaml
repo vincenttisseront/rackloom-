@@ -45,6 +45,7 @@ grants:
     datastore: [datastore-201, datastore-202]
     folder: [group-v21]
     network: [network-101, network-102, network-190]
+    vm: [vm-9001, vm-9002]
   vitrine/prod:
     service_template: [ubuntu-web]
     image: [vm-500]

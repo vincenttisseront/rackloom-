@@ -14,7 +14,8 @@
 - **F58–F59 (agir sur le service livré)** : fusionné (PR #27), migration Alembic `0017`.
 - **F02 + F04 (compositions multi-VM et graphe)** : fusionné (PR #31), migration Alembic `0018`.
 - **F06 (baux temporaires)** : fusionné (PR #28), migration Alembic `0019`.
-- **F07 (fabrique d'images)** : PR #30 (`cursor/f07-fabrique-templates-d8de`), migration Alembic `0020` (`down_revision=0019`).
+- **F07 (fabrique d'images)** : fusionné (PR #30), migration Alembic `0020`.
+- **F08 (adoption de VM)** : PR #29 (`cursor/f08-adoption-vm-6c45`), migration Alembic **`0021`** (`down_revision=0020`).
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -95,6 +96,7 @@
 | Copie d'audit hors appliance (F44) | livré (stockage local verrouillé) | testé localement | reprise sans doublon ; écrasement refusé si object_lock ; canari masqué |
 | Registre certificats TLS (F45) | livré | testé localement | scan endpoint approuvé ; alerte `expiring_soon` au propriétaire ; TLS toujours vérifié |
 | Actions courantes depuis la fiche service (F58) | livré (redémarrage simulé) | testé localement | `test_f58_f59_service_actions.py` ; e2e `101-f58-f59-actions-acces.spec.ts` ; migration `0017` ; remplacement annoncé et plan bloqué ; L2 non fait |
+| Adoption de VM existantes (F08) | livré (observations / import simulés) | testé localement | `test_f08_adoption.py` ; e2e `102-f08-adoption.spec.ts` ; migration `0021` ; aperçu sans mutation ; `ownership_conflict` ; L2 non fait |
 | Demande d'accès à un service (F59) | livré (faux IdP) | testé localement | correspondances approuvées ; `group` → 422 ; sync échouée visible ; relance idempotente ; IdP réel : non (D22) |
 | Compositions multi-VM (F02) | livré | testé localement | `test_f02_composition.py`, `test_f02_f04_light.py`, `test_f02_f04_compositions_graph.py` (lab) ; template `ubuntu-app-base` ; migration `0018` ; L2 non fait |
 | Graphe de dépendances (F04) | livré | testé localement | impact réseau filtré ; hors périmètre masqué/404 ; page `/dependances` ; e2e `102-f02-f04` ; L2 non fait |
@@ -413,7 +415,7 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F06 baux temporaires (2026-11-27, heure de Paris)
 
-- Branche `cursor/f06-baux-temporaires-91eb` rebasée sur `main` après F02/F04. Migration **`0019`** (`down_revision=0018`) ; F07=`0020`, F08=`0021`.
+- Branche `cursor/f06-baux-temporaires-91eb` rebasée sur `main` après F02/F04. Migration **`0019`** (`down_revision=0018`).
 - Tables `deployment_leases`, `deployment_lease_renewals` ; kinds `retire` / `lease_retire` ; GRANT api/worker.
 - Ouverture du bail à la soumission si `lifetime_until` ; sweep worker (rappel, expiration, proposition de plan) ; renouvellement (plafond D14) ; plan de retrait approuvable ; exécution simulée (pas de destroy Terraform).
 - Preuves : `test_f06_leases.py` ; e2e `102-f06-baux.spec.ts` ; fiche service (`lease-panel`).
@@ -427,9 +429,16 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - UI `/admin/images` ; seed démo `ubuntu-2404-std@1.0.0` aligné sur le filtre ubuntu-web.
 - Preuves : `test_f07_fabrique.py` (2) ; e2e `102-f07-fabrique.spec.ts` ; `test_db_roles`. Outil Packer/vSphere réel : non.
 
+### F08 : adoption de VM existantes (Lot D, 2026-11-27, heure de Paris)
+
+- Branche `cursor/f08-adoption-vm-6c45` rebasée sur `main` après F07. Migration Alembic **`0021`** (`down_revision=0020`). Tables `vm_adoptions`, `adoption_observations`, `terraform_resource_claims` ; kind `tf_import` ; GRANT `rackloom_api` / `rackloom_worker` ; octroi inventaire `vm`.
+- Enrôlement + observation **fictive** lecture seule ; aperçu d'import sans mutation VM/state ; proposition séparée de l'exécution ; approbation liée à l'empreinte ; conflit de propriété → `ownership_conflict` (R145).
+- Inventaire démo : `vm-9001` (orphan) / `vm-9002` (state externe fictif). UI `/projets/{slug}/adoption`.
+- Preuves : `test_f08_adoption.py` (3) ; e2e `102-f08-adoption.spec.ts`. Labo vSphere réel : non (D2).
+
 ## Prochain jalon
 
-1. Fusionner **F07 (`0020`)** (PR #30) après CI verte post-rebase.
-2. Ensuite F08 (`0021`) puis selon le backlog (F15–F20, F22–F26, F29–F30, AT02–AT04).
+1. Fusionner **F08 (`0021`)** (PR #29) après CI verte post-rebase.
+2. Ensuite selon le backlog (F15–F20, F22–F26, F29–F30, AT02–AT04).
 3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

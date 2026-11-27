@@ -195,3 +195,49 @@ def list_hosts(project: str, request: Request) -> list[dict[str, Any]]:
         rows = u.conn.execute("SELECT * FROM hosts WHERE project_id = %s ORDER BY name", (p["id"],)).fetchall()
         return [{"id": str(h["id"]), "name": h["name"], "deployment_id": str(h["deployment_id"]),
                  "deployment_state": h["deployment_state"], "health": hosts_mod.health(u.conn, h)} for h in rows]
+
+
+@router.get("/projects/{project}/adoptions/candidates")
+def list_adoption_candidates(
+    project: str, request: Request, environment: str = "dev"
+) -> dict[str, Any]:
+    """F08 : VM existantes octroyées (inventaire fictif), candidates à l'adoption."""
+    from .. import adoption
+
+    with unit_of_work(request) as u:
+        return adoption.list_candidates(u.conn, u.p, project, environment_slug=environment)
+
+
+@router.get("/projects/{project}/adoptions")
+def list_adoptions(project: str, request: Request) -> list[dict[str, Any]]:
+    """F08 : adoptions en cours ou terminées du projet."""
+    from .. import adoption
+
+    with unit_of_work(request) as u:
+        return adoption.list_adoptions(u.conn, u.p, project)
+
+
+@router.post("/projects/{project}/adoptions")
+def enroll_adoption(
+    project: str, request: Request, body: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    """F08 : enrôlement pour observation en lecture seule (aucune mutation VM)."""
+    from .. import adoption
+
+    extra = set(body) - {"environment", "vm_stable_id"}
+    if extra:
+        raise ApiError(
+            422, "unknown_field", f"champ « {sorted(extra)[0]} » refusé", field=f"/{sorted(extra)[0]}"
+        )
+    with unit_of_work(request, write=True) as u:
+
+        def act() -> dict[str, Any]:
+            return adoption.enroll(
+                u.conn,
+                u.p,
+                project,
+                environment_slug=str(body.get("environment") or "dev"),
+                vm_stable_id=str(body.get("vm_stable_id") or ""),
+            )
+
+        return idempotent(u, request, body, act)
