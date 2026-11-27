@@ -120,7 +120,8 @@
 | Dossier de diagnostic partageable (F22) | livré | testé localement | `test_f22_diagnostic.py` ; e2e `104-f22-diagnostic.spec.ts` ; migration `0030` (`down_revision=0029`) ; payload JSONB (API n'écrit pas le volume artefacts) ; preuves = métadonnées B ; canari absent export+résumé ; interprojet 404 |
 | Conformité des machines (F24) | livré (Rudder fictif) | testé localement | `test_f24_compliance.py` ; e2e `104-f24-conformite.spec.ts` ; migration `0031` (`down_revision=0030`) ; remédiation = brouillon, 0 job write ; labo Rudder : non |
 | ITSM et notifications (F25) | livré (ITSM fictif) | testé localement | `test_f25_itsm.py` ; e2e `104-f25-itsm.spec.ts` ; migration `0032` (`down_revision=0031`) ; rejeu webhook sans 2e ticket ; `approval_forbidden` ; ITSM réel : non |
-| Fonctions F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
+| SDK d'adaptateurs (F30) | livré (référence locale) | testé localement | `test_adapter_contract.py`, `test_f30_adapter_sdk.py` ; e2e `104-f30-adaptateurs.spec.ts` ; migration `0034` (`down_revision=0033`) ; `docs/adapter-sdk.md` ; install sans approbation → `adapter_not_approved` |
+| Atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6
 
@@ -554,9 +555,17 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - API admin : enroll / revoke / limits ; lecture scopée `GET /projects/{project}/telemetry` ; UI admin + panneau projet.
 - Preuves : `test_f23_telemetry.py` (5) ; e2e `104-f23-telemetry.spec.ts` ; `test_db_roles`. Labo réel : non.
 
+### F30 : SDK d'adaptateurs et tests de contrat (Lot G, 2026-11-27, heure de Paris)
+
+- Branche `cursor/f30-sdk-adaptateurs-17b7` (PR #43). Migration Alembic **`0034`** (`down_revision=0033` après cascade F23). Aucun stub.
+- Modules `connectors.sdk`, `connectors.reference`, `connectors.contract`, `connectors.packages` ; tables `adapter_packages`, `adapter_trust_digests`.
+- Suite de contrat verte sur MATRIX + référence ; adaptateur sans périmètre rejeté ; install UI refusée sans approbation (`adapter_not_approved`) ; digest inconnu (`adapter_untrusted`) ; approbateur ≠ soumetteur.
+- API `/admin/adapters*` ; UI `/admin/adaptateurs` ; guide `docs/adapter-sdk.md` (Proxmox, OpenTofu, AWX/AAP).
+- Preuves : `tests/contract/test_adapter_contract.py`, `tests/integration/test_f30_adapter_sdk.py` ; e2e `104-f30-adaptateurs.spec.ts`.
+
 ## Prochain jalon
 
-1. Fusionner **F23 (`0033`)** (PR #42) après CI verte post-rebase (`down_revision=0032`).
-2. Suite : F30, AT02–AT04 selon dépendances ; ISO (lot 3) après Lots F+G.
+1. Fusionner **F30 (`0034`)** (PR #43) après CI verte post-rebase (`down_revision=0033`).
+2. Suite : atelier AT02–AT04 ; ISO (lot 3) après Lots F+G.
 3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

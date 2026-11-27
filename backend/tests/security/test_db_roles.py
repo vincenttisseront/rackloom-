@@ -90,6 +90,8 @@ ALLOWED = {
         "SELECT max_payload_bytes FROM telemetry_project_limits",
         "SELECT bytes_accepted FROM telemetry_usage_windows",
         "SELECT kind FROM telemetry_samples",
+        "SELECT status FROM adapter_packages",
+        "SELECT content_digest FROM adapter_trust_digests",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -170,6 +172,8 @@ ALLOWED = {
         "SELECT max_payload_bytes FROM telemetry_project_limits",
         "SELECT bytes_accepted FROM telemetry_usage_windows",
         "SELECT kind FROM telemetry_samples",
+        "SELECT status FROM adapter_packages",
+        "SELECT content_digest FROM adapter_trust_digests",
     ],
 }
 

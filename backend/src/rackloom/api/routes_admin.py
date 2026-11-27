@@ -19,6 +19,8 @@ from pydantic import ValidationError
 from .. import audit, factory, inventory, offline_bundles, projects, recovery, registry, secrets, studio
 from ..config import get_settings
 from ..connectors import MATRIX, circuit, vsphere
+from ..connectors import packages as adapter_packages
+from ..connectors import reference as reference_adapter
 from ..db import Conn, Jsonb, get_pool
 from ..errors import ApiError, forbidden, not_found
 from ..events import emit
@@ -510,6 +512,11 @@ def update_connector(connector_id: UUID, request: Request, body: dict[str, Any] 
         row = _connector(u.conn, connector_id)
         if row["kind"] == "vsphere":
             config = _vsphere_config(u.conn, row, config)
+        elif row["kind"] == "reference":
+            adapter = reference_adapter.ReferenceAdapter()
+            adapter.check_scope(u.p, "configure")
+            config = adapter.validate_config(config)
+            adapter.register_endpoint(u.conn, row["id"], config)
         row = u.conn.execute(
             "UPDATE connectors SET config = %s, config_version = config_version + 1 WHERE id = %s RETURNING *",
             (Jsonb(config), row["id"]),
@@ -597,6 +604,8 @@ def test_connector(connector_id: UUID, request: Request) -> dict[str, Any]:
             }
         elif row["kind"] == "vsphere":
             result = _vsphere_test(u.conn, row)
+        elif row["kind"] == "reference":
+            result = reference_adapter.ReferenceAdapter().test_connection(u.conn, row)
         else:
             result = {
                 "status": "not_verified",
@@ -945,6 +954,97 @@ def build_demo_offline_bundle(request: Request, body: dict[str, Any] | None = Bo
             "size_bytes": len(package),
             "notice": "Lot signé de démo. Inspecter ou importer via les routes dédiées.",
         }
+
+
+def _adapter_view(view: dict[str, Any]) -> dict[str, Any]:
+    out = dict(view)
+    for key in ("submitted_at", "approved_at", "installed_at", "rejected_at"):
+        if out.get(key) is not None:
+            out[key] = iso(out[key])
+    return out
+
+
+@router.get("/admin/adapters")
+def list_adapters(request: Request) -> dict[str, Any]:
+    """F30 : paquets d'adaptateurs (soumis / approuvés / installés) et digests de confiance."""
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        adapter_packages.ensure_reference_trust(u.conn)
+        return {
+            "packages": [_adapter_view(p) for p in adapter_packages.list_packages(u.conn)],
+            "trust_digests": [
+                {**d, "created_at": iso(d["created_at"])} for d in adapter_packages.list_trust_digests(u.conn)
+            ],
+            "contract": {
+                "capabilities": list(MATRIX.get("reference", {}).keys()) or list(MATRIX["vsphere"].keys()),
+                "guide": "docs/adapter-sdk.md",
+            },
+        }
+
+
+@router.get("/admin/adapters/contract")
+def adapters_contract(request: Request) -> dict[str, Any]:
+    """F30 : rapport de la suite de contrat sur les connecteurs livrés + référence."""
+    from ..connectors import contract as adapter_contract
+
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        reports = adapter_contract.run_suite()
+        return {
+            "ok": all(r.ok for r in reports),
+            "reports": [r.as_dict() for r in reports],
+            "error_codes": adapter_contract.DOCUMENTED_ERROR_CODES,
+            "guide": "docs/adapter-sdk.md",
+        }
+
+
+@router.post("/admin/adapters/submit")
+def submit_adapter(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F30 : soumet un paquet pour revue (n'installe pas)."""
+    _only(body, {"manifest", "provenance", "demo_reference"})
+    with unit_of_work(request, write=True) as u:
+        require_admin(u.p)
+        if body.get("demo_reference") is True:
+            return _adapter_view(adapter_packages.submit_reference_demo(u.conn, u.p))
+        manifest = body.get("manifest")
+        if not isinstance(manifest, dict):
+            raise ApiError(422, "invalid_manifest", "manifeste objet attendu", field="/manifest")
+        provenance = body.get("provenance") if isinstance(body.get("provenance"), dict) else None
+        return _adapter_view(adapter_packages.submit(u.conn, u.p, manifest=manifest, provenance=provenance))
+
+
+@router.get("/admin/adapters/{package_id}")
+def get_adapter(package_id: UUID, request: Request) -> dict[str, Any]:
+    """F30 : détail d'un paquet (manifeste, provenance, actions)."""
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        return _adapter_view(adapter_packages.get_package(u.conn, package_id))
+
+
+@router.post("/admin/adapters/{package_id}/approve")
+def approve_adapter(package_id: UUID, request: Request, body: dict[str, Any] | None = Body(None)) -> dict[str, Any]:
+    """F30 : approuve un paquet soumis (n'installe pas). Approbateur ≠ soumetteur."""
+    payload = body or {}
+    _only(payload, {"reason"})
+    with unit_of_work(request, write=True) as u:
+        return _adapter_view(
+            adapter_packages.approve(u.conn, u.p, package_id, reason=str(payload.get("reason") or ""))
+        )
+
+
+@router.post("/admin/adapters/{package_id}/reject")
+def reject_adapter(package_id: UUID, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F30 : rejette un paquet soumis ou approuvé."""
+    _only(body, {"reason"})
+    with unit_of_work(request, write=True) as u:
+        return _adapter_view(adapter_packages.reject(u.conn, u.p, package_id, reason=str(body.get("reason") or "")))
+
+
+@router.post("/admin/adapters/{package_id}/install")
+def install_adapter(package_id: UUID, request: Request) -> dict[str, Any]:
+    """F30 : installe un paquet approuvé. Refuse si non approuvé (`adapter_not_approved`)."""
+    with unit_of_work(request, write=True) as u:
+        return _adapter_view(adapter_packages.install(u.conn, u.p, package_id))
 
 
 @router.get("/admin/dispatch")

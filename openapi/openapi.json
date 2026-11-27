@@ -838,6 +838,314 @@
         ]
       }
     },
+    "/api/v1/admin/adapters": {
+      "get": {
+        "description": "F30 : paquets d'adaptateurs (soumis / approuvés / installés) et digests de confiance.",
+        "operationId": "list_adapters_api_v1_admin_adapters_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Adapters Api V1 Admin Adapters Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Adapters",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/adapters/contract": {
+      "get": {
+        "description": "F30 : rapport de la suite de contrat sur les connecteurs livrés + référence.",
+        "operationId": "adapters_contract_api_v1_admin_adapters_contract_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Adapters Contract Api V1 Admin Adapters Contract Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Adapters Contract",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/adapters/submit": {
+      "post": {
+        "description": "F30 : soumet un paquet pour revue (n'installe pas).",
+        "operationId": "submit_adapter_api_v1_admin_adapters_submit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Submit Adapter Api V1 Admin Adapters Submit Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Adapter",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/adapters/{package_id}": {
+      "get": {
+        "description": "F30 : détail d'un paquet (manifeste, provenance, actions).",
+        "operationId": "get_adapter_api_v1_admin_adapters__package_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "package_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Package Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Adapter Api V1 Admin Adapters  Package Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Adapter",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/adapters/{package_id}/approve": {
+      "post": {
+        "description": "F30 : approuve un paquet soumis (n'installe pas). Approbateur ≠ soumetteur.",
+        "operationId": "approve_adapter_api_v1_admin_adapters__package_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "package_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Package Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Approve Adapter Api V1 Admin Adapters  Package Id  Approve Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Adapter",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/adapters/{package_id}/install": {
+      "post": {
+        "description": "F30 : installe un paquet approuvé. Refuse si non approuvé (`adapter_not_approved`).",
+        "operationId": "install_adapter_api_v1_admin_adapters__package_id__install_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "package_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Package Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Install Adapter Api V1 Admin Adapters  Package Id  Install Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Install Adapter",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/adapters/{package_id}/reject": {
+      "post": {
+        "description": "F30 : rejette un paquet soumis ou approuvé.",
+        "operationId": "reject_adapter_api_v1_admin_adapters__package_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "package_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Package Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reject Adapter Api V1 Admin Adapters  Package Id  Reject Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Adapter",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
     "/api/v1/admin/approved-endpoints/{endpoint_id}/scan-tls": {
       "post": {
         "operationId": "scan_tls_endpoint_api_v1_admin_approved_endpoints__endpoint_id__scan_tls_post",

@@ -396,7 +396,7 @@ Ils sont présents au lot 1 parce qu'ils coûtent peu et évitent une migration 
 | Champ `zone` dans la spécification du launcher | oui (slugs `dev`/`prod`/… ; défaut `local`) | F16 |
 | Passerelle de télémétrie (agents mTLS, quotas, rétention) | oui (`telemetry_*`, `POST /telemetry/ingest`) | F23 |
 | Secrets en écriture seule côté API, références dans les contrats | oui | F13, F43 |
-| Contrat de connecteur à capacités et suite de contrat | oui (connecteurs du lot 1) | F30 |
+| Contrat de connecteur à capacités et suite de contrat | oui (SDK F30 : `connectors.sdk` / `contract` / registre `adapter_packages`) | F30 |
 | Adaptateurs de modèle interchangeables, constructeur de contexte filtré, scénarios fictifs rejouables, banc d'évaluation (`chat_eval_reports`, prompt `rackloom.chat-prompt/v1`), routage des modèles, aperçu de contexte, runbooks | oui | F46, F47, F48, F49 |
 | Date de fin capturée | appliquée : bail (`deployment_leases`), rappels, renouvellement, plan de retrait (exécution locale simulée) | F06 |
 | Interrupteur global de suspension des envois (`dispatch_paused`) | oui (`platform_settings`, file + exercices F26) | F26, maintenance |
