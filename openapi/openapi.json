@@ -1759,6 +1759,250 @@
         ]
       }
     },
+    "/api/v1/admin/offline-bundles": {
+      "get": {
+        "description": "F17 : lots inspectés / importés pour sites déconnectés.",
+        "operationId": "list_offline_bundles_api_v1_admin_offline_bundles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Offline Bundles Api V1 Admin Offline Bundles Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Offline Bundles",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/offline-bundles/build-demo": {
+      "post": {
+        "description": "F17 : construit un lot de démo signé (charges utiles fictives) et l'inspecte.\n\nSert aux recettes locales sans Internet. N'installe rien tant que `/import` n'est pas appelé.",
+        "operationId": "build_demo_offline_bundle_api_v1_admin_offline_bundles_build_demo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Build Demo Offline Bundle Api V1 Admin Offline Bundles Build Demo Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Build Demo Offline Bundle",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/offline-bundles/import": {
+      "post": {
+        "description": "F17 : importe un lot déjà inspecté, ou inspecte+importe `package_b64` en une étape.",
+        "operationId": "import_offline_bundle_api_v1_admin_offline_bundles_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Import Offline Bundle Api V1 Admin Offline Bundles Import Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Offline Bundle",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/offline-bundles/inspect": {
+      "post": {
+        "description": "F17 : vérifie intégrité + compatibilité et affiche le contenu exact (sans importer).",
+        "operationId": "inspect_offline_bundle_api_v1_admin_offline_bundles_inspect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Inspect Offline Bundle Api V1 Admin Offline Bundles Inspect Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect Offline Bundle",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/offline-bundles/trust-keys": {
+      "get": {
+        "description": "F17 : clés publiques de confiance (jamais la clé privée).",
+        "operationId": "list_offline_bundle_trust_keys_api_v1_admin_offline_bundles_trust_keys_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Offline Bundle Trust Keys Api V1 Admin Offline Bundles Trust Keys Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Offline Bundle Trust Keys",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/offline-bundles/{bundle_id}": {
+      "get": {
+        "description": "F17 : contenu exact d'un lot (items, digests, signature).",
+        "operationId": "get_offline_bundle_api_v1_admin_offline_bundles__bundle_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bundle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Bundle Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Offline Bundle Api V1 Admin Offline Bundles  Bundle Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Offline Bundle",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
     "/api/v1/admin/policies/active": {
       "get": {
         "operationId": "active_policy_api_v1_admin_policies_active_get",

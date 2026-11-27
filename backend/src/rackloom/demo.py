@@ -30,8 +30,9 @@ def _read(path: Path) -> dict[str, Any]:
         return yaml.safe_load(fh)
 
 
-def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
-         credentials_file: Path | None = None) -> dict[str, Any]:
+def seed(
+    conn: Conn, root: Path, *, passwords: dict[str, str] | None = None, credentials_file: Path | None = None
+) -> dict[str, Any]:
     if get_settings().profile == "production":
         raise DemoRefused("profil de démonstration refusé en profil production")
     profile = _read(root / "lab" / "fixtures" / "demo-profile.yaml")
@@ -66,22 +67,32 @@ def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
     projs: dict[str, Any] = {}
     envs: dict[str, Any] = {}
     for p in profile["projects"]:
-        row = conn.execute("SELECT * FROM projects WHERE slug = %s", (p["slug"],)).fetchone() or conn.execute(
-            "INSERT INTO projects (id, slug, code, name, referent_user_id) VALUES (%s, %s, %s, %s, %s) RETURNING *",
-            (uuid7(), p["slug"], p["code"], p["name"], users[p["referent"]]["id"])).fetchone()
+        row = (
+            conn.execute("SELECT * FROM projects WHERE slug = %s", (p["slug"],)).fetchone()
+            or conn.execute(
+                "INSERT INTO projects (id, slug, code, name, referent_user_id) VALUES (%s, %s, %s, %s, %s) RETURNING *",
+                (uuid7(), p["slug"], p["code"], p["name"], users[p["referent"]]["id"]),
+            ).fetchone()
+        )
         projs[p["slug"]] = row
         for e in p["environments"]:
-            env = conn.execute("SELECT * FROM environments WHERE project_id = %s AND slug = %s",
-                               (row["id"], e["slug"])).fetchone()
+            env = conn.execute(
+                "SELECT * FROM environments WHERE project_id = %s AND slug = %s", (row["id"], e["slug"])
+            ).fetchone()
             if env is None:
                 env = conn.execute(
                     "INSERT INTO environments (id, project_id, slug, name, kind, is_production, "
                     "requires_distinct_approver, plan_ttl_seconds) VALUES (%s, %s, %s, %s, %s, %s, true, %s) "
                     "RETURNING *",
-                    (uuid7(), row["id"], e["slug"], e["name"], e["kind"], e["kind"] == "prod",
-                     e["plan_ttl_seconds"])).fetchone()
-                projects.add_policy_version(conn, env["id"], profile["policies"][e["policy"]], None,
-                                            "politique initiale du profil de démonstration")
+                    (uuid7(), row["id"], e["slug"], e["name"], e["kind"], e["kind"] == "prod", e["plan_ttl_seconds"]),
+                ).fetchone()
+                projects.add_policy_version(
+                    conn,
+                    env["id"],
+                    profile["policies"][e["policy"]],
+                    None,
+                    "politique initiale du profil de démonstration",
+                )
             envs[f"{p['slug']}/{e['slug']}"] = env
 
     for u in profile["users"]:
@@ -90,10 +101,14 @@ def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
             project_id = projs[binding["project"]]["id"] if binding.get("project") else None
             exists = conn.execute(
                 "SELECT 1 FROM role_bindings WHERE user_id = %s AND role = %s AND project_id IS NOT DISTINCT FROM %s "
-                "AND revoked_at IS NULL", (row["id"], binding["role"], project_id)).fetchone()
+                "AND revoked_at IS NULL",
+                (row["id"], binding["role"], project_id),
+            ).fetchone()
             if not exists:
-                conn.execute("INSERT INTO role_bindings (id, user_id, role, project_id) VALUES (%s, %s, %s, %s)",
-                             (uuid7(), row["id"], binding["role"], project_id))
+                conn.execute(
+                    "INSERT INTO role_bindings (id, user_id, role, project_id) VALUES (%s, %s, %s, %s)",
+                    (uuid7(), row["id"], binding["role"], project_id),
+                )
 
     for target, kinds in profile["grants"].items():
         env = envs[target]
@@ -102,7 +117,8 @@ def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
                 conn.execute(
                     "INSERT INTO resource_grants (id, project_id, environment_id, kind, stable_id) "
                     "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
-                    (uuid7(), env["project_id"], env["id"], kind, stable_id))
+                    (uuid7(), env["project_id"], env["id"], kind, stable_id),
+                )
 
     for pub in profile.get("publish", []):
         row = registry.template(conn, pub["template"], pub["version"])
@@ -112,18 +128,19 @@ def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
     snapshot = inventory.record_snapshot(conn, connectors["vsphere-fake"]["id"], fixture["items"])
     conn.execute(
         "INSERT INTO platform_settings (key, value) VALUES ('lab_nodes', %s) ON CONFLICT (key) DO UPDATE "
-        "SET value = EXCLUDED.value, updated_at = now()", (Jsonb(fixture.get("lab_nodes", [])),))
+        "SET value = EXCLUDED.value, updated_at = now()",
+        (Jsonb(fixture.get("lab_nodes", [])),),
+    )
     conn.execute(
         "INSERT INTO platform_settings (key, value) VALUES ('assistant', %s) ON CONFLICT (key) DO NOTHING",
-        (Jsonb({"adapter": "fake", "scenario": "nominal"}),))
+        (Jsonb({"adapter": "fake", "scenario": "nominal"}),),
+    )
     # F35 : identité de service limitée au projet vitrine (jeton Bearer, jamais de mot de passe).
     from .identity import service_accounts
 
     service_tokens: dict[str, str] = {}
     if "vitrine" in projs:
-        existing_sa = conn.execute(
-            "SELECT id FROM users WHERE email = %s", ("ci-vitrine@demo.invalid",)
-        ).fetchone()
+        existing_sa = conn.execute("SELECT id FROM users WHERE email = %s", ("ci-vitrine@demo.invalid",)).fetchone()
         if existing_sa is None:
             minted = service_accounts.mint(
                 conn,
@@ -135,11 +152,9 @@ def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
                 actor_id=users["admin"]["id"],
             )
             service_tokens["ci-vitrine@demo.invalid"] = minted["token"]
-            users["ci_vitrine"] = conn.execute(
-                "SELECT * FROM users WHERE id = %s", (minted["user_id"],)
-            ).fetchone()
+            users["ci_vitrine"] = conn.execute("SELECT * FROM users WHERE id = %s", (minted["user_id"],)).fetchone()
 
-    from . import access, adoption, compatibility, factory, runners
+    from . import access, adoption, compatibility, factory, offline_bundles, runners
 
     # F16 : zones d'exécution builtin (dev ≠ prod).
     if conn.execute(
@@ -151,6 +166,8 @@ def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
     access.ensure_demo_mappings(conn, published_by=users["admin"]["id"])
     # F07 : image labo prête (fabrique fictive) alignée sur le filtre ubuntu-web.
     factory.ensure_seeded(conn)
+    # F17 : clé publique de confiance pour les lots hors ligne (aucun bundle pré-importé).
+    offline_bundles.ensure_seeded(conn)
     # F08 : revendication externe fictive sur vm-9002 (conflit d'adoption).
     if conn.execute(
         "SELECT 1 FROM information_schema.tables WHERE table_name = 'terraform_resource_claims'"
@@ -162,9 +179,15 @@ def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
             note="State Terraform externe fictif (F08)",
         )
 
-    audit.record(conn, actor_type="system", actor_id="demo-seed", action="demo.seed", outcome="ok",
-                 targets={"projects": sorted(projs), "users": len(users)},
-                 versions={"inventory_snapshot": str(snapshot)})
+    audit.record(
+        conn,
+        actor_type="system",
+        actor_id="demo-seed",
+        action="demo.seed",
+        outcome="ok",
+        targets={"projects": sorted(projs), "users": len(users)},
+        versions={"inventory_snapshot": str(snapshot)},
+    )
 
     if (generated or service_tokens) and credentials_file is not None:
         credentials_file.parent.mkdir(parents=True, exist_ok=True)
@@ -175,8 +198,11 @@ def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
                 fh.write(f"{email} {password}\n")
             for email, token in service_tokens.items():
                 fh.write(f"# service token (F35)\n{email} bearer:{token}\n")
-    return {"projects": {k: v["id"] for k, v in projs.items()},
-            "environments": {k: v["id"] for k, v in envs.items()},
-            "users": {k: v["id"] for k, v in users.items()}, "snapshot_id": snapshot,
-            "generated_passwords": sorted(generated),
-            "service_tokens": service_tokens}
+    return {
+        "projects": {k: v["id"] for k, v in projs.items()},
+        "environments": {k: v["id"] for k, v in envs.items()},
+        "users": {k: v["id"] for k, v in users.items()},
+        "snapshot_id": snapshot,
+        "generated_passwords": sorted(generated),
+        "service_tokens": service_tokens,
+    }

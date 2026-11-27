@@ -51,6 +51,11 @@ const links = computed(() => {
         title: 'Identités',
         blurb: 'SCIM, revue d’accès, copie d’audit, alertes certificats TLS.',
       },
+      {
+        to: '/admin/bundles',
+        title: 'Bundles hors ligne',
+        blurb: 'Lots signés pour sites déconnectés : contenu exact, intégrité, import sans Internet.',
+      },
     )
   }
   return items

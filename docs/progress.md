@@ -105,7 +105,9 @@
 | Baux pour environnements temporaires (F06) | livré (retrait simulé) | testé localement | `test_f06_leases.py` ; e2e `102-f06-baux.spec.ts` ; migration `0019` ; expiration → signalement + plan `retire` ; renew ; job `lease_retire` sans destroy ; L2 non fait |
 | Fabrique d'images (F07) | livré (fabrique fictive) | testé localement | `test_f07_fabrique.py` ; e2e `102-f07-fabrique.spec.ts` ; migration `0020` ; outil réel (D11) / labo : non |
 | Certificats SSH à courte durée (F15) | livré | testé localement | `test_f15_ssh_certs.py` ; `test_f15_ssh_lab.py` (docker) ; CA entreprise : non |
-| Fonctions F16–F20, F22–F26, F29–F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
+| Runners par site ou zone (F16) | livré | testé localement | `test_f16_runners_zones.py` ; R130 ; `builtin@10` ; migration `0023` ; site distant : non |
+| Bundles pour sites déconnectés (F17) | livré (lots fictifs signés) | testé localement | `test_f17_offline_bundles.py` ; e2e `103-f17-bundles.spec.ts` ; migration `0024` ; Ed25519 ; octet altéré → `bundle_tampered` ; VM QEMU isolée : non (lot 3) |
+| Fonctions F18–F20, F22–F26, F29–F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6
 
@@ -449,15 +451,24 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F16 : runners par site ou zone (Lot E, 2026-11-27, heure de Paris)
 
-- Branche `cursor/f16-runners-zones-24cb` rebasée sur `main` après F15. Migration Alembic **`0023`** (`down_revision=0022`). Bundle **`builtin@10`** (R130).
+- Fusionné (PR #33). Migration Alembic **`0023`** (`down_revision=0022`). Bundle **`builtin@10`** (R130).
 - Tables `execution_zones`, `site_runners` ; colonne `jobs.required_zone` ; GRANT `rackloom_api` / `rackloom_worker`.
 - Enrôlement mTLS (CA locale sous `keys_dir`, empreinte SHA-256) ; le runner initie `POST /runners/me/heartbeat` et `POST /runners/me/claim` ; filtre de zone à la claim ; R130 à l'admission.
 - Heartbeat perdu → runner `stale`, écritures déjà envoyées → `uncertain` + job `reconcile` (pas de seconde écriture).
 - Preuves : `test_f16_runners_zones.py`. Site distant réel : non.
 
+### F17 : bundles pour sites déconnectés (Lot E, 2026-11-27, heure de Paris)
+
+- Branche `cursor/f17-bundles-sites-deconnectes-932b` rebasée sur `main` après F16. Migration Alembic **`0024`** (`down_revision=0023`).
+- Tables `offline_bundle_trust_keys`, `offline_bundles`, `offline_bundle_items`, `offline_bundle_imports` ; GRANT `rackloom_api` (SELECT/INSERT/UPDATE) / `rackloom_worker` (SELECT).
+- Format `RLB1` signé Ed25519 ; kinds image / dependency / terraform_provider / ansible_collection / model.
+- API admin : inspect (contenu exact), import après vérif, build-demo ; refus `bundle_tampered` / `bundle_incompatible` / `bundle_untrusted`.
+- CLI `rackloom bundle {build,verify,import}` ; UI `/admin/bundles`. Aucun job créé. Clés via `keys init` ; volume `offline-bundles`.
+- Preuves : `test_f17_offline_bundles.py` (5) ; e2e `103-f17-bundles.spec.ts`. VM QEMU sans réseau : non (lot 3).
+
 ## Prochain jalon
 
-1. Fusionner **F16 (`0023`)** (PR #33) après CI verte post-rebase.
-2. Ensuite selon le backlog (F17, F26, F29, F18–F20, F22–F25, F30, AT02–AT04).
+1. Fusionner **F17 (`0024`)** (PR #35) après CI verte post-rebase.
+2. Suite lot E : F26, F29 ; puis F18–F20, F22–F25, F30, AT02–AT04.
 3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.

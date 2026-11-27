@@ -368,6 +368,110 @@ def cmd_emergency_close(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_bundle_build(args: argparse.Namespace) -> int:
+    """F17 : construit un lot signé de démo (charges utiles fictives) vers un fichier."""
+    from . import offline_bundles
+
+    private_raw, public_raw = offline_bundles.ensure_signing_keypair()
+    package = offline_bundles.build_package(
+        slug=args.slug,
+        version=args.version,
+        title=args.title,
+        items=offline_bundles.demo_items(),
+        private_raw=private_raw,
+    )
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(package)
+    out.chmod(0o600)
+    print(
+        json.dumps(
+            {
+                "path": str(out),
+                "size_bytes": len(package),
+                "signer_key_id": offline_bundles.key_id_for(public_raw),
+                "notice": "lot signé ; clé privée hors fichier",
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+def cmd_bundle_verify(args: argparse.Namespace) -> int:
+    """F17 : vérifie intégrité et signature d'un lot (sans importer)."""
+    from . import offline_bundles
+
+    data = Path(args.path).read_bytes()
+    _, public_raw = offline_bundles.ensure_signing_keypair()
+    manifest, signature, signer_key_id, payloads = offline_bundles.parse_package(data)
+    digest = offline_bundles.verify_integrity(manifest, signature, signer_key_id, payloads, public_raw)
+    offline_bundles.check_compatibility(manifest)
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "slug": manifest["slug"],
+                "version": manifest["version"],
+                "content_digest": digest,
+                "items": [
+                    {
+                        "kind": i["kind"],
+                        "name": i["name"],
+                        "version": i["version"],
+                        "digest": i["digest"],
+                        "size_bytes": i["size_bytes"],
+                    }
+                    for i in manifest["items"]
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+def cmd_bundle_import(args: argparse.Namespace) -> int:
+    """F17 : importe un lot après vérifications (console admin plateforme)."""
+    from datetime import UTC, datetime
+
+    from . import offline_bundles
+    from .identity.authz import Binding, Principal
+    from .ids import uuid7
+
+    data = Path(args.path).read_bytes()
+    with _conn() as conn:
+        offline_bundles.ensure_trust_key(conn)
+        admin = conn.execute(
+            "SELECT u.id, u.email, u.display_name FROM users u "
+            "JOIN role_bindings b ON b.user_id = u.id "
+            "WHERE b.role = 'platform_admin' AND b.revoked_at IS NULL LIMIT 1"
+        ).fetchone()
+        if admin is None:
+            print("aucun platform_admin", file=sys.stderr)
+            return 2
+        principal = Principal(
+            user_id=admin["id"],
+            email=admin["email"],
+            display_name=admin["display_name"],
+            session_id=uuid7(),
+            auth_method="cli",
+            auth_time=datetime.now(UTC),
+            bindings=[Binding(role="platform_admin", project_id=None, environment_id=None)],
+        )
+        view = offline_bundles.import_package(conn, principal, data)
+        conn.commit()
+        print(
+            json.dumps(
+                {"id": view["id"], "status": view["status"], "items": view["items"]},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    return 0
+
+
 def cmd_emergency_idp_down(args: argparse.Namespace) -> int:
     from .identity import emergency
 
@@ -480,16 +584,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="ne simule pas la panne IdP (SSO reste disponible)",
     )
     ea.set_defaults(func=cmd_emergency_activate)
-    emergency.add_parser("status", help="F14 : état SSO et intervention").set_defaults(
-        func=cmd_emergency_status
-    )
+    emergency.add_parser("status", help="F14 : état SSO et intervention").set_defaults(func=cmd_emergency_status)
     ec = emergency.add_parser("close", help="F14 : ferme l'intervention et retire l'accès")
     ec.add_argument("--reason", required=True)
     ec.set_defaults(func=cmd_emergency_close)
-    es = emergency.add_parser(
-        "simulate-idp-down", help="F14 : marque le SSO indisponible (laboratoire / démo)"
-    )
+    es = emergency.add_parser("simulate-idp-down", help="F14 : marque le SSO indisponible (laboratoire / démo)")
     es.set_defaults(func=cmd_emergency_idp_down)
+    bundle = sub.add_parser("bundle").add_subparsers(dest="bundle_command", required=True)
+    bb = bundle.add_parser("build", help="F17 : construit un lot signé de démo (hors ligne)")
+    bb.add_argument("--slug", default="lab-offline")
+    bb.add_argument("--version", default="1.0.0")
+    bb.add_argument("--title", default="Lot de démo hors ligne")
+    bb.add_argument("--output", "-o", required=True)
+    bb.set_defaults(func=cmd_bundle_build)
+    bv = bundle.add_parser("verify", help="F17 : vérifie intégrité et compatibilité d'un lot")
+    bv.add_argument("path")
+    bv.set_defaults(func=cmd_bundle_verify)
+    bi = bundle.add_parser("import", help="F17 : importe un lot après vérifications")
+    bi.add_argument("path")
+    bi.set_defaults(func=cmd_bundle_import)
     return parser
 
 

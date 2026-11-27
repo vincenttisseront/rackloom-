@@ -3,9 +3,10 @@
 Publier n'est ni déployer ni approuver : aucune de ces routes ne crée de job ni d'approbation.
 """
 
-
 from __future__ import annotations
 
+import base64
+import binascii
 import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -14,7 +15,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Request
 from pydantic import ValidationError
 
-from .. import audit, factory, inventory, projects, registry, secrets, studio
+from .. import audit, factory, inventory, offline_bundles, projects, registry, secrets, studio
 from ..config import get_settings
 from ..connectors import MATRIX, circuit, vsphere
 from ..db import Conn, Jsonb, get_pool
@@ -54,26 +55,46 @@ def _only(body: dict[str, Any], allowed: set[str]) -> None:
 def list_components(request: Request) -> list[dict[str, Any]]:
     with unit_of_work(request) as u:
         _registry_reader(u.p)
-        rows = u.conn.execute("SELECT slug, version, status, digest, contract, verification_level "
-                              "FROM component_versions ORDER BY slug, loaded_at").fetchall()
-        return [{"slug": r["slug"], "version": r["version"], "status": r["status"], "digest": r["digest"],
-                 "verification_level": r["verification_level"], "title": r["contract"]["title"],
-                 "effects": r["contract"].get("effects"), "checks": r["contract"].get("checks"),
-                 "parameters": r["contract"].get("parameters"),
-                 "implementation": r["contract"].get("implementation")} for r in rows]
+        rows = u.conn.execute(
+            "SELECT slug, version, status, digest, contract, verification_level "
+            "FROM component_versions ORDER BY slug, loaded_at"
+        ).fetchall()
+        return [
+            {
+                "slug": r["slug"],
+                "version": r["version"],
+                "status": r["status"],
+                "digest": r["digest"],
+                "verification_level": r["verification_level"],
+                "title": r["contract"]["title"],
+                "effects": r["contract"].get("effects"),
+                "checks": r["contract"].get("checks"),
+                "parameters": r["contract"].get("parameters"),
+                "implementation": r["contract"].get("implementation"),
+            }
+            for r in rows
+        ]
 
 
 @router.get("/admin/templates")
 def list_templates(request: Request) -> list[dict[str, Any]]:
     with unit_of_work(request) as u:
         _registry_reader(u.p)
-        rows = u.conn.execute("SELECT slug, version, status, digest, contract, published_at FROM template_versions "
-                              "ORDER BY slug, loaded_at").fetchall()
+        rows = u.conn.execute(
+            "SELECT slug, version, status, digest, contract, published_at FROM template_versions "
+            "ORDER BY slug, loaded_at"
+        ).fetchall()
         out: dict[str, dict[str, Any]] = {}
         for r in rows:
             entry = out.setdefault(r["slug"], {"slug": r["slug"], "title": r["contract"]["title"], "versions": []})
-            entry["versions"].append({"version": r["version"], "status": r["status"], "digest": r["digest"],
-                                      "published_at": iso(r["published_at"])})
+            entry["versions"].append(
+                {
+                    "version": r["version"],
+                    "status": r["status"],
+                    "digest": r["digest"],
+                    "published_at": iso(r["published_at"]),
+                }
+            )
         for slug, entry in out.items():
             latest = registry.latest_published(u.conn, slug)
             entry["latest_published"] = latest["version"] if latest else None
@@ -113,13 +134,12 @@ def get_template(slug: str, version: str, request: Request) -> dict[str, Any]:
                     "artifact_digest": pin_row["artifact_digest"],
                     "reviewed": pin_row["reviewed"],
                 }
-        if (
-            row["status"] == "published"
-            and u.p.has_role("template_publisher")
-        ):
+        if row["status"] == "published" and u.p.has_role("template_publisher"):
             for kind in registry.ENV_KINDS:
-                if kind in row["contract"]["deployment_policy"].get("admissible_environment_kinds", []) \
-                        and kind not in promoted_kinds:
+                if (
+                    kind in row["contract"]["deployment_policy"].get("admissible_environment_kinds", [])
+                    and kind not in promoted_kinds
+                ):
                     actions.append(f"promote:{kind}")
         return {
             "slug": slug,
@@ -256,9 +276,7 @@ def _image_view(view: dict[str, Any]) -> dict[str, Any]:
         if key in out:
             out[key] = iso(out[key])
     out["tests"] = [{**t, "ran_at": iso(t["ran_at"])} for t in view.get("tests", [])]
-    out["promotions"] = [
-        {**p, "promoted_at": iso(p["promoted_at"])} for p in view.get("promotions", [])
-    ]
+    out["promotions"] = [{**p, "promoted_at": iso(p["promoted_at"])} for p in view.get("promotions", [])]
     return out
 
 
@@ -322,9 +340,7 @@ def build_image(slug: str, version: str, request: Request) -> dict[str, Any]:
 
 
 @router.post("/admin/images/{slug}/versions/{version}/test")
-def test_image(
-    slug: str, version: str, request: Request, body: dict[str, Any] | None = Body(None)
-) -> dict[str, Any]:
+def test_image(slug: str, version: str, request: Request, body: dict[str, Any] | None = Body(None)) -> dict[str, Any]:
     """F07 : exécute la batterie de tests. `fail` injecte un échec (recettes)."""
     payload = body or {}
     _only(payload, {"fail"})
@@ -380,8 +396,11 @@ def environment_policies(environment_id: UUID, request: Request) -> list[dict[st
             raise forbidden("rôle administrateur ou auditeur requis")
         if projects.get_environment(u.conn, environment_id) is None:
             raise not_found("environnement")
-        rows = u.conn.execute("SELECT version, digest, rules, reason, created_at FROM environment_policies "
-                              "WHERE environment_id = %s ORDER BY version", (environment_id,)).fetchall()
+        rows = u.conn.execute(
+            "SELECT version, digest, rules, reason, created_at FROM environment_policies "
+            "WHERE environment_id = %s ORDER BY version",
+            (environment_id,),
+        ).fetchall()
         return [{**r, "created_at": iso(r["created_at"])} for r in rows]
 
 
@@ -394,12 +413,21 @@ def _connector(conn, connector_id: UUID) -> dict[str, Any]:
 
 def _connector_view(row: dict[str, Any]) -> dict[str, Any]:
     circ = circuit.summary(row)
-    return {"id": str(row["id"]), "slug": row["slug"], "kind": row["kind"], "mode": row["mode"],
-            "simulated": row["mode"] == "simulated", "config": row["config"], "config_version": row["config_version"],
-            "secrets": {name: "défini" for name in row["secret_refs"]}, "capabilities": row["capabilities"],
-            "last_test_at": iso(row["last_test_at"]), "last_test_result": row["last_test_result"],
-            "error_count": row["error_count"],
-            "circuit": {**circ, "opened_at": iso(circ["opened_at"]) if circ["opened_at"] else None}}
+    return {
+        "id": str(row["id"]),
+        "slug": row["slug"],
+        "kind": row["kind"],
+        "mode": row["mode"],
+        "simulated": row["mode"] == "simulated",
+        "config": row["config"],
+        "config_version": row["config_version"],
+        "secrets": {name: "défini" for name in row["secret_refs"]},
+        "capabilities": row["capabilities"],
+        "last_test_at": iso(row["last_test_at"]),
+        "last_test_result": row["last_test_result"],
+        "error_count": row["error_count"],
+        "circuit": {**circ, "opened_at": iso(circ["opened_at"]) if circ["opened_at"] else None},
+    }
 
 
 def _vsphere_config(conn: Conn, row: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -410,15 +438,22 @@ def _vsphere_config(conn: Conn, row: dict[str, Any], config: dict[str, Any]) -> 
         err = exc.errors()[0]
         field = "/config/" + "/".join(str(p) for p in err["loc"])
         if err["type"] == "extra_forbidden":
-            raise ApiError(422, "invalid_config", "champ inconnu : la vérification TLS ne se désactive pas, "
-                           "importez la CA du vCenter (ca_pem)", field=field) from None
+            raise ApiError(
+                422,
+                "invalid_config",
+                "champ inconnu : la vérification TLS ne se désactive pas, importez la CA du vCenter (ca_pem)",
+                field=field,
+            ) from None
         raise ApiError(422, "invalid_config", str(err["msg"]).removeprefix("Value error, "), field=field) from None
     if cfg.url is None:
         return {}
     host, port = vsphere.endpoint(cfg.url)
-    conn.execute("INSERT INTO approved_endpoints (id, connector_id, scheme, host, port, ca_bundle_pem) "
-                 "VALUES (%s, %s, 'https', %s, %s, %s) ON CONFLICT (connector_id, scheme, host, port) "
-                 "DO UPDATE SET ca_bundle_pem = %s", (uuid7(), row["id"], host, port, cfg.ca_pem, cfg.ca_pem))
+    conn.execute(
+        "INSERT INTO approved_endpoints (id, connector_id, scheme, host, port, ca_bundle_pem) "
+        "VALUES (%s, %s, 'https', %s, %s, %s) ON CONFLICT (connector_id, scheme, host, port) "
+        "DO UPDATE SET ca_bundle_pem = %s",
+        (uuid7(), row["id"], host, port, cfg.ca_pem, cfg.ca_pem),
+    )
     return {"url": cfg.url, "ca_imported": cfg.ca_pem is not None}
 
 
@@ -427,8 +462,11 @@ def _vsphere_test(conn: Conn, row: dict[str, Any]) -> dict[str, Any]:
     if not url:
         return vsphere.failure("not_configured")
     host, port = vsphere.endpoint(url)
-    ep = conn.execute("SELECT ca_bundle_pem FROM approved_endpoints WHERE connector_id = %s AND scheme = 'https' "
-                      "AND host = %s AND port = %s", (row["id"], host, port)).fetchone()
+    ep = conn.execute(
+        "SELECT ca_bundle_pem FROM approved_endpoints WHERE connector_id = %s AND scheme = 'https' "
+        "AND host = %s AND port = %s",
+        (row["id"], host, port),
+    ).fetchone()
     if ep is None:
         return vsphere.failure("endpoint_not_approved")
     return vsphere.test_connection(host, port, ep["ca_bundle_pem"])
@@ -459,25 +497,39 @@ def update_connector(connector_id: UUID, request: Request, body: dict[str, Any] 
         raise ApiError(422, "invalid_config", "objet attendu", field="/config")
     for key in config:
         if any(h in key.lower() for h in SECRET_HINTS):
-            raise ApiError(422, "secret_in_config", "un secret se saisit par la route des secrets, jamais dans la "
-                           "configuration", field=f"/config/{key}")
+            raise ApiError(
+                422,
+                "secret_in_config",
+                "un secret se saisit par la route des secrets, jamais dans la configuration",
+                field=f"/config/{key}",
+            )
     with unit_of_work(request, write=True) as u:
         _may_configure_connector(u.p)
         reauth.require_fresh(u.p, action="configurer un connecteur")
         row = _connector(u.conn, connector_id)
         if row["kind"] == "vsphere":
             config = _vsphere_config(u.conn, row, config)
-        row = u.conn.execute("UPDATE connectors SET config = %s, config_version = config_version + 1 WHERE id = %s "
-                             "RETURNING *", (Jsonb(config), row["id"])).fetchone()
-        audit.record(u.conn, actor_type="user", actor_id=str(u.p.user_id), action="connector.update", outcome="ok",
-                     targets={"connector": row["slug"]}, versions={"config_version": row["config_version"]},
-                     request_id=u.request_id)
+        row = u.conn.execute(
+            "UPDATE connectors SET config = %s, config_version = config_version + 1 WHERE id = %s RETURNING *",
+            (Jsonb(config), row["id"]),
+        ).fetchone()
+        audit.record(
+            u.conn,
+            actor_type="user",
+            actor_id=str(u.p.user_id),
+            action="connector.update",
+            outcome="ok",
+            targets={"connector": row["slug"]},
+            versions={"config_version": row["config_version"]},
+            request_id=u.request_id,
+        )
         return _connector_view(row)
 
 
 @router.put("/connectors/{connector_id}/secrets/{name}")
-def put_connector_secret(connector_id: UUID, name: str, request: Request,
-                         body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def put_connector_secret(
+    connector_id: UUID, name: str, request: Request, body: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
     _only(body, {"value"})
     value = body.get("value")
     if not isinstance(value, str) or not value or len(value) > 4096:
@@ -491,25 +543,37 @@ def put_connector_secret(connector_id: UUID, name: str, request: Request,
         ref = f"secret://connectors/{row['slug']}/{name}"
         secrets.put(u.conn, ref, value.encode(), u.p.user_id)
         refs = dict(row["secret_refs"], **{name: ref})
-        u.conn.execute("UPDATE connectors SET secret_refs = %s, config_version = config_version + 1 WHERE id = %s",
-                       (Jsonb(refs), row["id"]))
-        audit.record(u.conn, actor_type="user", actor_id=str(u.p.user_id), action="connector.secret.put",
-                     outcome="ok", targets={"connector": row["slug"], "secret": name}, request_id=u.request_id)
+        u.conn.execute(
+            "UPDATE connectors SET secret_refs = %s, config_version = config_version + 1 WHERE id = %s",
+            (Jsonb(refs), row["id"]),
+        )
+        audit.record(
+            u.conn,
+            actor_type="user",
+            actor_id=str(u.p.user_id),
+            action="connector.secret.put",
+            outcome="ok",
+            targets={"connector": row["slug"], "secret": name},
+            request_id=u.request_id,
+        )
         # F13 : jamais la valeur, seulement le statut « défini ».
         return {"connector": row["slug"], "secret": name, "status": "défini"}
 
 
 @router.post("/connectors/{connector_id}/circuit/open")
-def open_connector_circuit(connector_id: UUID, request: Request,
-                           body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def open_connector_circuit(connector_id: UUID, request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     """Ouvre manuellement le disjoncteur (F37) : suspend les nouvelles écritures vers ce connecteur."""
     _only(body, {"reason"})
     with unit_of_work(request, write=True) as u:
         require_admin(u.p)
         row = _connector(u.conn, connector_id)
         trip = circuit.open_circuit(
-            u.conn, row["id"], body.get("reason"),
-            actor_type="user", actor_id=str(u.p.user_id), request_id=u.request_id,
+            u.conn,
+            row["id"],
+            body.get("reason"),
+            actor_type="user",
+            actor_id=str(u.p.user_id),
+            request_id=u.request_id,
         )
         view = _connector_view(trip["connector"])
         return {"connector": view, "opened": trip["opened"], "write_jobs": trip["write_jobs"]}
@@ -525,28 +589,44 @@ def test_connector(connector_id: UUID, request: Request) -> dict[str, Any]:
         if not cap["available"]:
             result = {"status": "unavailable", "simulated": False, "message": "test non disponible pour ce connecteur"}
         elif cap["mode"] == "simulated":
-            result = {"status": "ok", "simulated": True,
-                      "message": "Test simulé : aucun appel externe (connecteur fictif)"}
+            result = {
+                "status": "ok",
+                "simulated": True,
+                "message": "Test simulé : aucun appel externe (connecteur fictif)",
+            }
         elif row["kind"] == "vsphere":
             result = _vsphere_test(u.conn, row)
         else:
-            result = {"status": "not_verified", "simulated": False,
-                      "message": "Vérifié à l'exécution par le runner ; voir `make doctor`"}
+            result = {
+                "status": "not_verified",
+                "simulated": False,
+                "message": "Vérifié à l'exécution par le runner ; voir `make doctor`",
+            }
         result["at"] = datetime.now(UTC).isoformat()
-        u.conn.execute("UPDATE connectors SET last_test_at = now(), last_test_result = %s WHERE id = %s",
-                       (Jsonb(result), row["id"]))
+        u.conn.execute(
+            "UPDATE connectors SET last_test_at = now(), last_test_result = %s WHERE id = %s",
+            (Jsonb(result), row["id"]),
+        )
         status = str(result["status"])
         if status == "failed":
             reason = str(result.get("message") or result.get("code") or "test de connexion échoué")
             trip = circuit.record_failure(
-                u.conn, row["id"], reason, actor_type="user", actor_id=str(u.p.user_id),
+                u.conn,
+                row["id"],
+                reason,
+                actor_type="user",
+                actor_id=str(u.p.user_id),
             )
             circ = circuit.summary(trip["connector"])
             result["circuit"] = circ
             result["circuit_opened"] = trip["opened"]
         elif status == "ok":
             close = circuit.note_success(
-                u.conn, row["id"], actor_type="user", actor_id=str(u.p.user_id), request_id=u.request_id,
+                u.conn,
+                row["id"],
+                actor_type="user",
+                actor_id=str(u.p.user_id),
+                request_id=u.request_id,
             )
             circ = circuit.summary(close["connector"])
             result["circuit"] = circ
@@ -560,8 +640,15 @@ def test_connector(connector_id: UUID, request: Request) -> dict[str, Any]:
         circ_view = result["circuit"]
         assert isinstance(circ_view, dict)
         circ_view["opened_at"] = iso(circ_view["opened_at"]) if circ_view.get("opened_at") else None
-        audit.record(u.conn, actor_type="user", actor_id=str(u.p.user_id), action="connector.test",
-                     outcome=status, targets={"connector": row["slug"]}, request_id=u.request_id)
+        audit.record(
+            u.conn,
+            actor_type="user",
+            actor_id=str(u.p.user_id),
+            action="connector.test",
+            outcome=status,
+            targets={"connector": row["slug"]},
+            request_id=u.request_id,
+        )
         return result
 
 
@@ -571,15 +658,29 @@ def refresh_inventory(connector_id: UUID, request: Request) -> dict[str, Any]:
         require_admin(u.p)
         row = _connector(u.conn, connector_id)
         if row["kind"] != "vsphere" or row["mode"] != "simulated":
-            raise ApiError(409, "inventory_unavailable", "inventaire disponible uniquement pour le connecteur "
-                           "vSphere fictif au lot 1")
+            raise ApiError(
+                409,
+                "inventory_unavailable",
+                "inventaire disponible uniquement pour le connecteur vSphere fictif au lot 1",
+            )
         fixture = inventory.load_fixture(get_settings().fixtures_dir / "inventory.yaml")
         snapshot = inventory.record_snapshot(u.conn, row["id"], fixture["items"])
-        emit(u.conn, type="inventory.refreshed", source="vcenter",
-             data={"snapshot_id": str(snapshot), "items": len(fixture["items"]), "simulated": True})
-        audit.record(u.conn, actor_type="user", actor_id=str(u.p.user_id), action="inventory.refresh", outcome="ok",
-                     targets={"connector": row["slug"]}, versions={"snapshot": str(snapshot)},
-                     request_id=u.request_id)
+        emit(
+            u.conn,
+            type="inventory.refreshed",
+            source="vcenter",
+            data={"snapshot_id": str(snapshot), "items": len(fixture["items"]), "simulated": True},
+        )
+        audit.record(
+            u.conn,
+            actor_type="user",
+            actor_id=str(u.p.user_id),
+            action="inventory.refresh",
+            outcome="ok",
+            targets={"connector": row["slug"]},
+            versions={"snapshot": str(snapshot)},
+            request_id=u.request_id,
+        )
         return {"snapshot_id": str(snapshot), "items": len(fixture["items"]), "simulated": True}
 
 
@@ -588,13 +689,28 @@ def list_users(request: Request) -> list[dict[str, Any]]:
     with unit_of_work(request) as u:
         require_admin(u.p)
         users = u.conn.execute("SELECT id, email, display_name, status, is_demo FROM users ORDER BY email").fetchall()
-        bindings = u.conn.execute("SELECT b.id, b.user_id, b.role, p.slug AS project, b.environment_id "
-                                  "FROM role_bindings b LEFT JOIN projects p ON p.id = b.project_id "
-                                  "WHERE b.revoked_at IS NULL").fetchall()
-        return [{**usr, "id": str(usr["id"]),
-                 "roles": [{"id": str(b["id"]), "role": b["role"], "project": b["project"],
-                            "environment_id": str(b["environment_id"]) if b["environment_id"] else None}
-                           for b in bindings if b["user_id"] == usr["id"]]} for usr in users]
+        bindings = u.conn.execute(
+            "SELECT b.id, b.user_id, b.role, p.slug AS project, b.environment_id "
+            "FROM role_bindings b LEFT JOIN projects p ON p.id = b.project_id "
+            "WHERE b.revoked_at IS NULL"
+        ).fetchall()
+        return [
+            {
+                **usr,
+                "id": str(usr["id"]),
+                "roles": [
+                    {
+                        "id": str(b["id"]),
+                        "role": b["role"],
+                        "project": b["project"],
+                        "environment_id": str(b["environment_id"]) if b["environment_id"] else None,
+                    }
+                    for b in bindings
+                    if b["user_id"] == usr["id"]
+                ],
+            }
+            for usr in users
+        ]
 
 
 @router.post("/users")
@@ -609,8 +725,15 @@ def create_user(request: Request, body: dict[str, Any] = Body(...)) -> dict[str,
         if u.conn.execute("SELECT 1 FROM users WHERE email = %s", (body["email"].lower(),)).fetchone():
             raise ApiError(409, "user_exists", "un utilisateur existe déjà avec cet e-mail")
         user_id = identity.create_user(u.conn, body["email"], body["display_name"][:120], body["password"])
-        audit.record(u.conn, actor_type="user", actor_id=str(u.p.user_id), action="user.create", outcome="ok",
-                     targets={"user": str(user_id)}, request_id=u.request_id)
+        audit.record(
+            u.conn,
+            actor_type="user",
+            actor_id=str(u.p.user_id),
+            action="user.create",
+            outcome="ok",
+            targets={"user": str(user_id)},
+            request_id=u.request_id,
+        )
         return {"id": str(user_id)}
 
 
@@ -669,20 +792,31 @@ def grant_role(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, 
 def revoke_role(binding_id: UUID, request: Request) -> dict[str, Any]:
     with unit_of_work(request, write=True) as u:
         require_admin(u.p)
-        row = u.conn.execute("UPDATE role_bindings SET revoked_at = now(), revoked_by = %s "
-                             "WHERE id = %s AND revoked_at IS NULL RETURNING *", (u.p.user_id, binding_id)).fetchone()
+        row = u.conn.execute(
+            "UPDATE role_bindings SET revoked_at = now(), revoked_by = %s "
+            "WHERE id = %s AND revoked_at IS NULL RETURNING *",
+            (u.p.user_id, binding_id),
+        ).fetchone()
         if row is None:
             raise not_found("attribution de rôle")
         identity.bump_privilege_epoch(u.conn, row["user_id"], "role_revoked")
-        audit.record(u.conn, actor_type="user", actor_id=str(u.p.user_id), action="role.revoke", outcome="ok",
-                     project_id=row["project_id"], targets={"user": str(row["user_id"]), "role": row["role"]},
-                     request_id=u.request_id)
+        audit.record(
+            u.conn,
+            actor_type="user",
+            actor_id=str(u.p.user_id),
+            action="role.revoke",
+            outcome="ok",
+            project_id=row["project_id"],
+            targets={"user": str(row["user_id"]), "role": row["role"]},
+            request_id=u.request_id,
+        )
         return {"id": str(binding_id), "revoked": True, "sessions": "invalidées"}
 
 
 @router.get("/audit")
-def list_audit(request: Request, project_id: UUID | None = None, correlation_id: UUID | None = None,
-               limit: int = 200) -> dict[str, Any]:
+def list_audit(
+    request: Request, project_id: UUID | None = None, correlation_id: UUID | None = None, limit: int = 200
+) -> dict[str, Any]:
     with unit_of_work(request) as u:
         require_auditor(u.p, project_id)
         clauses, params = [], []
@@ -695,10 +829,121 @@ def list_audit(request: Request, project_id: UUID | None = None, correlation_id:
             clauses.append("correlation_id = %s")
             params.append(correlation_id)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        rows = u.conn.execute(f"SELECT id, at, actor_type, actor_id, action, project_id, correlation_id, targets, "
-                              f"versions, policy_decision, outcome, request_id, hash FROM audit_log {where} "
-                              f"ORDER BY id DESC LIMIT %s", (*params, max(1, min(limit, 1000)))).fetchall()
+        rows = u.conn.execute(
+            f"SELECT id, at, actor_type, actor_id, action, project_id, correlation_id, targets, "
+            f"versions, policy_decision, outcome, request_id, hash FROM audit_log {where} "
+            f"ORDER BY id DESC LIMIT %s",
+            (*params, max(1, min(limit, 1000))),
+        ).fetchall()
         return {"entries": [{**r, "at": iso(r["at"])} for r in rows], "chain": audit.verify(u.conn)}
+
+
+def _bundle_view(view: dict[str, Any]) -> dict[str, Any]:
+    out = dict(view)
+    for key in ("inspected_at", "imported_at"):
+        if key in out:
+            out[key] = iso(out[key])
+    out["imports"] = [{**r, "created_at": iso(r["created_at"])} for r in view.get("imports", [])]
+    return out
+
+
+def _decode_bundle_blob(body: dict[str, Any]) -> bytes:
+    """Accepte un lot RLB1 en base64 (`package_b64`). Pas de secret dans l'URL."""
+    raw = body.get("package_b64")
+    if not isinstance(raw, str) or not raw.strip():
+        raise ApiError(422, "package_required", "package_b64 (lot RLB1 encodé) est obligatoire", field="/package_b64")
+    try:
+        data = base64.b64decode(raw, validate=True)
+    except binascii.Error as exc:
+        raise ApiError(422, "package_invalid", "package_b64 n'est pas un base64 valide", field="/package_b64") from exc
+    if not data:
+        raise ApiError(422, "package_required", "lot vide", field="/package_b64")
+    return data
+
+
+@router.get("/admin/offline-bundles")
+def list_offline_bundles(request: Request) -> list[dict[str, Any]]:
+    """F17 : lots inspectés / importés pour sites déconnectés."""
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        return [
+            {
+                **b,
+                "inspected_at": iso(b["inspected_at"]),
+                "imported_at": iso(b["imported_at"]),
+            }
+            for b in offline_bundles.list_bundles(u.conn)
+        ]
+
+
+@router.get("/admin/offline-bundles/trust-keys")
+def list_offline_bundle_trust_keys(request: Request) -> list[dict[str, Any]]:
+    """F17 : clés publiques de confiance (jamais la clé privée)."""
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        offline_bundles.ensure_trust_key(u.conn)
+        return [{**k, "created_at": iso(k["created_at"])} for k in offline_bundles.list_trust_keys(u.conn)]
+
+
+@router.get("/admin/offline-bundles/{bundle_id}")
+def get_offline_bundle(bundle_id: UUID, request: Request) -> dict[str, Any]:
+    """F17 : contenu exact d'un lot (items, digests, signature)."""
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        view = offline_bundles.get(u.conn, bundle_id)
+        actions: list[str] = []
+        if view["status"] == "inspected":
+            actions.append("import")
+        return {**_bundle_view(view), "actions": actions}
+
+
+@router.post("/admin/offline-bundles/inspect")
+def inspect_offline_bundle(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F17 : vérifie intégrité + compatibilité et affiche le contenu exact (sans importer)."""
+    _only(body, {"package_b64"})
+    data = _decode_bundle_blob(body)
+    with unit_of_work(request, write=True) as u:
+        return _bundle_view(offline_bundles.inspect_package(u.conn, u.p, data, persist=True))
+
+
+@router.post("/admin/offline-bundles/import")
+def import_offline_bundle(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """F17 : importe un lot déjà inspecté, ou inspecte+importe `package_b64` en une étape."""
+    _only(body, {"bundle_id", "package_b64"})
+    with unit_of_work(request, write=True) as u:
+        if body.get("bundle_id"):
+            return _bundle_view(offline_bundles.import_bundle(u.conn, u.p, UUID(str(body["bundle_id"]))))
+        data = _decode_bundle_blob(body)
+        return _bundle_view(offline_bundles.import_package(u.conn, u.p, data))
+
+
+@router.post("/admin/offline-bundles/build-demo")
+def build_demo_offline_bundle(request: Request, body: dict[str, Any] | None = Body(None)) -> dict[str, Any]:
+    """F17 : construit un lot de démo signé (charges utiles fictives) et l'inspecte.
+
+    Sert aux recettes locales sans Internet. N'installe rien tant que `/import` n'est pas appelé.
+    """
+    payload = body or {}
+    _only(payload, {"slug", "version", "title", "incompatible"})
+    with unit_of_work(request, write=True) as u:
+        require_admin(u.p)
+        offline_bundles.ensure_trust_key(u.conn)
+        private_raw, _ = offline_bundles.ensure_signing_keypair()
+        incompatible = bool(payload.get("incompatible"))
+        package = offline_bundles.build_package(
+            slug=str(payload.get("slug") or "lab-offline"),
+            version=str(payload.get("version") or "1.0.0"),
+            title=str(payload.get("title") or "Lot de démo hors ligne"),
+            items=offline_bundles.demo_items(),
+            appliance_min_version="9.0.0" if incompatible else "0.1.0",
+            appliance_max_version="9.9.9" if incompatible else "0.1.99",
+            private_raw=private_raw,
+        )
+        return {
+            "package_b64": base64.b64encode(package).decode("ascii"),
+            "size_bytes": len(package),
+            "notice": "Lot signé de démo. Inspecter ou importer via les routes dédiées.",
+        }
 
 
 @router.get("/platform/status")
@@ -706,8 +951,9 @@ def platform_status(request: Request) -> dict[str, Any]:
     with unit_of_work(request) as u:
         require_admin(u.p)
         settings = get_settings()
-        workers = u.conn.execute("SELECT id, hostname, heartbeat_at, slots, busy FROM workers "
-                                 "ORDER BY heartbeat_at DESC LIMIT 20").fetchall()
+        workers = u.conn.execute(
+            "SELECT id, hostname, heartbeat_at, slots, busy FROM workers ORDER BY heartbeat_at DESC LIMIT 20"
+        ).fetchall()
         alive = [w for w in workers if w["heartbeat_at"] > datetime.now(UTC) - timedelta(seconds=60)]
         queue = u.conn.execute("SELECT state, count(*) AS n FROM jobs GROUP BY state").fetchall()
         assistant = u.conn.execute("SELECT value FROM platform_settings WHERE key = 'assistant'").fetchone()
