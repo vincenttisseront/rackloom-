@@ -1,0 +1,20 @@
+[Unit]
+Description=Rackloom appliance first-boot wizard
+Documentation=file:///opt/rackloom/README.md
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+ConditionPathExists=!/var/lib/rackloom/firstboot.done
+Before=rackloom.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=RACKLOOM_FQDN=
+ExecStart=/usr/local/sbin/rackloom-firstboot
+StandardOutput=journal+console
+StandardError=journal+console
+TimeoutStartSec=1800
+
+[Install]
+WantedBy=multi-user.target

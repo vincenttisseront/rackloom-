@@ -1,0 +1,45 @@
+#cloud-config
+# Variante non interactive pour `make test-iso` (disque virtuel jetable /dev/vda).
+# Ne jamais publier cette graine comme ISO de production.
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+    variant: ""
+  timezone: Etc/UTC
+  identity:
+    hostname: rackloom-test
+    username: rackloom
+    # Mot de passe jetable de laboratoire uniquement (jamais en ISO publiée).
+    # hash de « rackloom-lab » (SHA-512, généré localement pour test-iso).
+    password: "$6$VsLudpPayzHT477M$u9oeJK5ijh8z3RQKImBNB3wepAT1bYcTBUW2jIe3F7RMGzj4NiigGgYP1sc391GF/7X.BSGFzd9O4L3UgCRNU."
+  storage:
+    layout:
+      name: lvm
+      match:
+        path: /dev/vda
+  ssh:
+    install-server: true
+    allow-pw: true
+  packages:
+    - curl
+    - ca-certificates
+    - openssl
+  apt:
+    preserve_sources_list: false
+    fallback: offline-install
+  late-commands:
+    - /cdrom/rackloom/install-debs.sh
+    - curtin in-target -- mkdir -p /opt/rackloom /etc/rackloom /var/lib/rackloom
+    - curtin in-target -- mkdir -p /etc/rackloom/secrets /etc/rackloom/keys /etc/rackloom/tls
+    - cp -a /cdrom/rackloom/payload/. /target/
+    - curtin in-target -- chmod 0755 /usr/local/sbin/rackloom-firstboot /usr/local/lib/rackloom/*.sh
+    - curtin in-target -- chmod 0644 /lib/systemd/system/rackloom.service /lib/systemd/system/rackloom-firstboot.service
+    - curtin in-target -- systemctl enable docker.service
+    - curtin in-target -- systemctl enable rackloom-firstboot.service
+    - curtin in-target -- systemctl enable rackloom.service
+    - curtin in-target -- usermod -aG docker rackloom || true
+    # Marqueur de preuve pour test-iso (aucune donnée sensible).
+    - curtin in-target -- touch /var/lib/rackloom/.iso-test-installed
+  shutdown: reboot

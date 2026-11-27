@@ -59,7 +59,7 @@
 | Profil `production` : refus des connecteurs simulés, des identités de démo et de l'adaptateur fictif | livré | testé localement | `test_production_profile.py` |
 | Exposition (seul `127.0.0.1:8443` publié) | livré | testé localement | T28 |
 | Connecteur vCenter réel (session REST, inventaire) | lot 2 | non vérifié | — |
-| ISO, premier boot, sauvegarde, restauration | lot 3 | non vérifié | — |
+| ISO, premier boot, sauvegarde, restauration | lot 3 (ISO + firstboot livrés) | testé localement (build + boot UEFI/GRUB) ; install QEMU complète et restauration : non vérifié | `make iso` ; artefact `dist/rackloom-appliance-24.04.5-20261127-amd64.iso` ; SHA-256 `fd38022067374fea42bc2fec451afed24e0e18698c9bdcfd2f00c0019db42c88` ; doc déploiement hors dépôt (magasin projet) |
 | OIDC | lot 4 | non vérifié | — |
 | Gel d'urgence par environnement (F28, règle R080, bundle `builtin@2`) | livré | testé localement | `test_freeze.py`, `test_lab_flow.py` (F28), `60-f28-gel.spec.ts` ; vidéo `media/lot-a-f28-gel-urgence.webm` |
 | Atelier de templates, première tranche (AT01) : brouillon assisté, revue, publication par une autre personne, vagues `pilot` | livré | testé localement | `tests/integration/test_studio.py` ; `tests/integration/test_lab_flow.py` (deux nœuds) |
@@ -563,9 +563,16 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - API `/admin/adapters*` ; UI `/admin/adaptateurs` ; guide `docs/adapter-sdk.md` (Proxmox, OpenTofu, AWX/AAP).
 - Preuves : `tests/contract/test_adapter_contract.py`, `tests/integration/test_f30_adapter_sdk.py` ; e2e `104-f30-adaptateurs.spec.ts`.
 
+### Lot 3 : ISO appliance (2026-11-27, heure de Paris)
+
+- Branche `cursor/lot3-iso-appliance-2584`. Arborescence `iso/` (autoinstall, payload, `build.sh`, `test.sh`), `deploy/systemd/rackloom.service`, cibles `make iso` / `make test-iso`.
+- ISO amont Ubuntu 24.04.5 live-server vérifiée (SHA-256 + GPG). Remaster xorriso hybride BIOS/UEFI ; `interactive-sections: [storage]` ; Docker via `.deb` embarqués ; images `:appliance` embarquées ; premier boot console (FQDN, TLS, secrets, jeton d'amorçage).
+- Preuve build : ISO 5,2 Go, SHA-256 `fd38022067374fea42bc2fec451afed24e0e18698c9bdcfd2f00c0019db42c88`, label `lot3-20261127-1f5601d`. Smoke UEFI/KVM : GRUB « Try or Install Ubuntu Server » atteint.
+- **D3 ouverte** (Terraform BSL dans le runner). **D5** non basculé (Docker Ubuntu, pas encore Podman sans root). `make test-iso` install complète : à rejouer sur poste KVM.
+
 ## Prochain jalon
 
-1. Fusionner **F30 (`0034`)** (PR #43) après CI verte post-rebase (`down_revision=0033`).
-2. Suite : atelier AT02–AT04 ; ISO (lot 3) après Lots F+G.
-3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
+1. Exercer `make test-iso` (install QEMU + reboot sans média + firstboot) puis sauvegarde/restauration sur VM jetable.
+2. Trancher D3 (Terraform / OpenTofu) et D5 (Podman sans root) avant publication hors labo.
+3. Atelier AT02–AT04 ; F12/F14/F41/F59 au lot 4 (OIDC).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
