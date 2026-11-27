@@ -52,7 +52,8 @@ test.afterAll(async () => {
 })
 
 test('F37 — disjoncteur : write bloqué, read inventaire admis', async ({ page }) => {
-  test.setTimeout(180_000)
+  // Timeout large : arrêt/redémarrage worker + admission ; ne pas croiser waitState(180s).
+  test.setTimeout(300_000)
   const alice = await session('alice')
   const admin = await session('admin')
   const fake = await vsphere(admin)
@@ -71,17 +72,32 @@ test('F37 — disjoncteur : write bloqué, read inventaire admis', async ({ page
       expect(open.status).toBe(200)
       expect(open.body.connector.circuit.state).toBe('open')
       expect(open.body.write_jobs.queued).toBeGreaterThanOrEqual(1)
+
+      // Comme F27 : garantir la réclamation dès le redémarrage (fenêtre / fuseau CI).
+      compose(
+        'exec', '-T', 'postgres',
+        'psql', '-U', 'rackloom_owner', '-d', 'rackloom', '-v', 'ON_ERROR_STOP=1', '-c',
+        `UPDATE jobs SET run_after = now() - interval '1 second' WHERE change_id = '${planned.id}' AND kind = 'tf_apply' AND state = 'queued';`,
+      )
     } finally {
-      compose('start', 'worker')
+      // --wait : le worker est prêt avant le poll d'admission (évite 180s sur « Approuvée »).
+      compose('up', '-d', '--wait', 'worker')
     }
 
+    const stillOpen = await vsphere(admin)
+    expect(stillOpen.circuit.state, 'disjoncteur encore ouvert après redémarrage worker').toBe('open')
+
+    // Preuve serveur d'abord (indépendante du SSE UI), puis badge.
+    await expect.poll(async () => {
+      const jobs = (await alice.call('GET', `/changes/${planned.id}/jobs`)).body
+      const job = jobs.find((j: any) => j.kind === 'tf_apply')
+      return job ? [job.state, job.blocked_reason, job.dispatched_at] : null
+    }, { timeout: 120_000, intervals: [1000] }).toEqual(['blocked', 'connector_circuit_open', null])
+
     await page.goto(`/demandes/${planned.id}`)
-    await waitState(page, "Bloquée à l'admission")
+    await waitState(page, "Bloquée à l'admission", 60_000)
     const apply = page.getByTestId('job').filter({ hasText: 'Application du plan' })
     await expect(apply).toContainText('Bloqué', { timeout: 30_000 })
-    const jobs = (await alice.call('GET', `/changes/${planned.id}/jobs`)).body
-    const job = jobs.find((j: any) => j.kind === 'tf_apply')
-    expect([job.state, job.blocked_reason, job.dispatched_at]).toEqual(['blocked', 'connector_circuit_open', null])
     await expect(page.getByTestId('timeline')).toContainText('R095')
 
     // Lecture toujours admise pendant le disjoncteur ouvert.

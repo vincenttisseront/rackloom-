@@ -353,6 +353,17 @@ def validate_template(m: dict[str, Any]) -> None:
     # F33 : sorties typées publiables (jamais le state brut).
     if not set(m["outputs_allowlist"]) <= {"name", "vm_uuid", "fqdn", "service_id"}:
         raise CatalogError("template : sortie publiable non prise en charge")
+    # F58 : actions courantes optionnelles (identifiants connus uniquement).
+    known_actions = {"increase_capacity", "request_restart"}
+    for action in m.get("service_actions") or []:
+        if not isinstance(action, dict) or action.get("id") not in known_actions:
+            raise CatalogError("template : service_actions.id doit être increase_capacity ou request_restart")
+    # F59 : niveaux d'accès optionnels (id + label).
+    for level in m.get("access_levels") or []:
+        if not isinstance(level, dict) or not level.get("id"):
+            raise CatalogError("template : access_levels attend [{id, label?}]")
+        if not isinstance(level["id"], str) or len(level["id"]) > 40:
+            raise CatalogError("template : access_levels.id invalide")
     for ref in m.get("secret_refs", []):
         if not str(ref).startswith("secret://"):
             raise CatalogError("template : les secrets sont des références secret://, jamais des valeurs")

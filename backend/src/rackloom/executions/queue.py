@@ -27,6 +27,7 @@ JOB_CLASS = {
     "reconcile": "read",
     "drift_scan": "read",
     "vm_restore": "write",
+    "service_restart": "write",
 }
 
 JOB_LABELS = {
@@ -41,6 +42,7 @@ JOB_LABELS = {
     "reconcile": "Réconciliation",
     "drift_scan": "Détection de dérive (lecture seule)",
     "vm_restore": "Restauration VM (réseau isolé)",
+    "service_restart": "Redémarrage de service (simulé)",
 }
 
 

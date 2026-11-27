@@ -1,7 +1,25 @@
 <script setup lang="ts">
 const props = defineProps<{ card: any }>()
+const emit = defineEmits<{
+  action: [id: string]
+  requestAccess: [level: string]
+  approveAccess: [id: string]
+  rejectAccess: [id: string]
+  retryAccess: [id: string]
+}>()
 const showTech = ref(false)
+const accessLevel = ref('')
 const tone = computed(() => SERVICE_TONE[props.card?.status] || 'neutral')
+const eligibleLevels = computed(() =>
+  (props.card?.access_request?.levels || []).filter((l: any) => l.eligible)
+)
+watch(
+  eligibleLevels,
+  (levels) => {
+    if (!accessLevel.value && levels.length) accessLevel.value = levels[0].id
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -46,6 +64,76 @@ const tone = computed(() => SERVICE_TONE[props.card?.status] || 'neutral')
         <span class="badge bad">KO</span> {{ c.host }} · {{ c.label }} : {{ c.failure || c.evidence }}
       </li>
     </ul>
+
+    <!-- F58 : actions courantes (demande préremplie, impact visible) -->
+    <div v-if="card.service_actions?.length" class="actions" style="margin-top: 1rem" data-testid="service-actions">
+      <button
+        v-for="a in card.service_actions"
+        :key="a.id"
+        type="button"
+        :data-testid="`service-action-${a.id}`"
+        @click="emit('action', a.id)"
+      >
+        {{ a.label }}
+      </button>
+      <ul class="small" style="margin-top: 0.5rem">
+        <li v-for="a in card.service_actions" :key="`impact-${a.id}`" data-testid="service-action-impact">
+          <span class="badge warn">Impact</span> {{ a.label }} : {{ a.impact_label }}
+        </li>
+      </ul>
+      <p class="small muted">Chaque action ouvre une demande préremplie (plan et approbation). Aucune commande directe.</p>
+    </div>
+
+    <!-- F59 : demander l'accès -->
+    <div v-if="card.access_request" class="card" style="margin-top: 1rem" data-testid="access-request-panel">
+      <h2 class="small" style="margin: 0 0 0.5rem">Demander l'accès</h2>
+      <p class="small muted">{{ card.access_request.notice }}</p>
+      <div v-if="card.access_request.can_request && eligibleLevels.length" class="actions" style="margin-top: 0.5rem">
+        <label class="small" for="access-level">Niveau</label>
+        <select id="access-level" v-model="accessLevel" data-testid="access-level">
+          <option v-for="l in eligibleLevels" :key="l.id" :value="l.id">{{ l.label }}</option>
+        </select>
+        <button
+          type="button"
+          class="primary"
+          data-testid="request-access"
+          :disabled="!accessLevel"
+          @click="emit('requestAccess', accessLevel)"
+        >
+          Demander
+        </button>
+      </div>
+      <ul v-if="card.access_request.requests?.length" class="small" style="margin-top: 0.75rem" data-testid="access-requests">
+        <li v-for="r in card.access_request.requests" :key="r.id" :data-state="r.state">
+          <span class="badge" :class="r.state === 'granted' ? 'ok' : r.state === 'sync_failed' ? 'bad' : 'neutral'">
+            {{ r.state_label }}
+          </span>
+          {{ r.access_level }} · {{ r.subject?.display_name }}
+          <template v-if="r.sync_error"> — {{ r.sync_error }}</template>
+          <span v-for="act in r.allowed_actions" :key="act.action" style="margin-left: 0.5rem">
+            <button
+              v-if="act.action === 'approve'"
+              type="button"
+              data-testid="approve-access"
+              @click="emit('approveAccess', r.id)"
+            >{{ act.label }}</button>
+            <button
+              v-else-if="act.action === 'reject'"
+              type="button"
+              data-testid="reject-access"
+              @click="emit('rejectAccess', r.id)"
+            >{{ act.label }}</button>
+            <button
+              v-else-if="act.action === 'retry_sync'"
+              type="button"
+              data-testid="retry-access"
+              @click="emit('retryAccess', r.id)"
+            >{{ act.label }}</button>
+          </span>
+        </li>
+      </ul>
+    </div>
+
     <details style="margin-top: 0.75rem" data-testid="service-technical" @toggle="showTech = ($event.target as HTMLDetailsElement).open">
       <summary class="small">Détails techniques</summary>
       <p class="small muted">{{ card.technical.note }}</p>

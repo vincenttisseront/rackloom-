@@ -139,9 +139,11 @@ def seed(conn: Conn, root: Path, *, passwords: dict[str, str] | None = None,
                 "SELECT * FROM users WHERE id = %s", (minted["user_id"],)
             ).fetchone()
 
-    from . import compatibility
+    from . import access, compatibility
 
     compatibility.ensure_seeded(conn)
+    # F59 : correspondances niveau d'accès → groupe IdP (faux IdP local).
+    access.ensure_demo_mappings(conn, published_by=users["admin"]["id"])
 
     audit.record(conn, actor_type="system", actor_id="demo-seed", action="demo.seed", outcome="ok",
                  targets={"projects": sorted(projs), "users": len(users)},

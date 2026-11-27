@@ -1498,6 +1498,62 @@ def handle_vm_restore(r: JobContext) -> None:
         )
 
 
+def handle_service_restart(r: JobContext) -> None:
+    """F58 : redémarrage simulé (interruption annoncée ; pas de labo réel)."""
+    with r.tx() as conn:
+        ctx = _load(conn, r.job)
+        _admit(r, conn, ctx)
+        resolved = ctx["resolution"] or {}
+        names = [i["name"] for i in (resolved.get("instances") or [])]
+        r.step(
+            conn,
+            "Redémarrage (simulé)",
+            "succeeded",
+            simulated=True,
+            summary={
+                "hosts": names,
+                "impact": "interruption",
+                "simulated": True,
+                "notice": "Aucun redémarrage réel : observations fictives (D2).",
+            },
+        )
+        r.fenced(
+            conn,
+            "state = 'succeeded', finished_at = now(), result = %s",
+            (Jsonb({"simulated": True, "hosts": names, "impact": "interruption"}),),
+        )
+        change = ctx["change"]
+        if change["state"] == "approved":
+            change = transition(
+                conn,
+                change,
+                "executing",
+                reason_code="restart_started",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"simulated": True},
+            )
+        if change["state"] == "executing":
+            change = transition(
+                conn,
+                change,
+                "verifying",
+                reason_code="restart_verify",
+                actor_type="worker",
+                actor_id=r.worker_id,
+                detail={"simulated": True},
+            )
+        transition(
+            conn,
+            change,
+            "succeeded",
+            reason_code="restart_simulated",
+            actor_type="worker",
+            actor_id=r.worker_id,
+            detail={"simulated": True, "hosts": names},
+        )
+
+
 HANDLERS = {
     "preflight": handle_preflight,
     "tf_plan": handle_tf_plan,
@@ -1508,6 +1564,7 @@ HANDLERS = {
     "reconcile": handle_reconcile,
     "drift_scan": handle_drift_scan,
     "vm_restore": handle_vm_restore,
+    "service_restart": handle_service_restart,
 }
 
 

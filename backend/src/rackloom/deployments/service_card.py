@@ -121,7 +121,7 @@ def _flatten_checks(service_checks: list[dict[str, Any]], checked_at: str | None
     return {"succeeded": succeeded, "failed": failed}
 
 
-def build(conn: Conn, dep: dict[str, Any]) -> dict[str, Any]:
+def build(conn: Conn, dep: dict[str, Any], *, principal: Principal | None = None) -> dict[str, Any]:
     """Construit la fiche courte (premier niveau) et les détails techniques (second niveau)."""
     tpl = registry.template_by_id(conn, dep["template_version_id"])
     contract = tpl["contract"]
@@ -144,7 +144,7 @@ def build(conn: Conn, dep: dict[str, Any]) -> dict[str, Any]:
     else:
         headline_detail = reason
 
-    return {
+    card: dict[str, Any] = {
         "deployment_id": str(dep["id"]),
         "status": status,
         "status_label": STATUS_LABELS.get(status, status),
@@ -191,6 +191,17 @@ def build(conn: Conn, dep: dict[str, Any]) -> dict[str, Any]:
         },
         "notice": "L'état du service vient des contrôles de santé observés, pas du seul succès d'un job.",
     }
+    # F58 / F59 : actions et demande d'accès (filtrées si un principal est fourni).
+    if principal is not None:
+        from .. import access
+        from . import actions as service_actions
+
+        card["service_actions"] = service_actions.describe_for_card(conn, principal, dep)
+        card["access_request"] = access.card_section(conn, principal, dep)
+    else:
+        card["service_actions"] = []
+        card["access_request"] = None
+    return card
 
 
 def for_principal(conn: Conn, principal: Principal, deployment_id: UUID) -> dict[str, Any]:
@@ -198,4 +209,4 @@ def for_principal(conn: Conn, principal: Principal, deployment_id: UUID) -> dict
     if dep is None:
         raise not_found("déploiement")
     require_project(principal, dep["project_id"], "déploiement")
-    return build(conn, dep)
+    return build(conn, dep, principal=principal)

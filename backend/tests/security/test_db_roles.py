@@ -42,6 +42,10 @@ ALLOWED = {
         "SELECT dedupe_key FROM audit_export_deliveries",
         "SELECT last_audit_id FROM audit_export_cursors",
         "SELECT alert_status FROM tls_certificate_records",
+        "SELECT access_level FROM service_access_mappings",
+        "SELECT state FROM service_access_requests",
+        "SELECT idp_assignment_id FROM service_access_assignments",
+        "SELECT fail_next FROM idp_fake_state",
     ],
     "rackloom_worker": [
         "SELECT version_num FROM alembic_version",
@@ -74,6 +78,10 @@ ALLOWED = {
         "SELECT dedupe_key FROM audit_export_deliveries",
         "SELECT last_audit_id FROM audit_export_cursors",
         "SELECT alert_status FROM tls_certificate_records",
+        "SELECT access_level FROM service_access_mappings",
+        "SELECT state FROM service_access_requests",
+        "SELECT idp_assignment_id FROM service_access_assignments",
+        "SELECT fail_next FROM idp_fake_state",
     ],
 }
 

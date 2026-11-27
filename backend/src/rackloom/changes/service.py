@@ -293,20 +293,48 @@ def submit(conn: Conn, principal: Principal, change_id: UUID, revision_no: int,
         change = transition(conn, dict(change), "validated", reason_code="submitted", actor_type="user",
                             actor_id=str(principal.user_id), detail={"revision_no": revision_no},
                             request_id=request_id)
-    # F40 : restauration — plan simulé prêt à approuver (pas de Terraform ; réseau quarantaine).
-    if change["kind"] == "restore":
+    # F40 / F58 : restauration ou redémarrage — plan simulé prêt à approuver (pas de Terraform).
+    if change["kind"] in ("restore", "restart"):
         from datetime import UTC, datetime, timedelta
 
         from .. import artifacts
-        from .. import restore as restore_mod
         from ..canonical import digest as canon_digest
         from ..executions import bundle as bundles
 
-        restore_mod.verify_plan(revision["resolved"], revision["resolved"]["restore"]["source_instance"])
-        change = transition(conn, change, "planning", reason_code="restore_plan", actor_type="user",
+        if change["kind"] == "restore":
+            from .. import restore as restore_mod
+
+            restore_mod.verify_plan(revision["resolved"], revision["resolved"]["restore"]["source_instance"])
+            reason_plan, reason_ready = "restore_plan", "restore_plan_ready"
+            plan_bytes = b'{"rackloom":"restore-plan","simulated":true}'
+            summary = {
+                "simulated": True,
+                "restore": True,
+                "destructive": False,
+                "no_changes": False,
+                "terraform_version": None,
+                "vm_counts": {"create": 1, "update": 0, "delete": 0},
+                "message": "Restauration en réseau isolé (simulée)",
+                "interruption": False,
+            }
+        else:
+            reason_plan, reason_ready = "restart_plan", "restart_plan_ready"
+            plan_bytes = b'{"rackloom":"restart-plan","simulated":true,"impact":"interruption"}'
+            names = [i["name"] for i in (revision["resolved"].get("instances") or [])]
+            summary = {
+                "simulated": True,
+                "restart": True,
+                "destructive": False,
+                "no_changes": True,
+                "terraform_version": None,
+                "vm_counts": {"create": 0, "update": 0, "delete": 0, "replace": 0},
+                "message": "Redémarrage demandé (simulé) — interruption de service",
+                "interruption": True,
+                "hosts": names,
+            }
+        change = transition(conn, change, "planning", reason_code=reason_plan, actor_type="user",
                             actor_id=str(principal.user_id), detail={"revision_no": revision_no},
                             request_id=request_id)
-        plan_bytes = b'{"rackloom":"restore-plan","simulated":true}'
         art = artifacts.store(
             conn,
             project_id=change["project_id"],
@@ -332,15 +360,6 @@ def submit(conn: Conn, principal: Principal, change_id: UUID, revision_no: int,
             terraform_version=None,
         )
         plan_id = uuid7()
-        summary = {
-            "simulated": True,
-            "restore": True,
-            "destructive": False,
-            "no_changes": False,
-            "terraform_version": None,
-            "vm_counts": {"create": 1, "update": 0, "delete": 0},
-            "message": "Restauration en réseau isolé (simulée)",
-        }
         conn.execute(
             """
             INSERT INTO plans (id, change_id, version_no, revision_no, stack_id, job_id, status, plan_sha256,
@@ -367,7 +386,7 @@ def submit(conn: Conn, principal: Principal, change_id: UUID, revision_no: int,
             conn,
             change,
             "plan_ready",
-            reason_code="restore_plan_ready",
+            reason_code=reason_ready,
             actor_type="user",
             actor_id=str(principal.user_id),
             detail={"plan_id": str(plan_id), "simulated": True},
