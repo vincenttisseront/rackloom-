@@ -1094,6 +1094,31 @@ def list_probe_segments(request: Request) -> list[dict[str, Any]]:
         return probes.segments_view(u.conn)
 
 
+@router.get("/admin/software-advisories")
+def list_software_advisories(request: Request) -> list[dict[str, Any]]:
+    """F20 : imports hors ligne d'avis éditeur (USN / fin de support)."""
+    from .. import software_inventory
+
+    with unit_of_work(request) as u:
+        return software_inventory.list_imports(u.conn, u.p)
+
+
+@router.post("/admin/software-advisories/import")
+def import_software_advisories(request: Request, body: dict[str, Any] | None = Body(None)) -> dict[str, Any]:
+    """F20 : importe un flux d'avis hors ligne (fixture Ubuntu si corps vide / `fixture`)."""
+    from .. import software_inventory
+
+    payload = body or {}
+    _only(payload, {"fixture", "feed"})
+    with unit_of_work(request, write=True) as u:
+        if payload.get("feed") is not None:
+            if not isinstance(payload["feed"], dict):
+                raise ApiError(422, "invalid_advisory_feed", "feed doit être un objet")
+            return software_inventory.import_feed(u.conn, u.p, payload["feed"])
+        # Défaut : fixtures Ubuntu avec correctif rétroporté (recette F20).
+        return software_inventory.import_feed(u.conn, u.p, software_inventory.ubuntu_fixture_payload())
+
+
 health = APIRouter(tags=["santé"])
 
 

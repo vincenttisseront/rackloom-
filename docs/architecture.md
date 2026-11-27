@@ -400,6 +400,7 @@ Ils sont présents au lot 1 parce qu'ils coûtent peu et évitent une migration 
 | État du service distinct de l'état des jobs, preuves et heure par contrôle de santé (§8) | oui | F57, F58 |
 | Actions disponibles calculées côté serveur (`allowed_actions`) et revérifiées à l'appel | oui | F55, F58, F51 |
 | Collecte en lecture seule par playbook approuvé, identité sans élévation, observations filtrées par type | oui | F60, F24 |
+| Inventaire logiciel (paquets observés × avis hors ligne × fin de support), comparaison Debian/Ubuntu | oui (`software_inventory`, import hors ligne) | F20 |
 | Correspondance approuvée entre niveau d'accès et groupe d'identité | oui (faux IdP local ; IdP réel : lot 4) | F59 |
 
 ### 12.1 Règles posées pour les fonctions utilisateur F51 à F60

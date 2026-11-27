@@ -39,6 +39,7 @@ async function toggleFreeze(page: Page, action: 'freeze' | 'unfreeze', reason: s
 }
 
 test('F28 — gel d\'urgence : job en file bloqué au démarrage, lecture et diagnostic disponibles', async ({ page }) => {
+  // Timeout large : arrêt/redémarrage worker + admission (même famille de flake que F37).
   test.setTimeout(600_000)
   const alice = await session('alice')
   const chloe = await session('chloe')
@@ -49,11 +50,11 @@ test('F28 — gel d\'urgence : job en file bloqué au démarrage, lecture et dia
     try {
       await login(page, 'bruno')
       await page.goto(`/demandes/${planned.id}`)
-      await expect(page.getByTestId('plan-panel')).toBeVisible()
+      await expect(page.getByTestId('plan-panel')).toBeVisible({ timeout: 30_000 })
       await press(page.getByTestId('approve'))
-      await expect(page.getByText('Plan approuvé : exécution du plan approuvé.')).toBeVisible()
-      const apply = page.getByTestId('job').filter({ hasText: 'Application du plan' })
-      await expect(apply).toContainText('En file')
+      await expect(page.getByText('Plan approuvé : exécution du plan approuvé.')).toBeVisible({ timeout: 30_000 })
+      const applyQueued = page.getByTestId('job').filter({ hasText: 'Application du plan' })
+      await expect(applyQueued).toContainText('En file', { timeout: 30_000 })
       await beat(page)
 
       await openProject(page)
@@ -74,22 +75,37 @@ test('F28 — gel d\'urgence : job en file bloqué au démarrage, lecture et dia
       expect(r.status).toBe(404)
       r = await chloe.call('GET', `/environments/${dev.id}`)
       expect(r.status).toBe(404)
+
+      // Comme F37 : réclamation dès le redémarrage (évite course où le job reste « Approuvée »).
+      compose(
+        'exec', '-T', 'postgres',
+        'psql', '-U', 'rackloom_owner', '-d', 'rackloom', '-v', 'ON_ERROR_STOP=1', '-c',
+        `UPDATE jobs SET run_after = now() - interval '1 second' WHERE change_id = '${planned.id}' AND kind = 'tf_apply' AND state = 'queued';`,
+      )
     } finally {
-      compose('start', 'worker')
+      // --wait : worker prêt avant le poll d'admission (évite 180s sur « Approuvée »).
+      compose('up', '-d', '--wait', 'worker')
     }
 
-    // Le worker réévalue le job au démarrage effectif : bloqué, jamais envoyé au fournisseur.
+    // Preuve serveur d'abord (indépendante du SSE UI), puis badge.
+    await expect.poll(async () => {
+      const jobs = (await alice.call('GET', `/changes/${planned.id}/jobs`)).body
+      const job = jobs.find((j: any) => j.kind === 'tf_apply')
+      return job ? [job.state, job.blocked_reason, job.dispatched_at] : null
+    }, { timeout: 120_000, intervals: [1000] }).toEqual(['blocked', 'env_frozen', null])
+
+    // Session fraîche après l'attente worker : évite change-state figé / introuvable (flake CI).
+    await logout(page)
+    await login(page, 'bruno')
     await page.goto(`/demandes/${planned.id}`)
     await expect(page.getByTestId('freeze-banner')).toContainText(FREEZE)
-    await waitState(page, "Bloquée à l'admission")
+    await expect(page.getByTestId('change-state')).toBeVisible({ timeout: 60_000 })
+    await waitState(page, "Bloquée à l'admission", 120_000)
     const apply = page.getByTestId('job').filter({ hasText: 'Application du plan' })
-    await expect(apply).toContainText('Bloqué')
+    await expect(apply).toContainText('Bloqué', { timeout: 30_000 })
     await expect(apply.getByTestId('job-blocked-reason')).toContainText('Environnement gelé')
     await expect(page.getByTestId('timeline')).toContainText('Environnement dev gelé par Bruno (approbateur)')
     await expect(page.getByTestId('timeline')).toContainText("bloqué à l'admission — Admission refusée (R080)")
-    const jobs = (await alice.call('GET', `/changes/${planned.id}/jobs`)).body
-    const job = jobs.find((j: any) => j.kind === 'tf_apply')
-    expect([job.state, job.blocked_reason, job.dispatched_at]).toEqual(['blocked', 'env_frozen', null])
     await beat(page)
 
     // Lecture et diagnostic restent disponibles pendant le gel (rôle opérateur pour l'assistant).

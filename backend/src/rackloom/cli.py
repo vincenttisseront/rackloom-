@@ -573,6 +573,43 @@ def cmd_recovery_verify_keys(args: argparse.Namespace) -> int:
     return 0 if result["ok"] else 2
 
 
+def cmd_software_import_fixture(args: argparse.Namespace) -> int:
+    """F20 : importe les fixtures d'avis Ubuntu (hors ligne)."""
+    from datetime import UTC, datetime
+
+    from . import software_inventory
+    from .errors import ApiError
+    from .identity.authz import Binding, Principal
+    from .ids import uuid7
+
+    with _conn() as conn:
+        admin = conn.execute(
+            "SELECT u.id, u.email, u.display_name FROM users u "
+            "JOIN role_bindings b ON b.user_id = u.id "
+            "WHERE b.role = 'platform_admin' AND b.revoked_at IS NULL LIMIT 1"
+        ).fetchone()
+        if admin is None:
+            print("aucun platform_admin", file=sys.stderr)
+            return 2
+        principal = Principal(
+            user_id=admin["id"],
+            email=admin["email"],
+            display_name=admin["display_name"],
+            session_id=uuid7(),
+            auth_method="cli",
+            auth_time=datetime.now(UTC),
+            bindings=[Binding(role="platform_admin", project_id=None, environment_id=None)],
+        )
+        try:
+            view = software_inventory.import_feed(conn, principal, software_inventory.ubuntu_fixture_payload())
+        except ApiError as exc:
+            print(json.dumps({"code": exc.code, "message": exc.message}, ensure_ascii=False), file=sys.stderr)
+            return 1
+        conn.commit()
+    print(json.dumps(view, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_recovery_verify_state(args: argparse.Namespace) -> int:
     from . import recovery
 
@@ -737,6 +774,11 @@ def build_parser() -> argparse.ArgumentParser:
     rs = recovery.add_parser("verify-state", help="F26 : vérifie le state (procédure distincte)")
     rs.add_argument("--dir", required=True)
     rs.set_defaults(func=cmd_recovery_verify_state)
+    soft = sub.add_parser("software").add_subparsers(dest="software_command", required=True)
+    soft.add_parser(
+        "import-fixture",
+        help="F20 : importe les fixtures d'avis Ubuntu (hors ligne, admin console)",
+    ).set_defaults(func=cmd_software_import_fixture)
     return parser
 
 

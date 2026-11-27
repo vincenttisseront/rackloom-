@@ -116,7 +116,8 @@
 | Consommation par équipe (F29) | livré (inventaire fictif) | testé localement | `test_f29_consumption.py` ; e2e `103-f29-consommation.spec.ts` ; migration `0026` (`down_revision=0025`) ; aucun montant sans `pricing_rates` ; L2 non fait |
 | Sondes et objectifs de disponibilité (F18) | livré (segments simulés) | testé localement | `test_f18_probes.py` ; e2e `104-f18-sondes.spec.ts` ; migration `0027` (`down_revision=0026`) ; `unavailable` si sonde KO depuis segment ; segments réels : non |
 | Patch par vagues (F19) | livré (patch / reboot simulés) | testé localement | `test_f19_patch_waves.py` ; migration `0028` (`down_revision=0027`) ; dégradation pilote → vague 2 bloquée sans écriture ni rollback ; L2 non fait |
-| Fonctions F20, F22–F25, F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
+| Inventaire logiciel et fin de support (F20) | livré (fixtures Ubuntu hors ligne) | testé localement | `test_f20_software_inventory.py` ; `test_f20_debian_versions.py` ; e2e `103-f20-inventaire-logiciel.spec.ts` ; migration `0029` (`down_revision=0028`) ; rétroportage ≠ vulnérable amont ; export filtré ; flux éditeur réel : non |
+| Fonctions F22–F25, F30 et atelier AT02 à AT04 restantes | à faire | non vérifié | `docs/backlog.md` |
 
 ## Démonstrations D1 à D6
 
@@ -501,15 +502,23 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 
 ### F19 : patch par vagues (Lot F, 2026-11-27, heure de Paris)
 
-- Branche `cursor/f19-patch-vagues-6433`. Migration Alembic **`0028`** (`down_revision=0027`). Aucun stub.
+- Fusionné (PR #41). Migration Alembic **`0028`** (`down_revision=0027`). Aucun stub.
 - Tables `patch_campaigns` / `patch_campaign_hosts` + GRANT API/worker ; kinds `patch` (change), `host_patch` / `patch_check` (jobs).
 - Module `patching` : sélection d'hôtes enrôlés, vagues `pilot`, pré/post via observations `probe`, redémarrage `never` | `if_required_in_window` (F27), blocage sans rollback.
 - API `…/patch-hosts`, `…/patch-campaigns` ; panneau projet ; job simulé (D2).
 - Preuves : `test_f19_patch_waves.py`. Labo 3 nœuds réels : non (L2).
 
+### F20 : inventaire logiciel et fin de support (Lot F, 2026-11-27, heure de Paris)
+
+- Branche `cursor/f20-inventaire-logiciel-0208`. Migration Alembic **`0029`** (`down_revision=0028` après cascade F18/F19).
+- Tables `software_advisory_imports`, `software_advisories`, `software_eol_products`, `software_inventory_exports` ; GRANT `rackloom_api` (SELECT/INSERT/UPDATE) / `rackloom_worker` (SELECT).
+- Module `software_inventory` : comparaison Debian/Ubuntu ; verdict sur `fixed_version` de distribution uniquement (jamais amont seule) ; fixtures USN Ubuntu hors ligne ; inventaire + export filtrés au projet.
+- API : `POST /admin/software-advisories/import`, `GET /projects/{project}/software-inventory`, `POST …/export` ; CLI `rackloom software import-fixture` ; panneau projet.
+- Preuves : `test_f20_software_inventory.py`, `test_f20_debian_versions.py` ; e2e `103-f20-inventaire-logiciel.spec.ts`. Flux éditeur réel : non.
+
 ## Prochain jalon
 
-1. Fusionner **F19 (`0028`)** (PR #41) après CI verte post-rebase.
-2. Suite : F20, F22–F25, F30, AT02–AT04 selon dépendances.
+1. Fusionner **F20 (`0029`)** (PR #37) après CI verte post-rebase (`down_revision=0028`).
+2. Suite : F22–F25, F30, AT02–AT04 selon dépendances.
 3. F12/F14/F41/F59 à rejouer contre l'IdP d'entreprise au lot 4 (D10, D22).
 4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
