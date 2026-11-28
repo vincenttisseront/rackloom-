@@ -233,6 +233,10 @@ for cfg in "$EXTRACT/boot/grub/grub.cfg" "$EXTRACT/boot/grub/loopback.cfg"; do
   sed -i -E "s|(linux[[:space:]]+/casper/(hwe-)?vmlinuz[[:space:]]*)(---)|\\1${AUTOINSTALL_ARGS} \\3|" "$cfg"
 done
 
+# Branding menu GRUB / splash (remplace « Try or Install Ubuntu Server »).
+say "branding GRUB Rackloom"
+bash "$ROOT/iso/branding/apply-grub-branding.sh" "$EXTRACT" "$ROOT/iso/branding"
+
 # Identifiant de volume ISO 9660 : A–Z, 0–9, underscore, ≤ 32 caractères.
 VOLID="RACKLOOM_${STAMP}"
 

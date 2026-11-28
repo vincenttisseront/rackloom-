@@ -1,0 +1,42 @@
+# GRUB2 theme — Rackloom appliance installer (Lot 3).
+# Fonts: Unicode shipped on the Ubuntu live ISO (loaded by apply-grub-branding.sh).
+
+title-text: "Rackloom"
+title-font: "Unifont Regular 16"
+title-color: "#e2e8f0"
+desktop-image: "splash.png"
+desktop-color: "#0f172a"
+message-font: "Unifont Regular 16"
+message-color: "#94a3b8"
+terminal-font: "Unifont Regular 16"
+terminal-left: "0%"
+terminal-top: "0%"
+terminal-width: "100%"
+terminal-height: "100%"
+terminal-border: "0"
+
++ boot_menu {
+  left = 10%
+  top = 42%
+  width = 80%
+  height = 40%
+  item_font = "Unifont Regular 16"
+  item_color = "#cbd5e1"
+  selected_item_color = "#ffffff"
+  item_height = 28
+  item_padding = 6
+  item_spacing = 6
+  item_icon_space = 8
+}
+
++ label {
+  id = "__timeout__"
+  left = 10%
+  top = 88%
+  width = 80%
+  height = 24
+  font = "Unifont Regular 16"
+  color = "#94a3b8"
+  align = "center"
+  text = "Demarrage automatique dans %d s"
+}
