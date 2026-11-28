@@ -1,0 +1,31 @@
+# Overlay Lot 4 : IdP OIDC local (Dex). Toujours actif dès que ce fichier est inclus.
+# Mot de passe IdP labo (Dex) : rackloom-oidc-lab — distinct des comptes locaux F14.
+# Pas de profile Compose : `depends_on: dex` sur api/caddy exige un service toujours défini.
+
+services:
+  dex:
+    image: ghcr.io/dexidp/dex:v2.43.1
+    user: "1001:1001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    networks: [core]
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    volumes:
+      - ./dex/config.yaml:/etc/dex/config.yaml:ro
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+
+  api:
+    environment:
+      RACKLOOM_OIDC_INTERNAL_BASE: http://dex:5556
+    depends_on:
+      - dex
+
+  cli:
+    environment:
+      RACKLOOM_OIDC_INTERNAL_BASE: http://dex:5556
+
+  caddy:
+    depends_on:
+      - dex

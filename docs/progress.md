@@ -3,6 +3,7 @@
 ## État au 2026-11-25
 
 - **Lot 0 (cadrage)** : fusionné dans `main` (PR #1).
+- **Lot 4 (SSO OIDC local Dex + F12/F14 branchés ; F16/F23 déjà sur main)** : en cours de fusion (migration `0036`, après Rudder `0035`).
 - **Lot 1 (parcours Compose avec résolveur central et modèle template/composant)** : **terminé, testé localement**. Livré en trois PR : #2 et #3 fusionnées en avance, puis la PR de clôture #4 (`cursor/lot-1-cloture-e231`).
 - **Lot A** : **F28** fusionné (PR #6) ; **F27** fusionné (PR #7) ; **F21** fusionné (PR #11). **AT01** fusionné (PR #5) ; **F60** fusionné (PR #8) ; **F57** fusionné (PR #9) ; **F55** fusionné (PR #10).
 - **F31** fusionné (PR #12). **F37** fusionné (PR #13). **F46** fusionné (PR #14). **F47–F50** fusionné (PR #16). **F01** fusionné (PR #17). **F05** fusionné (PR #18). **F03** fusionné (PR #20). **F09** fusionné (PR #21).
@@ -62,7 +63,7 @@
 | Parcours Lot 2-D2 (VM lab-vm, catalogue, service, paquets, logs ; 2ᵉ exécution ; échec Ansible) | livré | testé localement | `docs/lot-2-plan.md` ; T22, T27, AT01 second pass, D1 ; badges « Simulé » |
 | Connecteur vCenter réel (session REST, inventaire, suivi) | hors D2 ; checklist `docs/lab-vsphere-checklist.md` | non vérifié | — |
 | ISO, premier boot, sauvegarde, restauration | lot 3 (ISO + firstboot livrés) | testé localement (build + boot UEFI/GRUB) ; install QEMU complète et restauration : non vérifié | `make iso` ; artefact `dist/rackloom-appliance-24.04.5-20261127-amd64.iso` ; SHA-256 `fd38022067374fea42bc2fec451afed24e0e18698c9bdcfd2f00c0019db42c88` ; doc déploiement hors dépôt (magasin projet) |
-| OIDC | lot 4 | non vérifié | — |
+| OIDC (Dex local, Authlib code+PKCE, mapping groupes, F12/F14 branchés) | livré (lot 4) | testé localement | `test_lot4_oidc.py`, e2e `105-lot4-oidc.spec.ts` ; IdP d'entreprise : **non vérifié** |
 | Gel d'urgence par environnement (F28, règle R080, bundle `builtin@2`) | livré | testé localement | `test_freeze.py`, `test_lab_flow.py` (F28), `60-f28-gel.spec.ts` ; vidéo `media/lot-a-f28-gel-urgence.webm` |
 | Atelier de templates, première tranche (AT01) : brouillon assisté, revue, publication par une autre personne, vagues `pilot` | livré | testé localement | `tests/integration/test_studio.py` ; `tests/integration/test_lab_flow.py` (deux nœuds) |
 | Fail2ban 1.0.0 : paquets, processus, jail `sshd` démarrée dans le journal | livré | testé localement | même parcours labo ; `verification_level` = `tested_locally` |
@@ -96,7 +97,7 @@
 | Demandes depuis la CI/CD (F35) | livré | testé localement | `test_f35_ci.py` ; Bearer + `POST /ci/submissions` ; rejeu idempotent ; `locked_field` ; approbation refusée |
 | Politiques versionnées et explicables (F10, R140, `builtin@8`) | livré | testé localement | `test_lot_c_f10_f14.py` ; exceptions propriétaire/périmètre/expiration ; simulation sans écriture ; refus avec `rule_id` + `field` |
 | Droits temporaires (F11, R100 / R020) | livré | testé localement | grant → expiration → `temporary_right_expired` ; audit create/revoke |
-| Réauthentification forte (F12) | livré | testé localement (IdP simulé) | step-up local + preuve IdP de test ; lecture OK sans preuve ; approbation refusée sans step-up ; IdP réel : non |
+| Réauthentification forte (F12) | livré | testé localement (Dex local + IdP de test) | step-up local ; OIDC `POST /auth/oidc/reauth` (`acr`/`auth_time`) ; preuve simulée refusée si OIDC actif ; IdP d'entreprise : non |
 | Administration déléguée (F13) | livré | testé localement | rôles `project_admin` / `connector_admin` ; secrets jamais lus ; artefact hors projet → 404 |
 | Accès d'urgence (F14) | livré | testé localement | `rackloom emergency` ; panne SSO simulée ; fermeture → `emergency_closed` ; `docs/emergency-access.md` |
 | Arrivées et départs SCIM (F41) | livré (annuaire de test) | testé localement | `test_f41_f45_identity_audit.py` ; désactivation → cookie 401, jobs en file `blocked` ; jobs déjà envoyés inchangés ; IdP réel : non |
@@ -596,9 +597,18 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Preuves : tests T22, T27, AT01 second passage, D1 (voir plan). Niveau : **testé localement**. **Pas** « validé en laboratoire réel ».
 - Reste hors D2 : session REST vCenter, module Terraform vsphere, state distant (D4), nftables sortant.
 
+### Lot 4 : SSO OIDC local (2026-11-28, heure de Paris)
+
+- Migration Alembic **`0036`** (`down_revision=0035` après Rudder RAC-36) : `oidc_settings`, `oidc_group_mappings`, `oidc_flow_states`, `role_bindings.binding_source`.
+- Authlib code + PKCE ; Dex Compose (`compose/compose.oidc.yaml`, issuer `https://localhost:8443/dex`) ; admin `/admin/sso` ; `rackloom oidc seed-lab|status`.
+- F12 branché sur IdP (`acr` / `auth_time`) ; F14 inchangé avec Dex arrêté.
+- Preuves : `tests/integration/test_lot4_oidc.py`, `tests/unit/test_lot4_oidc_crypto.py`, e2e `105-lot4-oidc.spec.ts`.
+- **IdP d'entreprise : non vérifié** (D2).
+
 ## Prochain jalon
 
 1. Exercer `make test-iso` (install QEMU + reboot sans média + firstboot) puis sauvegarde/restauration sur VM jetable.
 2. Trancher D3 (Terraform / OpenTofu) et D5 (Podman sans root) avant publication hors labo.
-3. Atelier AT02–AT04 ; F12/F14/F41/F59 au lot 4 (OIDC).
-4. Laboratoire vSphere réel : remplir `docs/lab-vsphere-checklist.md` après autorisation Vincent ; alors seulement monter le niveau de preuve des capacités concernées. Double validation de publication : décision Vincent sur l'ADR-0010.
+3. Atelier AT02–AT04.
+4. IdP d'entreprise (hors D2) pour caler F12/F14/F41/F59 en conditions réelles.
+5. Laboratoire vSphere réel : remplir `docs/lab-vsphere-checklist.md` après autorisation Vincent ; alors seulement monter le niveau de preuve. Double validation de publication : décision Vincent sur l'ADR-0010.

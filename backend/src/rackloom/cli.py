@@ -482,6 +482,91 @@ def cmd_emergency_idp_down(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_oidc_seed_lab(args: argparse.Namespace) -> int:
+    """Lot 4 : configure le SSO contre Dex local et pose les mappings de démo."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from .identity import oidc
+    from .identity.authz import Principal, load_bindings
+
+    issuer = args.issuer.rstrip("/")
+    with _conn() as conn:
+        admin = conn.execute(
+            "SELECT u.* FROM users u JOIN role_bindings b ON b.user_id = u.id "
+            "WHERE b.role = 'platform_admin' AND b.revoked_at IS NULL AND u.status = 'active' LIMIT 1"
+        ).fetchone()
+        if admin is None:
+            print("aucun administrateur de plateforme", file=sys.stderr)
+            return 1
+        principal = Principal(
+            user_id=admin["id"],
+            email=admin["email"],
+            display_name=admin["display_name"],
+            session_id=uuid4(),
+            auth_method="console",
+            auth_time=datetime.now(UTC),
+            bindings=load_bindings(conn, admin["id"]),
+            acr="urn:rackloom:step-up",
+            amr=["pwd"],
+        )
+        view = oidc.configure(
+            conn,
+            principal,
+            enabled=True,
+            issuer_url=issuer,
+            client_id=args.client_id,
+            scopes=["openid", "profile", "email", "groups"],
+            step_up_acr="urn:rackloom:step-up",
+        )
+        # Mappings de démo (idempotents via 409 ignoré).
+        for group, role, project_slug in (
+            ("rackloom-admins", "platform_admin", None),
+            ("rackloom-approvers", "approver", "vitrine"),
+        ):
+            project_id = None
+            if project_slug:
+                row = conn.execute("SELECT id FROM projects WHERE slug = %s", (project_slug,)).fetchone()
+                project_id = row["id"] if row else None
+            try:
+                oidc.add_group_mapping(
+                    conn,
+                    principal,
+                    idp_group=group,
+                    role=role,
+                    project_id=project_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                if getattr(exc, "code", None) != "duplicate_mapping":
+                    raise
+        conn.commit()
+        probe = oidc.probe_idp(conn)
+    print(
+        json.dumps(
+            {
+                "enabled": view["enabled"],
+                "issuer_url": view["issuer_url"],
+                "client_id": view["client_id"],
+                "idp_reachable": probe.get("reachable"),
+                "mappings": len(view["mappings"]),
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0 if probe.get("reachable") else 2
+
+
+def cmd_oidc_status(args: argparse.Namespace) -> int:
+    from .identity import oidc
+
+    with _conn() as conn:
+        view = oidc.admin_view(conn)
+        view["idp_reachable"] = oidc.probe_idp(conn).get("reachable")
+        # Jamais de secret.
+        print(json.dumps({k: view[k] for k in view if k != "client_secret"}, ensure_ascii=False))
+    return 0
+
+
 def cmd_recovery_pause(args: argparse.Namespace) -> int:
     """F26 : suspend les envois vers le parc."""
     from . import recovery
@@ -489,9 +574,7 @@ def cmd_recovery_pause(args: argparse.Namespace) -> int:
 
     with _conn() as conn:
         try:
-            result = recovery.pause(
-                conn, reason=args.reason, actor="console", source=args.source or "maintenance"
-            )
+            result = recovery.pause(conn, reason=args.reason, actor="console", source=args.source or "maintenance")
         except ApiError as exc:
             print(json.dumps({"code": exc.code, "message": exc.message}, ensure_ascii=False), file=sys.stderr)
             return 1
@@ -726,6 +809,12 @@ def build_parser() -> argparse.ArgumentParser:
     ec.set_defaults(func=cmd_emergency_close)
     es = emergency.add_parser("simulate-idp-down", help="F14 : marque le SSO indisponible (laboratoire / démo)")
     es.set_defaults(func=cmd_emergency_idp_down)
+    oidc_p = sub.add_parser("oidc").add_subparsers(dest="oidc_command", required=True)
+    os_ = oidc_p.add_parser("seed-lab", help="Lot 4 : configure OIDC contre Dex local (démo)")
+    os_.add_argument("--issuer", default="https://localhost:8443/dex")
+    os_.add_argument("--client-id", default="rackloom-local")
+    os_.set_defaults(func=cmd_oidc_seed_lab)
+    oidc_p.add_parser("status", help="Lot 4 : état SSO OIDC (sans secret)").set_defaults(func=cmd_oidc_status)
     bundle = sub.add_parser("bundle").add_subparsers(dest="bundle_command", required=True)
     bb = bundle.add_parser("build", help="F17 : construit un lot signé de démo (hors ligne)")
     bb.add_argument("--slug", default="lab-offline")
@@ -747,9 +836,7 @@ def build_parser() -> argparse.ArgumentParser:
     rr = recovery.add_parser("resume", help="F26 : reprend les envois après réconciliation")
     rr.add_argument("--reason", required=True)
     rr.set_defaults(func=cmd_recovery_resume)
-    recovery.add_parser("status", help="F26 : état de l'interrupteur d'envois").set_defaults(
-        func=cmd_recovery_status
-    )
+    recovery.add_parser("status", help="F26 : état de l'interrupteur d'envois").set_defaults(func=cmd_recovery_status)
     rb = recovery.add_parser(
         "backup",
         help="F26 : paquet base+artefacts+refs secrets ; clés et state en dossiers séparés",

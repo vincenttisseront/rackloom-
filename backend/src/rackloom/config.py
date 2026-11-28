@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.1:8b"
     ollama_timeout_seconds: float = 30.0
 
+    # Lot 4 : base HTTP interne vers l'IdP (ex. http://dex:5556) pour discovery/token/jwks
+    # depuis l'API Compose ; l'issuer public reste celui vu par le navigateur et dans `iss`.
+    oidc_internal_base: str | None = None
+
     @property
     def artifacts_dir(self) -> Path:
         return self.data_dir / "artifacts"

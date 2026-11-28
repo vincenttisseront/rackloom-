@@ -3,7 +3,7 @@
         lab-keys openapi lint fmt iso test-iso
 
 SHELL := /bin/bash
-COMPOSE := docker compose -f compose/compose.yaml -f compose/compose.demo.yaml
+COMPOSE := docker compose -f compose/compose.yaml -f compose/compose.demo.yaml -f compose/compose.oidc.yaml
 
 help:           ## Liste les cibles
 	@grep -E '^[a-z0-9-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/ :/'

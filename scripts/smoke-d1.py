@@ -30,11 +30,15 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = "https://localhost:8443"
 API = f"{BASE}/api/v1"
 TIMEOUT_S = 600
-APPLIANCE = ["caddy", "api", "worker", "launcher", "postgres"]
+# Inclure dex : après T25, un Dex orphelin reste sur l'ancien réseau core et
+# l'API recrée ne peut plus joindre l'IdP (callback / discovery en échec).
+APPLIANCE = ["caddy", "api", "worker", "launcher", "postgres", "dex"]
 
 
 def compose(*args: str) -> None:
-    files = ["compose/compose.yaml", "compose/compose.demo.yaml"]
+    # Toujours inclure compose.oidc.yaml (Dex) : sinon T25 recrée api sans
+    # RACKLOOM_OIDC_INTERNAL_BASE et laisse dex orphelin.
+    files = ["compose/compose.yaml", "compose/compose.demo.yaml", "compose/compose.oidc.yaml"]
     if os.environ.get("RACKLOOM_COMPOSE_EXTRA"):
         files.append(os.environ["RACKLOOM_COMPOSE_EXTRA"])
     cmd = ["docker", "compose", *[a for f in files for a in ("-f", f)], *args]

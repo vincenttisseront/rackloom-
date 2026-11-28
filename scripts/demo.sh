@@ -5,7 +5,8 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 LAB="$ROOT/.lab"
-COMPOSE=(docker compose -f "$ROOT/compose/compose.yaml" -f "$ROOT/compose/compose.demo.yaml")
+COMPOSE=(docker compose -f "$ROOT/compose/compose.yaml" -f "$ROOT/compose/compose.demo.yaml"
+         -f "$ROOT/compose/compose.oidc.yaml")
 [ -n "${RACKLOOM_COMPOSE_EXTRA:-}" ] && COMPOSE+=(-f "$RACKLOOM_COMPOSE_EXTRA")
 NODES=()
 for i in $(seq 1 "${RACKLOOM_LAB_NODE_COUNT:-3}"); do NODES+=("lab-node-$i"); done
@@ -52,10 +53,19 @@ for node in "${NODES[@]}"; do
 done
 "${COMPOSE[@]}" run --rm cli lab nodes "${NODES[@]}"
 
-say "Services de l'appliance"
-"${COMPOSE[@]}" up -d --wait caddy api worker launcher
+say "Services de l'appliance + IdP OIDC local (Dex)"
+"${COMPOSE[@]}" up -d --wait caddy api worker launcher dex
 "${COMPOSE[@]}" cp caddy:/data/caddy/pki/authorities/local/root.crt "$LAB/ca.crt" >/dev/null
 chmod 0644 "$LAB/ca.crt"
+
+say "Configuration OIDC labo (issuer Dex, client public PKCE)"
+for _ in $(seq 1 30); do
+  if "${COMPOSE[@]}" run --rm --no-deps cli oidc seed-lab >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+"${COMPOSE[@]}" run --rm --no-deps cli oidc status || true
 
 cat <<EOF
 
@@ -68,6 +78,10 @@ $(sed 's/^/  /' "$LAB/demo-credentials.txt")
   - connecteur vSphere fictif (vsphere-fake) : inventaire, test de connexion, suivi ;
   - personnalisation invitée et attribution d'adresse (VM jouées par des conteneurs lab-node) ;
   - assistant : adaptateur fictif déterministe (aucun modèle Ollama démarré).
+SSO OIDC local (Dex, lot 4) : https://localhost:8443/dex
+  - mot de passe IdP labo : rackloom-oidc-lab (comptes @demo.invalid) ;
+  - distinct des mots de passe locaux (urgence F14) ;
+  - IdP d'entreprise : non vérifié.
 Étapes réelles sur ressources locales jetables : plan et apply Terraform (provider local),
 SSH avec clé d'hôte ancrée et certificats utilisateur courts (F15), Ansible (nginx depuis
 un dépôt apt local signé), sonde HTTP.

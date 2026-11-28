@@ -46,5 +46,8 @@ Consulter : Administration › Audit, ou `GET /api/v1/admin/emergency` (admin de
 
 ## Laboratoire
 
-Sans IdP d'entreprise (lot 4), `simulate-idp-down` pose le drapeau local. Aucune
-ressource réelle n'est touchée. Niveau de preuve : **testé localement**.
+IdP local Dex (`compose/compose.oidc.yaml`) : arrêter le service `dex` ou
+`rackloom emergency simulate-idp-down`, puis activer une intervention. Les mots de
+passe locaux (`.lab/demo-credentials.txt`) restent distincts du mot de passe IdP
+labo (`rackloom-oidc-lab`). Aucune ressource réelle n'est touchée. Niveau de
+preuve : **testé localement**. IdP d'entreprise : **non vérifié**.

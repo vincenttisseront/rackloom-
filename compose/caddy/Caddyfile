@@ -29,6 +29,13 @@ https://localhost:8443 {
 			flush_interval -1
 		}
 	}
+	# Lot 4 : IdP OIDC local (Dex). Issuer public https://localhost:8443/dex.
+	handle /dex* {
+		reverse_proxy dex:5556 {
+			header_up X-Forwarded-Proto {http.request.scheme}
+			header_up X-Forwarded-Host {http.request.host}
+		}
+	}
 	handle {
 		root * /srv/web
 		try_files {path} /index.html

@@ -39,6 +39,7 @@ async function logout() {
           <NuxtLink v-if="canConnectors" to="/admin/connecteurs">Administration › Connecteurs</NuxtLink>
           <NuxtLink v-if="isAdmin" to="/admin/environnements">Administration › Environnements</NuxtLink>
           <NuxtLink v-if="isAdmin" to="/admin/gouvernance">Administration › Gouvernance</NuxtLink>
+          <NuxtLink v-if="isAdmin" to="/admin/sso">Administration › SSO</NuxtLink>
           <NuxtLink v-if="isAdmin" to="/admin/identites">Administration › Identités</NuxtLink>
           <NuxtLink v-if="isAdmin" to="/admin/bundles">Administration › Bundles</NuxtLink>
           <NuxtLink v-if="isAdmin" to="/admin/telemetry">Administration › Télémétrie</NuxtLink>

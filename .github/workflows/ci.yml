@@ -94,5 +94,6 @@ jobs:
       - name: Arrêt de la pile jetable
         if: always()
         run: >-
-          docker compose -f compose/compose.yaml -f compose/compose.demo.yaml -f compose/compose.test.yaml
+          docker compose -f compose/compose.yaml -f compose/compose.demo.yaml
+          -f compose/compose.oidc.yaml -f compose/compose.test.yaml
           --profile lab --profile tools down -v --remove-orphans

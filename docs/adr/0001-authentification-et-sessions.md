@@ -1,6 +1,6 @@
 # ADR-0001 : authentification et sessions
 
-- Statut : proposé (lot 0, 2026-11-25)
+- Statut : accepté pour le lot 4 OIDC local (2026-11-28) ; IdP d'entreprise non vérifié
 - Décideur : Vincent
 
 ## Contexte
@@ -17,7 +17,7 @@ L'appliance doit fonctionner dès le premier boot sans IdP, puis s'intégrer à 
 6. **Séparation des rôles** : `environments.requires_distinct_approver`, imposé `true` pour le type `prod` ; contrôlé à l'approbation et à l'admission.
 7. **Contexte d'authentification** enregistré avec chaque approbation (`auth_method`, `auth_time`) pour permettre la réauthentification forte (F12).
 8. **Démo** : identités fictives `*.demo.invalid`, mots de passe générés à l'installation ; refusées au démarrage en profil `production`.
-9. **Lot 4 : OIDC** avec Authlib (code + PKCE), groupes de l'IdP mappés vers des rôles par projet, `acr` et `auth_time` vérifiés côté serveur. Les comptes locaux restent pour l'accès d'urgence (F14), désactivables. Les accès aux services livrés (F59) passent par une correspondance approuvée et versionnée entre niveau d'accès et groupe d'identité ; « accès accordé » n'est affiché qu'après confirmation de l'IdP, et une relance est idempotente.
+9. **Lot 4 : OIDC** avec Authlib (code + PKCE), groupes de l'IdP mappés vers des rôles par projet, `acr` et `auth_time` vérifiés côté serveur. IdP de test local : **Dex** en Compose (`compose/compose.oidc.yaml`, issuer public `/dex`). Client public PKCE par défaut ; `client_secret` optionnel chiffré avec la clé API `oidc-client`. Step-up F12 : `POST /auth/oidc/reauth` (`prompt=login`, `max_age=0`, `acr_values`). Les comptes locaux restent pour l'accès d'urgence (F14). Les accès aux services livrés (F59) passent par une correspondance approuvée et versionnée entre niveau d'accès et groupe d'identité ; « accès accordé » n'est affiché qu'après confirmation de l'IdP, et une relance est idempotente.
 
 ## Conséquences
 
@@ -32,6 +32,5 @@ L'appliance doit fonctionner dès le premier boot sans IdP, puis s'intégrer à 
 
 ## À trancher
 
-- IdP cible du lot 4 (Entra ID, Keycloak, autre) et format des groupes.
-- Exigence d'un second facteur local avant le lot 4.
+- IdP d'entreprise cible (Entra ID, Keycloak, autre) et format exact des groupes — **non vérifié** sous D2.
 - Qui tient le rôle `template_publisher` en exploitation (équipe plateforme, référents techniques), et si une publication exige deux personnes.
