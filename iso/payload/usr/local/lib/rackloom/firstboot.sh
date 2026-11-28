@@ -47,13 +47,20 @@ if command -v timedatectl >/dev/null 2>&1; then
   fi
 fi
 
-# --- FQDN ---------------------------------------------------------------------
+# --- FQDN / hostname ----------------------------------------------------------
+# Priorité : RACKLOOM_FQDN → hostname choisi à l'install (install-hostname) →
+# hostname système. Pas de re-saisie opérateur si déjà fourni à l'installateur.
 FQDN="${RACKLOOM_FQDN:-}"
+if [ -z "$FQDN" ] && [ -s "$CONF_DIR/install-hostname" ]; then
+  FQDN=$(tr -d '[:space:]' <"$CONF_DIR/install-hostname")
+  log "hostname repris de l'installateur: $FQDN"
+fi
 if [ -z "$FQDN" ]; then
+  FQDN=$(hostname -f 2>/dev/null || hostname || true)
+fi
+if [ -z "$FQDN" ] || [ "$FQDN" = localhost ] || [ "$FQDN" = "(none)" ]; then
   if [ -t 0 ] && [ -t 1 ]; then
     read -r -p "FQDN de l'appliance (ex. rackloom.example.invalid) : " FQDN
-  else
-    FQDN=$(hostname -f 2>/dev/null || hostname)
   fi
 fi
 [ -n "$FQDN" ] || die "FQDN requis"

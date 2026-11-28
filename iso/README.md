@@ -71,7 +71,8 @@ Variables utiles :
 
 ## Contenu embarqué
 
-- Graine autoinstall (`nocloud/`) : stockage **interactif** en production
+- Graine autoinstall (`nocloud/`) : bootstrap `early-commands` → installateur console Rackloom
+- Installateur console (`/rackloom/installer/`) : **seuls** réseau, hostname, mot de passe, confirmation disque
 - Payload `/rackloom/payload` → `/` (systemd, firstboot, Compose appliance)
 - Paquets Docker hors ligne (`/rackloom/debs`)
 - Images `rackloom/*:appliance` + `postgres:16.11-bookworm` (sauf skip)
@@ -87,6 +88,26 @@ Au démarrage de l’ISO (UEFI/BIOS), l’opérateur doit voir :
 - variante **Install Rackloom appliance (safe graphics)** si présente amont
 
 Smoke hors ISO : `./iso/branding/test-apply-branding.sh` (inclus dans `make test`).
+
+### Installateur console (pas d’UI Ubuntu)
+
+Après le menu GRUB, l’opérateur voit **uniquement** l’installateur Rackloom (`iso/installer/run.sh`) :
+
+1. Réseau (DHCP ou IPv4 statique)
+2. Hostname / nom
+3. Mot de passe du compte `rackloom` (username figé)
+4. Choix du disque + retaper le chemin + confirmation finale (aucun wipe silencieux)
+
+Aucune fenêtre Subiquity stock (langue, clavier, miroir, source, mises à jour, snaps, Ubuntu Pro, SSH…). L’installateur réécrit `/autoinstall.yaml` ; Subiquity/curtin enchaînent en non interactif.
+
+| Couche | Rôle |
+|---|---|
+| Opérateur | GRUB Rackloom + invites console Rackloom |
+| Sous le capot | Ubuntu 24.04 live-server, Subiquity, curtin, casper |
+
+Smoke hors ISO : `./iso/installer/test-installer.sh` (inclus dans `make test`).
+
+Graine CI (`--test-seed` / `user-data.test`) : entièrement non interactive, **sans** l’UI console (disque `/dev/vda`).
 
 Rebuild requis pour le média : `make iso` ou `.\iso\build.ps1`.
 
