@@ -1,5 +1,5 @@
 # Image Linux de reconditionnement ISO (xorriso, gpg, apt).
-# Utilisée par iso/build.ps1 sous Windows via Docker Desktop (Linux containers).
+# Utilisee par iso/build.ps1 sous Windows via Docker Desktop (Linux containers).
 # Ne contient aucun secret ; pas de socket Docker.
 FROM ubuntu:24.04
 
@@ -17,7 +17,11 @@ RUN apt-get update \
     squashfs-tools \
   && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /src
+# Entrypoint figé en LF dans l'image (indépendant du checkout Windows).
+COPY iso/docker-entrypoint.sh /usr/local/bin/rackloom-iso-entrypoint
+RUN sed -i 's/\r$//' /usr/local/bin/rackloom-iso-entrypoint \
+  && chmod 0755 /usr/local/bin/rackloom-iso-entrypoint
 
-# build.sh est monté depuis le dépôt ; pas d'entrypoint figé.
-CMD ["bash", "iso/build.sh"]
+WORKDIR /src
+ENTRYPOINT ["/usr/local/bin/rackloom-iso-entrypoint"]
+CMD []

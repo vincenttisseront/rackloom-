@@ -14,8 +14,9 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# Filet CRLF (montage Windows) : source une copie sans CR.
 # shellcheck source=versions.env
-source "$ROOT/iso/versions.env"
+source <(sed 's/\r$//' "$ROOT/iso/versions.env")
 
 TEST_SEED=0
 EMBED_IMAGES="${RACKLOOM_ISO_EMBED_IMAGES:-1}"
