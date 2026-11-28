@@ -154,7 +154,14 @@ def view(conn: Conn, host: dict[str, Any]) -> dict[str, Any]:
                     ("settings" in obs and obs["settings"].get("source") == "rudder_fake")
                     or ("packages" in obs and obs["packages"].get("source") == "rudder_fake")
                 )
-                else None
+                else (
+                    "observations importées depuis Rudder (lecture seule ; labo réel non vérifié)"
+                    if (
+                        ("settings" in obs and obs["settings"].get("source") == "rudder")
+                        or ("packages" in obs and obs["packages"].get("source") == "rudder")
+                    )
+                    else None
+                )
             ),
         },
     }

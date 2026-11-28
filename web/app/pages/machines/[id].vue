@@ -6,6 +6,8 @@ const journals = ref<any[]>([])
 const compliance = ref<any>(null)
 const remediating = ref(false)
 const remediation = ref<any>(null)
+const rudderBusy = ref(false)
+const rudderImport = ref<any>(null)
 const error = ref<string | null>(null)
 
 const FINDING_LABEL: Record<string, string> = {
@@ -34,6 +36,23 @@ async function proposeRemediation() {
     error.value = errorText(e)
   } finally {
     remediating.value = false
+  }
+}
+
+async function importRudder() {
+  rudderBusy.value = true
+  error.value = null
+  rudderImport.value = null
+  try {
+    rudderImport.value = await api.post(`/hosts/${route.params.id}/rudder/import-observations`, {})
+    if (!rudderImport.value.queued) {
+      await loadCompliance()
+      host.value = await api.get(`/hosts/${route.params.id}`)
+    }
+  } catch (e) {
+    error.value = errorText(e)
+  } finally {
+    rudderBusy.value = false
   }
 }
 
@@ -104,6 +123,15 @@ onMounted(async () => {
         <div class="row gap" style="margin: 0.75rem 0">
           <button type="button" class="btn" data-testid="compliance-scan" @click="runScan">Lancer un scan</button>
           <button
+            type="button"
+            class="btn secondary"
+            data-testid="rudder-import"
+            :disabled="rudderBusy"
+            @click="importRudder"
+          >
+            Importer depuis Rudder
+          </button>
+          <button
             v-if="compliance?.findings?.some((f: any) => f.status === 'noncompliant')"
             type="button"
             class="btn secondary"
@@ -114,6 +142,15 @@ onMounted(async () => {
             Proposer une correction
           </button>
         </div>
+        <p v-if="rudderImport" class="banner ok" data-testid="rudder-import-result" role="status">
+          <template v-if="rudderImport.queued">
+            Import Rudder mis en file (job {{ rudderImport.job_id }}) — lecture seule.
+          </template>
+          <template v-else>
+            Observations importées ({{ (rudderImport.kinds || []).join(', ') }})
+            <SimBadge v-if="rudderImport.simulated" />
+          </template>
+        </p>
         <p v-if="!compliance || compliance.status === 'none'" class="empty">Aucun scan pour cette machine.</p>
         <template v-else>
           <p>

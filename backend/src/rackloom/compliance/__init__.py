@@ -319,7 +319,7 @@ def scan_host(
     profile = get_profile(conn, profile_slug, profile_version)
     if profile["status"] != "published":
         raise ApiError(409, "profile_not_published", "seul un profil publié peut être évalué")
-    if source not in ("rackloom", "rudder_fake", "system"):
+    if source not in ("rackloom", "rudder_fake", "rudder", "system"):
         raise ApiError(422, "invalid_source", "source de scan invalide", field="/source")
 
     findings = evaluate_host(conn, host, profile)

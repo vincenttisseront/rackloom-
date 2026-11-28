@@ -31,6 +31,7 @@ export const JOB_LABELS: Record<string, string> = {
   verify: 'Vérification',
   reconcile: 'Réconciliation',
   inventory_refresh: "Rafraîchissement de l'inventaire",
+  rudder_import: 'Import Rudder (lecture seule)',
   drift_scan: 'Détection de dérive',
   compliance_scan: 'Scan de conformité',
   vm_restore: 'Restauration VM (réseau isolé)',

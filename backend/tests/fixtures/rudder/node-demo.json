@@ -1,0 +1,29 @@
+{
+  "action": "nodeDetails",
+  "result": "success",
+  "data": {
+    "nodes": [
+      {
+        "id": "rudder-node-lab-001",
+        "hostname": "vit-dev-web-lab.demo.invalid",
+        "status": "accepted",
+        "properties": [
+          {
+            "name": "rackloom.packages",
+            "value": { "nginx": "1.24.0-2ubuntu7" }
+          },
+          {
+            "name": "rackloom.services",
+            "value": {
+              "nginx": { "active": true, "manager": "systemd", "systemd": "active" }
+            }
+          },
+          {
+            "name": "rackloom.settings",
+            "value": { "nginx.server_tokens": "on" }
+          }
+        ]
+      }
+    ]
+  }
+}

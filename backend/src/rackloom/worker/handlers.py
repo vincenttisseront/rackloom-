@@ -1902,6 +1902,110 @@ def handle_compliance_scan(r: JobContext) -> None:
         )
 
 
+def handle_rudder_import(r: JobContext) -> None:
+    """RAC-36 : import Rudder lecture seule — révèle le jeton, HTTPS vers endpoint approuvé."""
+    from .. import secrets
+    from ..compliance import rudder as rudder_compliance
+    from ..connectors import rudder as rudder_conn
+    from ..errors import ApiError
+
+    def _fail_rudder(conn: Conn, code: str, message: str) -> None:
+        r.fenced(
+            conn,
+            "state = 'failed', finished_at = now(), result = %s, blocked_reason = %s",
+            (Jsonb({"error": code, "message": message, "correction": False, "write": False}), code),
+        )
+        r.event(
+            conn,
+            "rudder.import_failed",
+            {"message": message, "code": code, "correction": False},
+            severity="error",
+        )
+
+    with r.tx() as conn:
+        ctx = _load(conn, r.job)
+        _admit(r, conn, ctx)
+        payload = r.job["payload"] or {}
+        host_id = payload.get("host_id")
+        connector_id = payload.get("connector_id")
+        node_id = payload.get("node_id")
+        if not host_id or not connector_id or not node_id:
+            _fail_rudder(conn, "rudder_target_missing", "cible Rudder incomplète")
+            raise Refused("rudder_target_missing")
+
+        connector = conn.execute(
+            "SELECT * FROM connectors WHERE id = %s", (UUID(str(connector_id)),)
+        ).fetchone()
+        if connector is None or connector["kind"] != "rudder" or connector["mode"] != "real":
+            _fail_rudder(conn, "rudder_not_configured", "connecteur Rudder réel introuvable")
+            raise Refused("rudder_not_configured")
+
+        url = (connector.get("config") or {}).get("url")
+        if not url:
+            _fail_rudder(conn, "not_configured", "URL Rudder non configurée")
+            raise Refused("not_configured")
+        host_name, port = rudder_conn.endpoint(str(url))
+        ep = conn.execute(
+            "SELECT ca_bundle_pem FROM approved_endpoints WHERE connector_id = %s AND scheme = 'https' "
+            "AND host = %s AND port = %s",
+            (connector["id"], host_name, port),
+        ).fetchone()
+        if ep is None:
+            _fail_rudder(conn, "endpoint_not_approved", "endpoint Rudder non approuvé")
+            raise Refused("endpoint_not_approved")
+
+        refs = connector.get("secret_refs") or {}
+        token_ref = refs.get(rudder_conn.TOKEN_SECRET_NAME)
+        if not token_ref:
+            _fail_rudder(conn, "secret_missing", "jeton Rudder absent")
+            raise Refused("secret_missing")
+        try:
+            token = secrets.reveal(conn, str(token_ref)).decode("utf-8")
+        except Exception as exc:  # noqa: BLE001 — secret illisible / corrompu
+            _fail_rudder(conn, "secret_missing", "jeton Rudder illisible")
+            raise Refused("secret_missing") from exc
+        ca_pem = ep["ca_bundle_pem"]
+
+    # Aucune transaction ouverte pendant l'appel HTTP (invariant 15).
+    try:
+        report = rudder_conn.fetch_node_report(
+            base_url=str(url),
+            token=token,
+            node_id=str(node_id),
+            ca_pem=ca_pem,
+        )
+    except ApiError as exc:
+        with r.tx() as conn:
+            _fail_rudder(conn, exc.code, exc.message)
+        raise Refused(exc.code) from None
+    finally:
+        token = ""  # ne pas conserver le secret en clair
+
+    with r.tx() as conn:
+        result = rudder_compliance.apply_fetched_report(
+            conn,
+            host_id=UUID(str(host_id)),
+            report=report,
+            job_id=r.job["id"],
+            actor_id=r.worker_id,
+        )
+        r.fenced(
+            conn,
+            "state = 'succeeded', finished_at = now(), result = %s",
+            (Jsonb({**result, "correction": False, "write": False}),),
+        )
+        r.event(
+            conn,
+            "rudder.imported",
+            {
+                "message": f"Import Rudder : {', '.join(result.get('kinds') or [])}",
+                "kinds": result.get("kinds"),
+                "simulated": False,
+                "correction": False,
+            },
+        )
+
+
 def handle_vm_restore(r: JobContext) -> None:
     """F40 : restauration simulée en réseau de quarantaine (pas de labo réel)."""
     from .. import restore as restore_mod
@@ -2482,6 +2586,7 @@ HANDLERS = {
     "reconcile": handle_reconcile,
     "drift_scan": handle_drift_scan,
     "compliance_scan": handle_compliance_scan,
+    "rudder_import": handle_rudder_import,
     "vm_restore": handle_vm_restore,
     "service_restart": handle_service_restart,
     "lease_retire": handle_lease_retire,

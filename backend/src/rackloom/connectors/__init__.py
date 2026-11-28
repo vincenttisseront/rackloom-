@@ -37,11 +37,13 @@ MATRIX: dict[str, dict[str, dict[str, Any]]] = {
         "plan": cap(None), "execute": cap(None), "track": cap(None), "cancel": cap(None),
     },
     # F24 / RAC-36 : Rudder optionnel, lecture seule (rapports → observations). Remédiation hors scope.
+    # Mode `simulated` (rudder-fake) : capabilities_for bascule test/inventory en simulé.
+    # Mode `real` : TLS + import HTTP worker ; labo Rudder réel = non vérifié (D2).
     "rudder": {
         "configure": cap("real", "URL et jeton (référence de secret)"),
-        "test_connection": cap("simulated", "aucun appel réseau en fictif"),
-        "inventory": cap("simulated", "rapports de conformité → observations"),
-        "plan": cap(None, "remédiation Rudder hors périmètre F24"),
+        "test_connection": cap("real", "TLS : CA importée, nom d'hôte vérifié"),
+        "inventory": cap("real", "rapports de conformité → observations (lecture seule)"),
+        "plan": cap(None, "remédiation Rudder hors périmètre ; admission Rackloom"),
         "execute": cap(None, "aucune écriture via Rudder"),
         "track": cap(None),
         "cancel": cap(None),

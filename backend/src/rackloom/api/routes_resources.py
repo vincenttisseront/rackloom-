@@ -498,16 +498,38 @@ def remediate_host_compliance(
 def import_rudder_observations(
     host_id: UUID, request: Request, body: dict[str, Any] = Body(default={})
 ) -> dict[str, Any]:
-    """F24 / RAC-36 : importe des observations Rudder fictives explicites (lecture seule)."""
-    from ..compliance import rudder_fake
+    """F24 / RAC-36 : importe des observations Rudder (lecture seule).
 
-    _only(body, {"report"})
+    Connecteur fictif (`rudder-fake`) : synchrone, fixtures explicites.
+    Connecteur réel : met en file un job `rudder_import` (worker + secret).
+    """
+    from ..compliance import rudder as rudder_compliance
+
+    _only(body, {"report", "connector_id", "node_id"})
     with unit_of_work(request, write=True) as u:
         report = body.get("report")
         if report is not None and not isinstance(report, dict):
             raise ApiError(422, "invalid_report", "report doit être un objet", field="/report")
-        return rudder_fake.import_observations(
-            u.conn, u.p, host_id, report=report, request_id=u.request_id
+        connector_raw = body.get("connector_id")
+        parsed_connector: UUID | None = None
+        if connector_raw is not None:
+            try:
+                parsed_connector = UUID(str(connector_raw))
+            except ValueError as exc:
+                raise ApiError(
+                    422, "invalid_connector_id", "UUID de connecteur attendu", field="/connector_id"
+                ) from exc
+        node_id = body.get("node_id")
+        if node_id is not None and not isinstance(node_id, str):
+            raise ApiError(422, "invalid_node_id", "node_id doit être une chaîne", field="/node_id")
+        return rudder_compliance.request_import(
+            u.conn,
+            u.p,
+            host_id,
+            connector_id=parsed_connector,
+            node_id=node_id,
+            report=report,
+            request_id=u.request_id,
         )
 
 

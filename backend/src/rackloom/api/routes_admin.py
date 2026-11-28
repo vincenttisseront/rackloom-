@@ -18,7 +18,7 @@ from pydantic import ValidationError
 
 from .. import audit, factory, inventory, offline_bundles, projects, recovery, registry, secrets, studio
 from ..config import get_settings
-from ..connectors import MATRIX, circuit, vsphere
+from ..connectors import MATRIX, circuit, rudder, vsphere
 from ..connectors import packages as adapter_packages
 from ..connectors import reference as reference_adapter
 from ..db import Conn, Jsonb, get_pool
@@ -475,6 +475,22 @@ def _vsphere_test(conn: Conn, row: dict[str, Any]) -> dict[str, Any]:
     return vsphere.test_connection(host, port, ep["ca_bundle_pem"])
 
 
+def _rudder_test(conn: Conn, row: dict[str, Any]) -> dict[str, Any]:
+    """RAC-36 : TLS uniquement ; le jeton reste illisible pour l'API."""
+    url = (row.get("config") or {}).get("url")
+    if not url:
+        return rudder.failure("not_configured")
+    host, port = rudder.endpoint(str(url))
+    ep = conn.execute(
+        "SELECT ca_bundle_pem FROM approved_endpoints WHERE connector_id = %s AND scheme = 'https' "
+        "AND host = %s AND port = %s",
+        (row["id"], host, port),
+    ).fetchone()
+    if ep is None:
+        return rudder.failure("endpoint_not_approved")
+    return rudder.test_connection(host, port, ep["ca_bundle_pem"])
+
+
 @router.get("/connectors")
 def list_connectors(request: Request) -> list[dict[str, Any]]:
     with unit_of_work(request) as u:
@@ -517,6 +533,12 @@ def update_connector(connector_id: UUID, request: Request, body: dict[str, Any] 
             adapter.check_scope(u.p, "configure")
             config = adapter.validate_config(config)
             adapter.register_endpoint(u.conn, row["id"], config)
+        elif row["kind"] == "rudder":
+            adapter = rudder.RudderAdapter()
+            adapter.check_scope(u.p, "configure")
+            config = adapter.validate_config(config)
+            adapter.register_endpoint(u.conn, row["id"], config)
+            config.pop("_ca_pem", None)
         row = u.conn.execute(
             "UPDATE connectors SET config = %s, config_version = config_version + 1 WHERE id = %s RETURNING *",
             (Jsonb(config), row["id"]),
@@ -606,6 +628,8 @@ def test_connector(connector_id: UUID, request: Request) -> dict[str, Any]:
             result = _vsphere_test(u.conn, row)
         elif row["kind"] == "reference":
             result = reference_adapter.ReferenceAdapter().test_connection(u.conn, row)
+        elif row["kind"] == "rudder":
+            result = _rudder_test(u.conn, row)
         else:
             result = {
                 "status": "not_verified",
