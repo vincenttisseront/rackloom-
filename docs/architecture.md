@@ -435,7 +435,8 @@ Les observations ne sont ni publiées ni exécutées ; le brouillon suit le cycl
 
 ## 14. Évolution après le lot 1
 
-- **Lot 2** : connecteur vSphere réel (inventaire, suivi) via runner dédié, module Terraform vSphere du catalogue, backend de state distant, filtrage sortant nftables, Ansible sur VM réelles, ancre de clé d'hôte fournie par la personnalisation invitée.
+- **Lot 2-D2** (sous D2) : parcours mission testé localement — Terraform `lab-vm`, Ansible sur `lab-node`, inventaire/guest/adresse simulés (`vsphere-fake`, badges « Simulé ») ; voir `docs/lot-2-plan.md`.
+- **Lot 2 laboratoire réel** (après autorisation Vincent, `docs/lab-vsphere-checklist.md`) : connecteur vSphere réel (inventaire, suivi) via runner dédié, module Terraform vSphere du catalogue, backend de state distant, filtrage sortant nftables, Ansible sur VM réelles, ancre de clé d'hôte fournie par la personnalisation invitée.
 - **Lot 3** : launcher sur Podman sans root, ISO autoinstall, premier boot, sauvegarde et restauration.
 - **Lot 4** : OIDC et groupes, gouvernance renforcée, runners par zone, nouveaux adaptateurs.
 - **AT01** : première tranche de l'atelier livrée au-dessus du registre et du résolveur (brouillon assisté, revue, publication par une autre personne, vagues `pilot`, Fail2ban). La double validation de publication reste une proposition (ADR-0010), non implémentée.

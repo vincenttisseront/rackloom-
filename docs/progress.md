@@ -23,6 +23,7 @@
 - **F29 (consommation par équipe)** : fusionné (PR #34), migration Alembic **`0026`**.
 - **F18 (sondes et objectifs de disponibilité)** : fusionné (PR #38), migration Alembic **`0027`**.
 - **F19 (patch par vagues)** : en cours (Lot F), migration Alembic **`0028`** (`down_revision=0027`).
+- **Lot 2-D2** (parcours mission sous contrainte D2) : **terminé, testé localement** — voir `docs/lot-2-plan.md` et journal ci-dessous. Inventaire / guest / adresse restent **simulés** ; Terraform CLI et Ansible sur lab-node sont réels.
 - **Aucun laboratoire réel** (D2 et D21, décidé) : ressources locales jetables uniquement. Aucune capacité n'est « validée en laboratoire ». Aucun déploiement externe n'a eu lieu ; aucun identifiant réel n'a été utilisé.
 - **Prochain jalon** : voir la dernière section.
 
@@ -58,7 +59,8 @@
 | Connecteur vSphere : inventaire, personnalisation invitée, attribution d'adresse, suivi | simulé (`vsphere-fake`) | simulé | badge « Simulé » sur chaque étape |
 | Profil `production` : refus des connecteurs simulés, des identités de démo et de l'adaptateur fictif | livré | testé localement | `test_production_profile.py` |
 | Exposition (seul `127.0.0.1:8443` publié) | livré | testé localement | T28 |
-| Connecteur vCenter réel (session REST, inventaire) | lot 2 | non vérifié | — |
+| Parcours Lot 2-D2 (VM lab-vm, catalogue, service, paquets, logs ; 2ᵉ exécution ; échec Ansible) | livré | testé localement | `docs/lot-2-plan.md` ; T22, T27, AT01 second pass, D1 ; badges « Simulé » |
+| Connecteur vCenter réel (session REST, inventaire, suivi) | hors D2 ; checklist `docs/lab-vsphere-checklist.md` | non vérifié | — |
 | ISO, premier boot, sauvegarde, restauration | lot 3 (ISO + firstboot livrés) | testé localement (build + boot UEFI/GRUB) ; install QEMU complète et restauration : non vérifié | `make iso` ; artefact `dist/rackloom-appliance-24.04.5-20261127-amd64.iso` ; SHA-256 `fd38022067374fea42bc2fec451afed24e0e18698c9bdcfd2f00c0019db42c88` ; doc déploiement hors dépôt (magasin projet) |
 | OIDC | lot 4 | non vérifié | — |
 | Gel d'urgence par environnement (F28, règle R080, bundle `builtin@2`) | livré | testé localement | `test_freeze.py`, `test_lab_flow.py` (F28), `60-f28-gel.spec.ts` ; vidéo `media/lot-a-f28-gel-urgence.webm` |
@@ -204,7 +206,7 @@ Constaté sur `main` après la fusion des PR #2 et #3, corrigé dans la PR de cl
 - **Clés privées SSH de labo** scellées en base (et non sur un volume du worker) ; seules les clés publiques sont sur le volume `lab_keys`.
 - **Une seule pile à la fois** sur un poste : les noms `rackloom_*` des volumes et réseaux sont fixes. `make test-e2e` détruit la pile de démonstration.
 - **Réseaux internes isolés** : `core`, `ai` et `rn-lab` sont `internal` ; l'API n'a aucune sortie réseau en démo, donc le test de connexion vSphere réel n'est exercé que par `pytest`.
-- **Inventaire, personnalisation invitée, attribution d'adresse** : simulés (`vsphere-fake`) jusqu'au lot 2. Le connecteur vSphere réel n'a que la configuration et le test TLS ; sa session REST arrive au lot 2.
+- **Inventaire, personnalisation invitée, attribution d'adresse** : simulés (`vsphere-fake`) sous D2 (Lot 2-D2 clos). Le connecteur vSphere réel n'a que la configuration et le test TLS ; session REST / inventaire réel après autorisation de labo (`docs/lab-vsphere-checklist.md`).
 - **Ollama** : adaptateur codé, jamais exécuté contre un vrai modèle.
 - **Fail2ban** (D15) : livré avec AT01. La jail `sshd` est observée dans le journal (testé localement). Le bannissement effectif n'est pas couvert : les nœuds de labo n'ont pas la capacité NET_ADMIN.
 - **Double validation** (D16) : non implémentée. Le siège unique de publicateur est conservé. La proposition est l'ADR-0010, statut proposé.
@@ -570,9 +572,18 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Preuve build : ISO 5,2 Go, SHA-256 `fd38022067374fea42bc2fec451afed24e0e18698c9bdcfd2f00c0019db42c88`, label `lot3-20261127-1f5601d`. Smoke UEFI/KVM : GRUB « Try or Install Ubuntu Server » atteint.
 - **D3 ouverte** (Terraform BSL dans le runner). **D5** non basculé (Docker Ubuntu, pas encore Podman sans root). `make test-iso` install complète : à rejouer sur poste KVM.
 
+### Lot 2-D2 : parcours mission sous contrainte D2 (2026-11-28, heure de Paris)
+
+- Branche `cursor/lot-2-d2-laboratoire-6d20`. **Aucun vCenter réel** (D2 toujours en vigueur).
+- Plan : `docs/lot-2-plan.md`. Runbook futur labo réel : `docs/lab-vsphere-checklist.md` (aucune adresse réelle).
+- Parcours : Terraform CLI sur `lab-vm` (ressources locales jetables) → `guest_ready` simulé (badge « Simulé ») → Ansible réel sur `lab-node` → verify (service, paquets, journaux).
+- Renforcements : T22 conserve les deux JSON `demo-infra` et les deux fiches après échec Ansible (aucun destroy) ; T27 affirme replan `no_changes` sans second `tf_apply` ni doublon ; D1 exige un journal non vide ; `inventory.freshness` lit le `mode` du connecteur.
+- Preuves : tests T22, T27, AT01 second passage, D1 (voir plan). Niveau : **testé localement**. **Pas** « validé en laboratoire réel ».
+- Reste hors D2 : session REST vCenter, module Terraform vsphere, state distant (D4), nftables sortant.
+
 ## Prochain jalon
 
 1. Exercer `make test-iso` (install QEMU + reboot sans média + firstboot) puis sauvegarde/restauration sur VM jetable.
 2. Trancher D3 (Terraform / OpenTofu) et D5 (Podman sans root) avant publication hors labo.
 3. Atelier AT02–AT04 ; F12/F14/F41/F59 au lot 4 (OIDC).
-4. Le lot 2 attend un laboratoire réel autorisé (D2). La double validation de publication attend une décision de Vincent sur l'ADR-0010.
+4. Laboratoire vSphere réel : remplir `docs/lab-vsphere-checklist.md` après autorisation Vincent ; alors seulement monter le niveau de preuve des capacités concernées. Double validation de publication : décision Vincent sur l'ADR-0010.

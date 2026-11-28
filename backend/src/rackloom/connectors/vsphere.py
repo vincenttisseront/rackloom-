@@ -1,8 +1,12 @@
 """Connecteur vSphere : configuration stricte et test de connexion TLS (T19).
 
 Aucun champ ne désactive la vérification TLS : la CA du vCenter s'importe, le nom d'hôte est toujours
-vérifié, et la sortie réseau n'a lieu que vers un endpoint approuvé (`approved_endpoints`). La session
-REST, l'inventaire et l'exécution réels arrivent au lot 2.
+vérifié, et la sortie réseau n'a lieu que vers un endpoint approuvé (`approved_endpoints`).
+
+Sous D2, l'inventaire et le suivi restent simulés (`vsphere-fake`, badge « Simulé ») ; le parcours
+Lot 2-D2 s'exerce sur Terraform `lab-vm` et Ansible `lab-node` (voir `docs/lot-2-plan.md`).
+La session REST, l'inventaire et le suivi réels restent hors périmètre tant qu'un laboratoire
+vSphere n'est pas autorisé (`docs/lab-vsphere-checklist.md`).
 """
 
 from __future__ import annotations
@@ -97,5 +101,12 @@ def test_connection(host: str, port: int, ca_pem: str | None, timeout: float = 5
         return failure("tls_error")
     except OSError:
         return failure("unreachable")
-    return {"status": "ok", "simulated": False,
-            "message": f"TLS vérifié ({version}) : chaîne, validité et nom d'hôte ; session REST au lot 2"}
+    return {
+        "status": "ok",
+        "simulated": False,
+        "message": (
+            f"TLS vérifié ({version}) : chaîne, validité et nom d'hôte ; "
+            "session REST et inventaire réel après autorisation de laboratoire "
+            "(docs/lab-vsphere-checklist.md)"
+        ),
+    }

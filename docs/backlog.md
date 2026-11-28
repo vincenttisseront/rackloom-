@@ -1,6 +1,6 @@
 # Backlog : fonctions F01 à F60 et atelier de templates AT01 à AT04
 
-Statut au 2026-11-25 : **lot 1 terminé, testé localement** (D1 à D6 et T01 à T41, voir `docs/progress.md`). **AT01**, **F60**, **F57** et **F55** (atelier) ainsi que **F28**, **F27** et **F21** (lot A) sont livrés et testés localement. Le reste du backlog n'est pas commencé. Rien n'est validé en laboratoire réel (D2).
+Statut au 2026-11-28 : **lot 1** et **Lot 2-D2** terminés, testés localement (voir `docs/progress.md`, `docs/lot-2-plan.md`). Fonctions F01–F60 et atelier AT01 / F60 / F57 / F55 largement livrées (détail dans le tableau). Rien n'est validé en laboratoire réel (D2 toujours en vigueur).
 
 Bases posées par le lot 1 et réutilisables telles quelles : `allowed_actions` calculées côté serveur et revérifiées (F55), source `ci` sur le même schéma et le même résolveur, avec `Idempotency-Key` (F35), `service_status` distinct du succès des jobs (F57), règle d'admission 55 et revalidation au démarrage (F27, F28), `correlation_id` et SSE (F21), registre et publication avec motif (AT01), contrat du chat et scénarios fictifs rejouables (F46).
 
@@ -195,7 +195,7 @@ Source : brief de l'atelier de conception de templates. Identifiants distincts d
      - F52 dès qu'au moins deux profils réellement pris en charge existent ; F56 après F27 et F36 ; F58 après F57 ; F59 après F57 et l'OIDC du lot 4 ou F41.
    - Atelier, suite : AT03 dès que les sources et licences de test existent ; AT02 après le lot 2 et F07 ; AT04 après F24, F19 et F08.
 
-Le lot 2 (laboratoire vSphere réel) et le lot 3 (ISO) avancent selon la disponibilité du laboratoire et des décisions de licence.
+**Lot 2-D2** (parcours mission sous D2, sans vCenter réel) : clos — `docs/lot-2-plan.md`, preuves testées localement. Le **laboratoire vSphere réel** (montée en « validé en laboratoire », connecteur REST, module vsphere, state distant) attend l'autorisation Vincent et `docs/lab-vsphere-checklist.md`. Le lot 3 (ISO) avance selon les décisions de licence (D3) et D5.
 
 Ne pas commencer une fonction parce qu'elle est visible si un prérequis manque ; livrer à chaque session une tranche fonctionnelle (données, API, exécution, UI, audit), pas des interfaces vides.
 

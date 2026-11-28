@@ -76,7 +76,10 @@ def test_d1_jusqu_au_succes_hote_sain(conn, demo, worker, lab, api):
     chloe = api("chloe")
     assert chloe.get(f"{API}/hosts/{host['id']}/observations?kind=journal").status_code == 404
     assert chloe.get(f"{API}/hosts/{host['id']}").status_code == 404
-    assert alice.get(f"{API}/hosts/{host['id']}/observations?kind=journal").status_code == 200
+    journal = alice.get(f"{API}/hosts/{host['id']}/observations?kind=journal")
+    assert journal.status_code == 200
+    journal_body = journal.json()
+    assert journal_body, "journal attendu après collect/configure"
     # Rapport Ansible filtré (classe B) : téléchargeable par un membre seulement ; classe A jamais.
     arts = {a["kind"]: a for a in conn.execute("SELECT * FROM artifacts WHERE change_id = %s", (c["id"],))}
     report = arts["ansible_configure_report"]
@@ -132,7 +135,8 @@ def test_t20_cle_d_hote_inconnue(conn, demo, worker, lab, worker_env):
     assert (worker_env / "demo-infra" / str(c["deployment_id"]) / "vit-dev-web-01.json").exists()
 
 
-def test_t22_echec_partiel_puis_reprise_ciblee(conn, demo, worker, lab):
+def test_t22_echec_partiel_puis_reprise_ciblee(conn, demo, worker, lab, worker_env):
+    """Lot 2-D2 / CA-10 : échec Ansible après création — ressources conservées, aucune destruction."""
     lab.start(2)
     c = _approved_and_applied(conn, demo, worker, quantity=2)
     assert worker.drain(kinds=["guest_ready"]) == ["guest_ready"]
@@ -144,8 +148,20 @@ def test_t22_echec_partiel_puis_reprise_ciblee(conn, demo, worker, lab):
     assert dep["service_status"] == "created_not_ready"
     assert dep["service_reason"] == "VM créée, configuration incomplète"
     assert flows.change(conn, c["id"])["state"] == "partially_succeeded"
-    states = {h["name"]: h["deployment_state"] for h in _hosts(conn, c["deployment_id"])}
+    hosts_after_fail = _hosts(conn, c["deployment_id"])
+    states = {h["name"]: h["deployment_state"] for h in hosts_after_fail}
     assert states == {"vit-dev-web-01": "verified", "vit-dev-web-02": "config_failed"}
+    # Aucune suppression ni second tf_apply : les deux ressources locales et les deux fiches restent.
+    lab_dir = worker_env / "demo-infra" / str(c["deployment_id"])
+    assert sorted(p.name for p in lab_dir.glob("*.json")) == [
+        "vit-dev-web-01.json",
+        "vit-dev-web-02.json",
+    ]
+    assert len(hosts_after_fail) == 2
+    assert len(flows.jobs_of(conn, c["id"], "tf_apply")) == 1
+    kinds_after_fail = {j["kind"] for j in flows.jobs_of(conn, c["id"])}
+    assert "tf_apply" in kinds_after_fail
+    assert not any("destroy" in k for k in kinds_after_fail)
 
     lab.exec(broken, "mv", "/root/rackloom-lab.list", "/etc/apt/sources.list.d/rackloom-lab.list")
     retry = approvals.request_retry(conn, demo.principal("alice"), c["id"], {"step": "ansible_configure"})
@@ -159,6 +175,11 @@ def test_t22_echec_partiel_puis_reprise_ciblee(conn, demo, worker, lab):
     assert configure["payload"]["host_ids"] == [str(second["id"])]
     assert flows.change(conn, c["id"])["state"] == "succeeded"
     assert flows.deployment(conn, c["deployment_id"])["service_status"] == "ready"
+    assert sorted(p.name for p in lab_dir.glob("*.json")) == [
+        "vit-dev-web-01.json",
+        "vit-dev-web-02.json",
+    ]
+    assert len(flows.jobs_of(conn, c["id"], "tf_apply")) == 1
 
 
 def test_at01_vagues_nginx_fail2ban_et_second_passage(conn, demo, worker, lab):

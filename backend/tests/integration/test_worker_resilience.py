@@ -185,8 +185,12 @@ def test_t02_state_modifie_apres_le_plan(conn, demo, worker, worker_env, tmp_pat
 
 
 def test_t27_seconde_planification_sans_changement(conn, demo, worker, worker_env):
+    """Lot 2-D2 : seconde planification sans doublon ; modify additif conserve l'existant."""
     c, plan, job_id = _approved(conn, demo, worker)
     worker.drain(kinds=["tf_apply"])
+    assert len(flows.jobs_of(conn, c["id"], "tf_apply")) == 1
+    lab_dir = worker_env / "demo-infra" / str(c["deployment_id"])
+    assert sorted(p.name for p in lab_dir.glob("*.json")) == ["vit-dev-web-01.json"]
     conn.execute("UPDATE jobs SET state = 'cancelled' WHERE change_id = %s AND state = 'queued'", (c["id"],))
     conn.execute("UPDATE changes SET state = 'succeeded' WHERE id = %s", (c["id"],))
     conn.commit()
@@ -199,7 +203,9 @@ def test_t27_seconde_planification_sans_changement(conn, demo, worker, worker_en
     last = conn.execute("SELECT * FROM state_transitions WHERE change_id = %s ORDER BY id DESC LIMIT 1",
                         (c["id"],)).fetchone()
     assert last["reason_code"] == "no_changes"
-    assert len(list((worker_env / "demo-infra").glob("*/*.json"))) == 1
+    # Seconde exécution de planification : aucune ressource supplémentaire, un seul apply historique.
+    assert sorted(p.name for p in lab_dir.glob("*.json")) == ["vit-dev-web-01.json"]
+    assert len(flows.jobs_of(conn, c["id"], "tf_apply")) == 1
     # Modification quantité 1 → 2 : une seule création, l'instance existante est conservée.
     alice = demo.principal("alice")
     m = service.create_modify_change(conn, alice, c["deployment_id"])
@@ -214,7 +220,8 @@ def test_t27_seconde_planification_sans_changement(conn, demo, worker, worker_en
     assert plan3["summary"]["vm_counts"] == {"create": 1, "update": 0, "replace": 0, "delete": 0, "no-op": 1}
     flows.approve(conn, demo, m["id"], plan3)
     worker.drain(kinds=["tf_apply"])
-    files = sorted(p.name for p in (worker_env / "demo-infra" / str(c["deployment_id"])).glob("*.json"))
+    files = sorted(p.name for p in lab_dir.glob("*.json"))
     assert files == ["vit-dev-web-01.json", "vit-dev-web-02.json"]
     dep = flows.deployment(conn, c["deployment_id"])
     assert [i["name"] for i in dep["instances"]] == ["vit-dev-web-01", "vit-dev-web-02"]
+    assert len(flows.jobs_of(conn, m["id"], "tf_apply")) == 1

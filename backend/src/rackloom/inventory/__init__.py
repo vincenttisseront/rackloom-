@@ -1,7 +1,10 @@
 """Inventaire : instantanés horodatés et lecture filtrée par octrois et fraîcheur.
 
-Au lot 1, la source est le connecteur `vsphere-fake` (SIMULÉ) alimenté par
-`lab/fixtures/inventory.yaml` et par l'observation des fichiers créés par Terraform.
+Sous D2 (pas de laboratoire vSphere réel), la source est le connecteur `vsphere-fake`
+(SIMULÉ) alimenté par `lab/fixtures/inventory.yaml` et par l'observation des fichiers
+créés par Terraform (`lab-vm`). Le mode du connecteur est exposé dans `freshness`
+pour que l'UI affiche le badge « Simulé » ; un inventaire réel attend l'autorisation
+Vincent et `docs/lab-vsphere-checklist.md`.
 """
 
 from __future__ import annotations
@@ -94,5 +97,14 @@ def freshness(conn: Conn, max_age_hours: int) -> dict[str, Any]:
     if snap is None:
         return {"snapshot_id": None, "observed_at": None, "age_seconds": None, "stale": True}
     age = (datetime.now(UTC) - snap["observed_at"]).total_seconds()
-    return {"snapshot_id": str(snap["id"]), "observed_at": snap["observed_at"].isoformat(),
-            "age_seconds": int(age), "stale": age > max_age_hours * 3600, "connector_mode": "simulated"}
+    connector = conn.execute(
+        "SELECT mode FROM connectors WHERE id = %s", (snap["connector_id"],)
+    ).fetchone()
+    mode = connector["mode"] if connector else "simulated"
+    return {
+        "snapshot_id": str(snap["id"]),
+        "observed_at": snap["observed_at"].isoformat(),
+        "age_seconds": int(age),
+        "stale": age > max_age_hours * 3600,
+        "connector_mode": mode,
+    }
