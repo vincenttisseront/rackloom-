@@ -1,7 +1,6 @@
-# Overlay Lot 4 : IdP OIDC local (Dex). Profil `oidc`.
-# Exemple : docker compose -f compose/compose.yaml -f compose/compose.demo.yaml \
-#   -f compose/compose.oidc.yaml --profile lab --profile oidc up -d
+# Overlay Lot 4 : IdP OIDC local (Dex). Toujours actif dès que ce fichier est inclus.
 # Mot de passe IdP labo (Dex) : rackloom-oidc-lab — distinct des comptes locaux F14.
+# Pas de profile Compose : `depends_on: dex` sur api/caddy exige un service toujours défini.
 
 services:
   dex:
@@ -16,7 +15,6 @@ services:
     volumes:
       - ./dex/config.yaml:/etc/dex/config.yaml:ro
     tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
-    profiles: [oidc]
 
   api:
     environment:

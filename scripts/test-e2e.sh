@@ -25,7 +25,7 @@ step() {  # libellé, commande…
 
 if [ "${RACKLOOM_E2E_REUSE:-0}" != 1 ]; then
   say "Pile de test jetable (suppression des volumes rackloom_*)"
-  "${COMPOSE[@]}" --profile lab --profile tools --profile oidc down -v --remove-orphans
+  "${COMPOSE[@]}" --profile lab --profile tools down -v --remove-orphans
   install -d -m 0700 "$LAB"
   # Le journal contient les mots de passe générés : il reste dans .lab/ (ignoré par Git).
   if ! "$ROOT/scripts/demo.sh" > "$LAB/e2e-demo.log" 2>&1; then

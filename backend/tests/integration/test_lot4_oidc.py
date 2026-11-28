@@ -11,8 +11,8 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from tests.support.fake_oidc import FakeOidcIdP
 
+from fake_oidc import FakeOidcIdP
 from rackloom import security
 from rackloom.api.app import create_app
 from rackloom.config import get_settings

@@ -17,13 +17,13 @@ images:         ## Construit les images applicatives, runners et labo (étiquett
 demo:           ## Démarre la démonstration locale sur https://localhost:8443
 	./scripts/demo.sh
 down:           ## Arrête la pile en conservant les volumes
-	$(COMPOSE) --profile lab --profile oidc down
+	$(COMPOSE) --profile lab down
 demo-reset:     ## Supprime les volumes rackloom_* (base, clés, labo), après confirmation
 	@read -r -p "Supprimer tous les volumes rackloom_* (base, clés, labo) ? Taper « oui » : " answer; \
 	  [ "$$answer" = oui ] || { echo "abandon"; exit 1; }
-	$(COMPOSE) --profile lab --profile tools --profile oidc down -v --remove-orphans
+	$(COMPOSE) --profile lab --profile tools down -v --remove-orphans
 logs:           ## Suit les journaux de la pile
-	$(COMPOSE) --profile lab --profile oidc logs -f
+	$(COMPOSE) --profile lab logs -f
 test:           ## Lint, contrats d'imports, tests backend (unitaires, intégration, sécurité), typecheck web, dérive OpenAPI
 	cd backend && uv run ruff check . ../launcher/src ../scripts && uv run lint-imports && uv run pytest
 	cd web && npx nuxi typecheck

@@ -10,7 +10,6 @@ COMPOSE=(docker compose -f "$ROOT/compose/compose.yaml" -f "$ROOT/compose/compos
 [ -n "${RACKLOOM_COMPOSE_EXTRA:-}" ] && COMPOSE+=(-f "$RACKLOOM_COMPOSE_EXTRA")
 NODES=()
 for i in $(seq 1 "${RACKLOOM_LAB_NODE_COUNT:-3}"); do NODES+=("lab-node-$i"); done
-OIDC_PROFILES=(--profile oidc)
 
 say() { printf '\n== %s\n' "$*"; }
 
@@ -55,7 +54,7 @@ done
 "${COMPOSE[@]}" run --rm cli lab nodes "${NODES[@]}"
 
 say "Services de l'appliance + IdP OIDC local (Dex)"
-"${COMPOSE[@]}" "${OIDC_PROFILES[@]}" up -d --wait caddy api worker launcher dex
+"${COMPOSE[@]}" up -d --wait caddy api worker launcher dex
 "${COMPOSE[@]}" cp caddy:/data/caddy/pki/authorities/local/root.crt "$LAB/ca.crt" >/dev/null
 chmod 0644 "$LAB/ca.crt"
 

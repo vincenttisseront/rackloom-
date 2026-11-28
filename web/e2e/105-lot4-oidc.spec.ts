@@ -89,5 +89,5 @@ test('Lot 4 — OIDC : login SSO, step-up, urgence si IdP down', async ({ page }
     ...compose, 'run', '--rm', '--no-deps', 'cli', 'emergency', 'close',
     '--reason', 'e2e fin',
   ], { stdio: 'pipe' })
-  execFileSync('docker', [...compose, '--profile', 'oidc', 'start', 'dex'], { stdio: 'pipe' })
+  execFileSync('docker', [...compose, 'start', 'dex'], { stdio: 'pipe' })
 })
