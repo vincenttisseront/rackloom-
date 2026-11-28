@@ -1,0 +1,33 @@
+# Overlay Lot 4 : IdP OIDC local (Dex). Profil `oidc`.
+# Exemple : docker compose -f compose/compose.yaml -f compose/compose.demo.yaml \
+#   -f compose/compose.oidc.yaml --profile lab --profile oidc up -d
+# Mot de passe IdP labo (Dex) : rackloom-oidc-lab — distinct des comptes locaux F14.
+
+services:
+  dex:
+    image: ghcr.io/dexidp/dex:v2.43.1
+    user: "1001:1001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    networks: [core]
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    volumes:
+      - ./dex/config.yaml:/etc/dex/config.yaml:ro
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+    profiles: [oidc]
+
+  api:
+    environment:
+      RACKLOOM_OIDC_INTERNAL_BASE: http://dex:5556
+    depends_on:
+      - dex
+
+  cli:
+    environment:
+      RACKLOOM_OIDC_INTERNAL_BASE: http://dex:5556
+
+  caddy:
+    depends_on:
+      - dex

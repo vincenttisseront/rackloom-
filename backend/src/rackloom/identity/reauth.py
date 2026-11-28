@@ -1,7 +1,7 @@
 """Réauthentification forte pour actions sensibles (F12).
 
-Sans IdP d'entreprise (lot 4), la preuve fraîche est fournie localement : mot de passe
-revalidé (step-up) ou preuve simulée d'IdP de test (`acr`, `auth_time`, `max_age`).
+Preuve fraîche : mot de passe local (step-up), flux OIDC IdP (`acr` / `auth_time` via
+`POST /auth/oidc/reauth` → callback), ou preuve simulée d'IdP de test (hors production).
 Niveau et fraîcheur sont vérifiés côté serveur. Lire un plan n'exige aucune preuve fraîche.
 """
 
@@ -79,9 +79,18 @@ def step_up(
     method = "step_up"
 
     if idp_proof is not None:
-        # IdP de test local uniquement (jamais en production sans lot 4).
+        # Preuve simulée : refusée en production. Avec OIDC réel, utiliser /auth/oidc/reauth.
         if settings.profile == "production":
             raise ApiError(403, "idp_proof_refused", "preuve IdP simulée refusée en production")
+        from . import oidc as oidc_mod
+
+        if oidc_mod.enabled(conn):
+            raise ApiError(
+                422,
+                "use_oidc_reauth",
+                "OIDC activé : utilisez POST /auth/oidc/reauth (redirection IdP) plutôt qu'une preuve simulée",
+                field="/idp_proof",
+            )
         if not isinstance(idp_proof, dict):
             raise ApiError(422, "invalid_proof", "objet idp_proof attendu", field="/idp_proof")
         claimed_acr = str(idp_proof.get("acr") or "")

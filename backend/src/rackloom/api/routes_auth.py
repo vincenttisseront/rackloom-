@@ -1,15 +1,17 @@
-"""Amorçage, connexion, déconnexion, session courante, réauthentification (F12)."""
+"""Amorçage, connexion, déconnexion, session courante, réauthentification (F12), OIDC (lot 4)."""
 
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..config import get_settings
 from ..errors import ApiError
-from ..identity import emergency, reauth
+from ..identity import emergency, oidc, reauth
 from ..identity import service as identity
 from .deps import authenticate, check_origin, csrf_guard, session_token, unit_of_work
 
@@ -104,12 +106,85 @@ def reauthenticate(body: ReauthBody, request: Request) -> dict[str, Any]:
             idp_proof=body.idp_proof,
             request_id=u.request_id,
         )
-        # Recharge le principal pour renvoyer l'état à jour.
         token = session_token(request)
         assert token is not None
         principal = identity.resolve_session(u.conn, token, touch=False)
         assert principal is not None
         return {**_session_body(principal), **proof}
+
+
+@router.get("/auth/oidc")
+def oidc_public_status(request: Request) -> dict[str, Any]:
+    """État SSO public (page de connexion) : pas de secret."""
+    with unit_of_work(request, anonymous=True) as u:
+        return oidc.public_view(u.conn)
+
+
+@router.get("/auth/oidc/login")
+def oidc_login(
+    request: Request,
+    return_to: str | None = Query(default=None, max_length=500),
+) -> RedirectResponse:
+    """Démarre le flux OIDC (code + PKCE) ; redirige vers l'IdP."""
+    with unit_of_work(request, anonymous=True) as u:
+        flow = oidc.begin_flow(u.conn, purpose="login", return_to=return_to)
+    return RedirectResponse(flow["authorization_url"], status_code=302)
+
+
+@router.post("/auth/oidc/reauth", dependencies=[Depends(csrf_guard)])
+def oidc_reauth(
+    request: Request,
+    return_to: str | None = Query(default=None, max_length=500),
+) -> dict[str, Any]:
+    """F12 + OIDC : démarre un step-up IdP (`prompt=login`, `max_age=0`, `acr_values`)."""
+    with unit_of_work(request, write=True) as u:
+        if not oidc.enabled(u.conn):
+            raise ApiError(404, "oidc_disabled", "SSO OIDC non configuré ou désactivé")
+        flow = oidc.begin_flow(
+            u.conn,
+            purpose="reauth",
+            session_id=u.p.session_id,
+            return_to=return_to,
+        )
+        return {"authorization_url": flow["authorization_url"]}
+
+
+@router.get("/auth/oidc/callback")
+def oidc_callback(
+    request: Request,
+    response: Response,
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    error_description: str | None = Query(default=None),
+) -> RedirectResponse:
+    """Callback OIDC : échange le code, pose le cookie (login) ou élève la session (reauth)."""
+    if error:
+        # Ne pas renvoyer error_description brut (peut être verbeux) ; code seulement.
+        q = urlencode({"oidc_error": error[:80]})
+        return RedirectResponse(f"/connexion?{q}", status_code=302)
+    if not code or not state:
+        return RedirectResponse("/connexion?oidc_error=missing_code", status_code=302)
+
+    try:
+        with unit_of_work(request, anonymous=True) as u:
+            session, meta = oidc.complete_callback(
+                u.conn,
+                code=code,
+                state=state,
+                previous_token=session_token(request),
+            )
+            return_to = oidc.safe_return_to(meta.get("return_to"))
+            if meta["purpose"] == "login":
+                assert session is not None
+                redirect = RedirectResponse(return_to, status_code=302)
+                _set_cookie(redirect, session.token)
+                return redirect
+            # reauth : cookie déjà présent ; retour à l'UI.
+            return RedirectResponse(return_to, status_code=302)
+    except ApiError as exc:
+        q = urlencode({"oidc_error": exc.code})
+        return RedirectResponse(f"/connexion?{q}", status_code=302)
 
 
 @router.post("/auth/logout", dependencies=[Depends(csrf_guard)])
@@ -132,4 +207,5 @@ def session(request: Request) -> dict[str, Any]:
         principal = authenticate(u.conn, request, write=False)
         body = _session_body(principal)
         body["sso_available"] = emergency.sso_available(u.conn)
+        body["oidc"] = oidc.public_view(u.conn)
         return body

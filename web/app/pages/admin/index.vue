@@ -47,6 +47,11 @@ const links = computed(() => {
         blurb: 'Bundle de politiques, exceptions, droits temporaires, accès d’urgence.',
       },
       {
+        to: '/admin/sso',
+        title: 'SSO OIDC',
+        blurb: 'Issuer, client PKCE, mapping groupes → rôles (Dex local ; IdP entreprise non vérifié).',
+      },
+      {
         to: '/admin/identites',
         title: 'Identités',
         blurb: 'SCIM, revue d’accès, copie d’audit, alertes certificats TLS.',

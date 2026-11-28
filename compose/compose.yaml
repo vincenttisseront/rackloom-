@@ -17,6 +17,7 @@ x-backend-env: &backend-env
   RACKLOOM_KEYS_DIR: /run/rackloom-keys
   RACKLOOM_DATA_DIR: /var/lib/rackloom
   RACKLOOM_CHAT_ADAPTER: ${RACKLOOM_CHAT_ADAPTER:-fake}
+  RACKLOOM_OIDC_INTERNAL_BASE: ${RACKLOOM_OIDC_INTERNAL_BASE:-}
 
 services:
   caddy:
@@ -86,10 +87,10 @@ services:
     command:
       - >-
         rackloom keys init --dir /keys/worker
-        && cp /keys/worker/artifact-b.key /keys/worker/secrets-box.pub /keys/api/
+        && cp /keys/worker/artifact-b.key /keys/worker/secrets-box.pub /keys/worker/oidc-client.key /keys/api/
         && cp /keys/worker/offline-bundle-sign.key /keys/worker/offline-bundle-sign.pub /keys/api/
         && chown -R 10001:10001 /keys/worker /keys/api /keys/lab
-        && chmod 0600 /keys/api/artifact-b.key /keys/api/offline-bundle-sign.key
+        && chmod 0600 /keys/api/artifact-b.key /keys/api/offline-bundle-sign.key /keys/api/oidc-client.key
         && chmod 0644 /keys/api/offline-bundle-sign.pub
         && chmod 0755 /keys/lab
         && chown 10001:10001 /vol/workspaces /vol/artifacts /vol/audit-export /vol/offline-bundles

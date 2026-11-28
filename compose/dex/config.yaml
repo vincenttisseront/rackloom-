@@ -1,0 +1,42 @@
+# IdP OIDC local de test (Dex) — Lot 4 / D2.
+# Aucun IdP d'entreprise. Mot de passe labo figé : rackloom-oidc-lab
+# (distinct des mots de passe locaux de secours / urgence F14).
+issuer: https://localhost:8443/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+  allowedOrigins: ["*"]
+
+telemetry:
+  http: 0.0.0.0:5558
+
+oauth2:
+  skipApprovalScreen: true
+  alwaysShowLoginScreen: true
+
+staticClients:
+  - id: rackloom-local
+    name: Rackloom
+    public: true
+    redirectURIs:
+      - https://localhost:8443/api/v1/auth/oidc/callback
+
+enablePasswordDB: true
+
+staticPasswords:
+  # bcrypt de « rackloom-oidc-lab » ($2b$10$…)
+  - email: admin@demo.invalid
+    hash: "$2b$10$6vFi63qBJtwTXTxOLzGN7OOdy.AFROytvU8jwTLGj0NLMMxiyVtfu"
+    username: admin
+    userID: "1001"
+  - email: alice@demo.invalid
+    hash: "$2b$10$6vFi63qBJtwTXTxOLzGN7OOdy.AFROytvU8jwTLGj0NLMMxiyVtfu"
+    username: alice
+    userID: "1002"
+  - email: bruno@demo.invalid
+    hash: "$2b$10$6vFi63qBJtwTXTxOLzGN7OOdy.AFROytvU8jwTLGj0NLMMxiyVtfu"
+    username: bruno
+    userID: "1003"

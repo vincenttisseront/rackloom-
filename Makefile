@@ -3,7 +3,7 @@
         lab-keys openapi lint fmt iso test-iso
 
 SHELL := /bin/bash
-COMPOSE := docker compose -f compose/compose.yaml -f compose/compose.demo.yaml
+COMPOSE := docker compose -f compose/compose.yaml -f compose/compose.demo.yaml -f compose/compose.oidc.yaml
 
 help:           ## Liste les cibles
 	@grep -E '^[a-z0-9-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/ :/'
@@ -17,13 +17,13 @@ images:         ## Construit les images applicatives, runners et labo (étiquett
 demo:           ## Démarre la démonstration locale sur https://localhost:8443
 	./scripts/demo.sh
 down:           ## Arrête la pile en conservant les volumes
-	$(COMPOSE) --profile lab down
+	$(COMPOSE) --profile lab --profile oidc down
 demo-reset:     ## Supprime les volumes rackloom_* (base, clés, labo), après confirmation
 	@read -r -p "Supprimer tous les volumes rackloom_* (base, clés, labo) ? Taper « oui » : " answer; \
 	  [ "$$answer" = oui ] || { echo "abandon"; exit 1; }
-	$(COMPOSE) --profile lab --profile tools down -v --remove-orphans
+	$(COMPOSE) --profile lab --profile tools --profile oidc down -v --remove-orphans
 logs:           ## Suit les journaux de la pile
-	$(COMPOSE) --profile lab logs -f
+	$(COMPOSE) --profile lab --profile oidc logs -f
 test:           ## Lint, contrats d'imports, tests backend (unitaires, intégration, sécurité), typecheck web, dérive OpenAPI
 	cd backend && uv run ruff check . ../launcher/src ../scripts && uv run lint-imports && uv run pytest
 	cd web && npx nuxi typecheck

@@ -9,7 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Request
 
 from ..errors import ApiError, forbidden, not_found
-from ..identity import emergency, reauth, temporary
+from ..identity import emergency, oidc, reauth, temporary
 from ..identity.authz import require_admin
 from ..policy import exceptions as policy_exc
 from ..policy import simulate as policy_sim
@@ -194,3 +194,84 @@ def emergency_close_api(request: Request, body: dict[str, Any] = Body(...)) -> d
             actor=f"user:{u.p.email}",
             restore_sso=True,
         )
+
+
+# --- Lot 4 : OIDC admin ---------------------------------------------------------------------
+
+
+@router.get("/admin/oidc")
+def oidc_admin_get(request: Request) -> dict[str, Any]:
+    with unit_of_work(request) as u:
+        require_admin(u.p)
+        view = oidc.admin_view(u.conn)
+        view["idp_reachable"] = oidc.probe_idp(u.conn).get("reachable")
+        return view
+
+
+@router.put("/admin/oidc")
+def oidc_admin_put(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    _only(
+        body,
+        {
+            "enabled",
+            "issuer_url",
+            "client_id",
+            "client_secret",
+            "clear_client_secret",
+            "scopes",
+            "email_claim",
+            "groups_claim",
+            "name_claim",
+            "step_up_acr",
+        },
+    )
+    with unit_of_work(request, write=True) as u:
+        require_admin(u.p)
+        reauth.require_fresh(u.p, action="configurer le SSO OIDC")
+        return oidc.configure(
+            u.conn,
+            u.p,
+            enabled=body.get("enabled"),
+            issuer_url=body.get("issuer_url"),
+            client_id=body.get("client_id"),
+            client_secret=body.get("client_secret"),
+            clear_client_secret=bool(body.get("clear_client_secret")),
+            scopes=body.get("scopes"),
+            email_claim=body.get("email_claim"),
+            groups_claim=body.get("groups_claim"),
+            name_claim=body.get("name_claim"),
+            step_up_acr=body.get("step_up_acr"),
+        )
+
+
+@router.post("/admin/oidc/probe")
+def oidc_admin_probe(request: Request) -> dict[str, Any]:
+    with unit_of_work(request, write=True) as u:
+        require_admin(u.p)
+        return oidc.probe_idp(u.conn)
+
+
+@router.post("/admin/oidc/mappings")
+def oidc_mapping_create(request: Request, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    _only(body, {"idp_group", "role", "project_id", "environment_id"})
+    with unit_of_work(request, write=True) as u:
+        require_admin(u.p)
+        reauth.require_fresh(u.p, action="créer un mapping de groupe OIDC")
+        project_id = UUID(body["project_id"]) if body.get("project_id") else None
+        environment_id = UUID(body["environment_id"]) if body.get("environment_id") else None
+        return oidc.add_group_mapping(
+            u.conn,
+            u.p,
+            idp_group=str(body.get("idp_group") or ""),
+            role=str(body.get("role") or ""),
+            project_id=project_id,
+            environment_id=environment_id,
+        )
+
+
+@router.delete("/admin/oidc/mappings/{mapping_id}")
+def oidc_mapping_delete(mapping_id: UUID, request: Request) -> dict[str, Any]:
+    with unit_of_work(request, write=True) as u:
+        require_admin(u.p)
+        reauth.require_fresh(u.p, action="supprimer un mapping de groupe OIDC")
+        return oidc.delete_group_mapping(u.conn, u.p, mapping_id)

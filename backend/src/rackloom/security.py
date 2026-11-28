@@ -64,6 +64,8 @@ KEY_FILES = {
     # F17 : signature des lots hors ligne (Ed25519). Copiée vers keys-api pour build/inspect.
     "offline-bundle-sign": "offline-bundle-sign.key",
     "offline-bundle-sign-public": "offline-bundle-sign.pub",
+    # Lot 4 : chiffrement du client_secret OIDC côté API (AES-GCM), jamais journalisé.
+    "oidc-client": "oidc-client.key",
 }
 
 
@@ -73,7 +75,7 @@ def generate_keys(directory: Path) -> list[Path]:
 
     directory.mkdir(parents=True, exist_ok=True)
     created = []
-    for name in ("artifact-a", "artifact-b"):
+    for name in ("artifact-a", "artifact-b", "oidc-client"):
         path = directory / KEY_FILES[name]
         if not path.exists():
             _write_secret_file(path, os.urandom(32))

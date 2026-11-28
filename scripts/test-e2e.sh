@@ -12,7 +12,7 @@ export RACKLOOM_COMPOSE_EXTRA="$ROOT/compose/compose.test.yaml"
 export RACKLOOM_LAB_NODE_COUNT=8
 OUT=${RACKLOOM_E2E_OUTPUT:-$LAB/e2e-results}
 COMPOSE=(docker compose -f "$ROOT/compose/compose.yaml" -f "$ROOT/compose/compose.demo.yaml"
-         -f "$RACKLOOM_COMPOSE_EXTRA")
+         -f "$ROOT/compose/compose.oidc.yaml" -f "$RACKLOOM_COMPOSE_EXTRA")
 results=()
 failed=0
 
@@ -25,7 +25,7 @@ step() {  # libellé, commande…
 
 if [ "${RACKLOOM_E2E_REUSE:-0}" != 1 ]; then
   say "Pile de test jetable (suppression des volumes rackloom_*)"
-  "${COMPOSE[@]}" --profile lab --profile tools down -v --remove-orphans
+  "${COMPOSE[@]}" --profile lab --profile tools --profile oidc down -v --remove-orphans
   install -d -m 0700 "$LAB"
   # Le journal contient les mots de passe générés : il reste dans .lab/ (ignoré par Git).
   if ! "$ROOT/scripts/demo.sh" > "$LAB/e2e-demo.log" 2>&1; then
