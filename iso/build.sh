@@ -6,6 +6,9 @@
 #   ./iso/build.sh              # ISO de production (stockage interactif)
 #   ./iso/build.sh --test-seed  # graine autoinstall non interactive (CI / test-iso)
 #   RACKLOOM_ISO_SKIP_IMAGES=1 ./iso/build.sh
+#   RACKLOOM_ISO_IMAGE_DIR=/path/to/tars ./iso/build.sh  # images déjà sauvées (Windows)
+#
+# Sous Windows (Docker Desktop, sans WSL) : iso/build.ps1
 #
 # Sortie : dist/rackloom-appliance-<version>-amd64.iso (+ .sha256 + .manifest.txt)
 set -euo pipefail
@@ -24,7 +27,7 @@ for arg in "$@"; do
     --test-seed) TEST_SEED=1 ;;
     --skip-images) EMBED_IMAGES=0 ;;
     -h|--help)
-      sed -n '2,12p' "$0"
+      sed -n '2,14p' "$0"
       exit 0
       ;;
     *) echo "option inconnue: $arg" >&2; exit 2 ;;
@@ -36,7 +39,10 @@ need xorriso
 need curl
 need gpg
 need sha256sum
-need docker
+# docker n'est requis que si l'on construit/sauve les images ici (pas via RACKLOOM_ISO_IMAGE_DIR).
+if [ -z "${RACKLOOM_ISO_IMAGE_DIR:-}" ] && [ "$EMBED_IMAGES" = 1 ]; then
+  need docker
+fi
 
 CACHE="${RACKLOOM_ISO_CACHE:-${TMPDIR:-/tmp}/rackloom-iso-cache}"
 WORK="${RACKLOOM_ISO_WORK:-${TMPDIR:-/tmp}/rackloom-iso-work}"
@@ -44,7 +50,7 @@ OUT_DIR="${RACKLOOM_ISO_OUT:-$ROOT/dist}"
 mkdir -p "$CACHE" "$WORK" "$OUT_DIR"
 
 STAMP=$(date -u +%Y%m%d)
-GIT_SHA=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
+GIT_SHA="${RACKLOOM_ISO_GIT_SHA:-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)}"
 VERSION_LABEL="lot3-${STAMP}-${GIT_SHA}"
 ISO_OUT="$OUT_DIR/rackloom-appliance-${UBUNTU_ISO_VERSION}-${STAMP}-amd64.iso"
 [ "$TEST_SEED" = 1 ] && ISO_OUT="$OUT_DIR/rackloom-appliance-${UBUNTU_ISO_VERSION}-${STAMP}-test-amd64.iso"
@@ -81,10 +87,30 @@ IMG_STAGE="$WORK/images"
 rm -rf "$IMG_STAGE"
 mkdir -p "$IMG_STAGE"
 
-if [ "$EMBED_IMAGES" = 1 ]; then
+if [ -n "${RACKLOOM_ISO_IMAGE_DIR:-}" ]; then
+  # Chemin Windows (build.ps1) : images déjà construites/sauvegardées sur l'hôte.
+  say "images pré-construites depuis $RACKLOOM_ISO_IMAGE_DIR"
+  for name in backend launcher web runner-ansible runner-terraform postgres; do
+    [ -f "$RACKLOOM_ISO_IMAGE_DIR/$name.tar" ] || {
+      echo "archive image absente: $RACKLOOM_ISO_IMAGE_DIR/$name.tar" >&2
+      exit 1
+    }
+  done
+  cp -a "$RACKLOOM_ISO_IMAGE_DIR/." "$IMG_STAGE/"
+  if [ ! -f "$IMG_STAGE/manifest.sha256" ]; then
+    (cd "$IMG_STAGE" && sha256sum ./*.tar >manifest.sha256)
+  fi
+elif [ "$EMBED_IMAGES" = 1 ]; then
   say "construction / sauvegarde des images :$RACKLOOM_IMAGE_TAG"
   export DOCKER_BUILDKIT=1
-  NET_ARGS=(--network=host)
+  # --network=host accélère sur Linux natif ; Docker Desktop (Windows) ne le gère pas.
+  # RACKLOOM_ISO_DOCKER_NETWORK=host|bridge|… (vide = défaut du démon).
+  NET_ARGS=()
+  if [ -n "${RACKLOOM_ISO_DOCKER_NETWORK:-}" ]; then
+    NET_ARGS=(--network="$RACKLOOM_ISO_DOCKER_NETWORK")
+  elif [ "$(uname -s)" = Linux ] && [ -z "${DOCKER_DESKTOP:-}" ]; then
+    NET_ARGS=(--network=host)
+  fi
   # Réutilise les images locales si déjà présentes (make images / build précédent).
   for pair in \
     "rackloom/backend:$RACKLOOM_IMAGE_TAG|$ROOT/backend/Dockerfile" \
@@ -135,6 +161,11 @@ if [ -d "${RACKLOOM_ISO_DEB_DIR:-}" ]; then
 else
   (
     cd "$DEB_STAGE"
+    # apt-get download suffit avec les index existants (hôte Linux).
+    # Conteneur builder frais : pas de listes → update (root) puis download.
+    if ! ls /var/lib/apt/lists/*_Packages >/dev/null 2>&1; then
+      apt-get update -qq
+    fi
     apt-get download docker.io docker-compose-v2 containerd runc iptables \
       libip4tc2 libip6tc2 libxtables12 libnfnetlink0 libnetfilter-conntrack3 \
       libnftnl11 libnftables1 libmnl0
