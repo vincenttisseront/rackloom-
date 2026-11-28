@@ -578,9 +578,14 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 ### Lot 3 : ISO appliance (2026-11-27, heure de Paris)
 
 - Branche `cursor/lot3-iso-appliance-2584`. Arborescence `iso/` (autoinstall, payload, `build.sh`, `test.sh`), `deploy/systemd/rackloom.service`, cibles `make iso` / `make test-iso`.
-- ISO amont Ubuntu 24.04.5 live-server vérifiée (SHA-256 + GPG). Remaster xorriso hybride BIOS/UEFI ; `interactive-sections: [storage]` ; Docker via `.deb` embarqués ; images `:appliance` embarquées ; premier boot console (FQDN, TLS, secrets, jeton d'amorçage).
-- Preuve build : ISO 5,2 Go, SHA-256 `fd38022067374fea42bc2fec451afed24e0e18698c9bdcfd2f00c0019db42c88`, label `lot3-20261127-1f5601d`. Smoke UEFI/KVM : GRUB « Try or Install Ubuntu Server » atteint.
+- ISO amont Ubuntu 24.04.5 live-server vérifiée (SHA-256 + GPG). Remaster xorriso hybride BIOS/UEFI ; Docker via `.deb` embarqués ; images `:appliance` embarquées ; premier boot console (TLS, secrets, jeton d'amorçage).
+- Preuve build : ISO 5,2 Go, SHA-256 `fd38022067374fea42bc2fec451afed24e0e18698c9bdcfd2f00c0019db42c88`, label `lot3-20261127-1f5601d`.
 - **D3 ouverte** (Terraform BSL dans le runner). **D5** non basculé (Docker Ubuntu, pas encore Podman sans root). `make test-iso` install complète : à rejouer sur poste KVM.
+
+### Lot 3 : installateur console Rackloom (RAC-61, 2026-11-28, heure de Paris)
+
+- Branche `cursor/iso-install-custom-7f9a`. Plus aucune UI Subiquity stock : `early-commands` lance `iso/installer/run.sh` (réseau, hostname, mot de passe `rackloom`, confirmation disque), puis réécrit `/autoinstall.yaml` non interactif.
+- GRUB branding (#48) conservé. Smoke : `./iso/installer/test-installer.sh` (dans `make test`). ADR-0004 mis à jour. Rebuild ISO requis pour preuve boot réelle.
 
 ### Lot 2-D2 : parcours mission sous contrainte D2 (2026-11-28, heure de Paris)
 

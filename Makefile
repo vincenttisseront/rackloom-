@@ -29,6 +29,7 @@ test:           ## Lint, contrats d'imports, tests backend (unitaires, intégrat
 	cd web && npx nuxi typecheck
 	./scripts/check-openapi-drift.sh
 	./iso/branding/test-apply-branding.sh
+	./iso/installer/test-installer.sh
 typecheck:      ## mypy sur backend/src (non bloquant au lot 1 : dette chiffrée dans docs/progress.md)
 	cd backend && uv run mypy
 test-e2e:       ## Bout en bout sur pile jetable : runners réels, labo, Playwright D1 à D6, T25, canari T24, T28
