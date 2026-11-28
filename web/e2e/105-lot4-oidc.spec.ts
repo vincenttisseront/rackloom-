@@ -9,7 +9,6 @@ async function dexPasswordLogin(page: Page, email: string, pwd: string) {
   await page.waitForURL(/\/dex\//, { timeout: 60_000 })
   const login = page.locator('input#login, input[name="login"]')
   if (!(await login.isVisible().catch(() => false))) {
-    // Page connecteurs si alwaysShowLoginScreen / plusieurs IdP
     const connector = page.getByRole('link', { name: /log in with/i }).first()
     await expect(connector).toBeVisible({ timeout: 15_000 })
     await connector.click()
@@ -20,6 +19,22 @@ async function dexPasswordLogin(page: Page, email: string, pwd: string) {
   await page.locator('button#submit-login, button[type="submit"], button:has-text("Login")').first().click()
 }
 
+/**
+ * Attend la fin du flux OIDC : ne pas matcher le callback `/auth/oidc/callback`
+ * (sinon un goto concurrent annule la navigation avant Set-Cookie).
+ */
+async function waitOidcSettled(page: Page) {
+  await page.waitForURL(
+    (url) => {
+      const p = url.pathname
+      if (p.includes('/dex/')) return false
+      if (p.includes('/auth/oidc/callback')) return false
+      return true
+    },
+    { timeout: 60_000 },
+  )
+}
+
 test('Lot 4 — OIDC : login SSO, step-up, urgence si IdP down', async ({ page }) => {
   test.setTimeout(300_000)
 
@@ -28,10 +43,10 @@ test('Lot 4 — OIDC : login SSO, step-up, urgence si IdP down', async ({ page }
   await expect(page.getByTestId('oidc-login')).toBeVisible()
   await page.getByTestId('oidc-login').click()
   await dexPasswordLogin(page, 'admin@demo.invalid', OIDC_LAB_PASSWORD)
-  await page.waitForURL(/^(?!.*\/dex\/).*/, { timeout: 60_000 })
-  // Session établie
-  await page.goto('/')
-  await expect(page.getByText(/Admin|admin@demo\.invalid/i).first()).toBeVisible({ timeout: 30_000 })
+  await waitOidcSettled(page)
+  // return_to=/ : ne pas naviguer ailleurs avant que le cookie de session soit posé
+  await expect(page.getByRole('heading', { level: 1, name: /Bonjour/ })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/Admin \(démo\)|admin@demo\.invalid/i).first()).toBeVisible()
   await expectAccessible(page, 'Lot 4 OIDC connecté')
 
   // --- Admin SSO page (secret jamais affiché) ---
@@ -59,7 +74,6 @@ test('Lot 4 — OIDC : login SSO, step-up, urgence si IdP down', async ({ page }
   }, csrf)
   expect(authUrl).toContain('/dex/')
   await page.goto(authUrl)
-  // Dex peut réafficher le login (prompt=login)
   if (page.url().includes('/dex/')) {
     const loginField = page.locator('input#login, input[name="login"]')
     if (await loginField.isVisible().catch(() => false)) {
@@ -70,6 +84,7 @@ test('Lot 4 — OIDC : login SSO, step-up, urgence si IdP down', async ({ page }
       await dexPasswordLogin(page, 'admin@demo.invalid', OIDC_LAB_PASSWORD)
     }
   }
+  await waitOidcSettled(page)
   await page.waitForURL(/\/admin\/sso/, { timeout: 60_000 })
   const sessionAfter = await page.evaluate(async () => {
     const r = await fetch('/api/v1/session', { credentials: 'same-origin' })
@@ -93,13 +108,11 @@ test('Lot 4 — OIDC : login SSO, step-up, urgence si IdP down', async ({ page }
 
   await page.goto('/connexion')
   await expect(page.getByTestId('sso-down-banner')).toBeVisible({ timeout: 30_000 })
-  // Login local urgence
   await page.getByLabel(/e-mail/i).fill('admin@demo.invalid')
   await page.getByLabel(/mot de passe/i).fill(password('admin'))
   await page.getByTestId('local-login').click()
   await expect(page).not.toHaveURL(/connexion/, { timeout: 30_000 })
 
-  // Cleanup : restore SSO + restart dex
   execFileSync('docker', [
     ...compose, 'run', '--rm', '--no-deps', 'cli', 'emergency', 'close',
     '--reason', 'e2e fin',
