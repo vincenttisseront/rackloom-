@@ -15,7 +15,9 @@ telemetry:
 
 oauth2:
   skipApprovalScreen: true
-  alwaysShowLoginScreen: true
+  # false : un seul connecteur (password) → formulaire login directement.
+  # true affichait la page « Log in with … » sans input (échec e2e 105).
+  alwaysShowLoginScreen: false
 
 staticClients:
   - id: rackloom-local

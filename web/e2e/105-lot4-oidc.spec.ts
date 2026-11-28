@@ -1,7 +1,24 @@
 import { execFileSync } from 'node:child_process'
 import { expect, expectAccessible, logout, password, ROOT, test } from './helpers'
+import type { Page } from '@playwright/test'
 
 const OIDC_LAB_PASSWORD = 'rackloom-oidc-lab'
+
+/** Remplit le formulaire password Dex (après éventuel choix de connecteur). */
+async function dexPasswordLogin(page: Page, email: string, pwd: string) {
+  await page.waitForURL(/\/dex\//, { timeout: 60_000 })
+  const login = page.locator('input#login, input[name="login"]')
+  if (!(await login.isVisible().catch(() => false))) {
+    // Page connecteurs si alwaysShowLoginScreen / plusieurs IdP
+    const connector = page.getByRole('link', { name: /log in with/i }).first()
+    await expect(connector).toBeVisible({ timeout: 15_000 })
+    await connector.click()
+  }
+  await expect(login).toBeVisible({ timeout: 30_000 })
+  await login.fill(email)
+  await page.locator('input#password, input[name="password"]').fill(pwd)
+  await page.locator('button#submit-login, button[type="submit"], button:has-text("Login")').first().click()
+}
 
 test('Lot 4 — OIDC : login SSO, step-up, urgence si IdP down', async ({ page }) => {
   test.setTimeout(300_000)
@@ -10,11 +27,7 @@ test('Lot 4 — OIDC : login SSO, step-up, urgence si IdP down', async ({ page }
   await page.goto('/connexion')
   await expect(page.getByTestId('oidc-login')).toBeVisible()
   await page.getByTestId('oidc-login').click()
-  // Dex login form
-  await page.waitForURL(/\/dex\//, { timeout: 60_000 })
-  await page.locator('input[name="login"], input#login, input[type="text"]').first().fill('admin@demo.invalid')
-  await page.locator('input[name="password"], input#password, input[type="password"]').first().fill(OIDC_LAB_PASSWORD)
-  await page.locator('button[type="submit"], button:has-text("Login"), input[type="submit"]').first().click()
+  await dexPasswordLogin(page, 'admin@demo.invalid', OIDC_LAB_PASSWORD)
   await page.waitForURL(/^(?!.*\/dex\/).*/, { timeout: 60_000 })
   // Session établie
   await page.goto('/')
@@ -48,11 +61,13 @@ test('Lot 4 — OIDC : login SSO, step-up, urgence si IdP down', async ({ page }
   await page.goto(authUrl)
   // Dex peut réafficher le login (prompt=login)
   if (page.url().includes('/dex/')) {
-    const loginField = page.locator('input[name="login"], input#login, input[type="text"]').first()
+    const loginField = page.locator('input#login, input[name="login"]')
     if (await loginField.isVisible().catch(() => false)) {
       await loginField.fill('admin@demo.invalid')
-      await page.locator('input[name="password"], input#password, input[type="password"]').first().fill(OIDC_LAB_PASSWORD)
-      await page.locator('button[type="submit"], button:has-text("Login"), input[type="submit"]').first().click()
+      await page.locator('input#password, input[name="password"]').fill(OIDC_LAB_PASSWORD)
+      await page.locator('button#submit-login, button[type="submit"], button:has-text("Login")').first().click()
+    } else if (await page.getByRole('link', { name: /log in with/i }).first().isVisible().catch(() => false)) {
+      await dexPasswordLogin(page, 'admin@demo.invalid', OIDC_LAB_PASSWORD)
     }
   }
   await page.waitForURL(/\/admin\/sso/, { timeout: 60_000 })
