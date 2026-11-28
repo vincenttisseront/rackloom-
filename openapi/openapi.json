@@ -8207,7 +8207,7 @@
     },
     "/api/v1/hosts/{host_id}/rudder/import-observations": {
       "post": {
-        "description": "F24 / RAC-36 : importe des observations Rudder fictives explicites (lecture seule).",
+        "description": "F24 / RAC-36 : importe des observations Rudder (lecture seule).\n\nConnecteur fictif (`rudder-fake`) : synchrone, fixtures explicites.\nConnecteur réel : met en file un job `rudder_import` (worker + secret).",
         "operationId": "import_rudder_observations_api_v1_hosts__host_id__rudder_import_observations_post",
         "parameters": [
           {

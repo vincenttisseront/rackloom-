@@ -18,9 +18,40 @@ const notice = ref<string | null>(null)
 const busy = ref(false)
 const evalBusy = ref(false)
 const lastEval = ref<any | null>(null)
+const rudderBusy = ref(false)
+const rudderForm = reactive({
+  url: '',
+  caPem: '',
+  defaultNodeId: '',
+  token: '',
+})
+const rudderTest = ref<any | null>(null)
 const CAPS = ['configure', 'test_connection', 'inventory', 'plan', 'execute', 'track', 'cancel']
 const CAP_LABELS: Record<string, string> = { configure: 'Configurer', test_connection: 'Tester', inventory: 'Inventaire', plan: 'Plan', execute: 'Exécuter', track: 'Suivre', cancel: 'Annuler' }
 const ADAPTERS: Record<string, string> = { fake: 'Adaptateur fictif (déterministe)', ollama: 'Ollama (modèle local)', disabled: 'Désactivé' }
+
+const rudderConnectors = computed(() => connectors.value.filter((c) => c.kind === 'rudder'))
+const selectedRudderId = ref<string | null>(null)
+const selectedRudder = computed(() => rudderConnectors.value.find((c) => c.id === selectedRudderId.value) || rudderConnectors.value[0] || null)
+
+function syncRudderForm() {
+  const c = selectedRudder.value
+  if (!c) return
+  selectedRudderId.value = c.id
+  rudderForm.url = c.config?.url || ''
+  rudderForm.defaultNodeId = c.config?.default_node_id || ''
+  rudderForm.caPem = ''
+  rudderForm.token = ''
+  rudderTest.value = c.last_test_result || null
+}
+
+async function loadConnectors() {
+  connectors.value = await api.get('/connectors')
+  if (!selectedRudderId.value && rudderConnectors.value.length) {
+    selectedRudderId.value = rudderConnectors.value[0].id
+  }
+  syncRudderForm()
+}
 
 async function loadAssistant() {
   assistant.value = await api.get('/admin/assistant')
@@ -37,13 +68,59 @@ async function loadEval() {
 
 onMounted(async () => {
   try {
-    connectors.value = await api.get('/connectors')
+    await loadConnectors()
     await loadAssistant()
     await loadEval()
   } catch (e) {
     error.value = errorText(e)
   }
 })
+
+watch(selectedRudderId, () => syncRudderForm())
+
+async function saveRudderConfig() {
+  if (!selectedRudder.value) return
+  rudderBusy.value = true
+  error.value = null
+  notice.value = null
+  try {
+    const config: Record<string, string> = {}
+    if (rudderForm.url) config.url = rudderForm.url
+    if (rudderForm.caPem.trim()) config.ca_pem = rudderForm.caPem.trim()
+    if (rudderForm.defaultNodeId.trim()) config.default_node_id = rudderForm.defaultNodeId.trim()
+    await api.put(`/connectors/${selectedRudder.value.id}`, { config })
+    if (rudderForm.token) {
+      await api.put(`/connectors/${selectedRudder.value.id}/secrets/token`, { value: rudderForm.token })
+      rudderForm.token = ''
+    }
+    await loadConnectors()
+    notice.value = selectedRudder.value.simulated
+      ? 'Configuration Rudder fictive enregistrée (aucune valeur secrète affichée).'
+      : 'Configuration Rudder enregistrée. Le jeton n’est jamais renvoyé par l’API.'
+  } catch (e) {
+    error.value = errorText(e)
+  } finally {
+    rudderBusy.value = false
+  }
+}
+
+async function testRudder() {
+  if (!selectedRudder.value) return
+  rudderBusy.value = true
+  error.value = null
+  notice.value = null
+  try {
+    rudderTest.value = await api.post(`/connectors/${selectedRudder.value.id}/test`)
+    await loadConnectors()
+    notice.value = rudderTest.value.status === 'ok'
+      ? (rudderTest.value.simulated ? 'Test simulé OK.' : 'TLS Rudder OK.')
+      : `Test Rudder : ${rudderTest.value.message || rudderTest.value.status}`
+  } catch (e) {
+    error.value = errorText(e)
+  } finally {
+    rudderBusy.value = false
+  }
+}
 
 async function saveAssistant() {
   busy.value = true
@@ -123,6 +200,75 @@ async function runEval() {
           </tr>
         </tbody>
       </table>
+    </section>
+
+    <section
+      v-if="rudderConnectors.length"
+      class="card"
+      aria-labelledby="rudder-admin-title"
+      data-testid="rudder-admin"
+    >
+      <div class="field-head">
+        <h2 id="rudder-admin-title">Rudder (conformité, lecture seule)</h2>
+        <SimBadge v-if="selectedRudder?.simulated" />
+      </div>
+      <p class="small muted">
+        Configurez l’URL HTTPS et le jeton API via une référence de secret. Aucune valeur secrète n’est
+        jamais renvoyée ni affichée. L’import d’observations alimente F24 ; l’écriture / remédiation Rudder
+        reste indisponible. Labo Rudder réel : non vérifié.
+      </p>
+      <div v-if="rudderConnectors.length > 1" class="field">
+        <label for="rudder-connector">Connecteur</label>
+        <select id="rudder-connector" v-model="selectedRudderId" data-testid="rudder-connector-select">
+          <option v-for="c in rudderConnectors" :key="c.id" :value="c.id">
+            {{ c.slug }} ({{ c.mode }})
+          </option>
+        </select>
+      </div>
+      <form class="actions" data-testid="rudder-config-form" @submit.prevent="saveRudderConfig">
+        <div class="field">
+          <label for="rudder-url">URL (https://hôte[:port])</label>
+          <input id="rudder-url" v-model="rudderForm.url" type="url" autocomplete="off" data-testid="rudder-url" />
+        </div>
+        <div class="field">
+          <label for="rudder-node">Nœud par défaut (optionnel)</label>
+          <input id="rudder-node" v-model="rudderForm.defaultNodeId" type="text" autocomplete="off" data-testid="rudder-node" />
+        </div>
+        <div class="field">
+          <label for="rudder-ca">CA PEM (import)</label>
+          <textarea id="rudder-ca" v-model="rudderForm.caPem" rows="4" autocomplete="off" data-testid="rudder-ca" placeholder="-----BEGIN CERTIFICATE-----" />
+          <p v-if="selectedRudder?.config?.ca_imported" class="small muted">CA déjà importée (remplacer pour mettre à jour).</p>
+        </div>
+        <div class="field">
+          <label for="rudder-token">
+            Jeton API
+            <span v-if="selectedRudder?.secrets?.token" class="badge ok">défini</span>
+          </label>
+          <input
+            id="rudder-token"
+            v-model="rudderForm.token"
+            type="password"
+            autocomplete="new-password"
+            data-testid="rudder-token"
+            placeholder="saisir pour remplacer — jamais affiché ensuite"
+          />
+        </div>
+        <button type="submit" class="primary" :disabled="rudderBusy" data-testid="rudder-save">Enregistrer</button>
+        <button type="button" class="secondary" :disabled="rudderBusy" data-testid="rudder-test" @click="testRudder">
+          Tester la connexion
+        </button>
+      </form>
+      <p v-if="rudderTest" class="small" data-testid="rudder-test-result">
+        Dernier test :
+        <span class="badge" :class="rudderTest.status === 'ok' ? 'ok' : 'bad'">{{ rudderTest.status }}</span>
+        <span class="muted"> — {{ rudderTest.message }}</span>
+        <SimBadge v-if="rudderTest.simulated" />
+      </p>
+      <p class="small muted">
+        Capacités : inventaire lecture seule
+        <span v-if="!selectedRudder?.capabilities?.execute?.available">; exécution / écriture non disponible</span>.
+        Synchroniser les observations depuis la fiche machine (import Rudder).
+      </p>
     </section>
 
     <section v-if="assistant" class="card" aria-labelledby="assistant-admin-title" data-testid="assistant-admin">

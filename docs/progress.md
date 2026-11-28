@@ -540,6 +540,16 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - API : `GET /compliance/profiles`, `GET|POST /hosts/{id}/compliance[/scan|/remediate]`, `POST …/rudder/import-observations` ; panneau fiche machine.
 - Preuves : `test_f24_compliance.py` ; e2e `104-f24-conformite.spec.ts`. Labo Rudder réel : non.
 
+### RAC-36 : connecteur Rudder HTTP lecture seule (2026-11-28, heure de Paris)
+
+- Migration Alembic **`0035`** (`down_revision=0034`) : kind de job `rudder_import` dans `jobs_kind_check`.
+- Adaptateur produit `connectors/rudder.py` : configure URL + CA (endpoints approuvés), jeton via `secret_refs` (écriture seule), `test_connection` TLS, inventaire via job `rudder_import` (classe `read`, worker révèle le secret).
+- `execute` / écriture Rudder : **non disponible** ; remédiation éventuelle toujours derrière l'admission Rackloom.
+- `rudder-fake` conservé pour la démo (observations fictives explicites).
+- Tests de contrat contre serveur HTTPS local + fixture API (`tests/fixtures/rudder/`, `test_rudder_adapter.py`, `test_rac36_rudder.py`).
+- UI admin Connecteurs : configuration sans révéler les secrets ; fiche machine : import / sync vers F24.
+- **Niveau de preuve** : testé localement (faux serveur). **Labo Rudder réel : non vérifié** (D2).
+
 ### F25 : ITSM et notifications (Lot F, 2026-11-27, heure de Paris)
 
 - Fusionné (PR #44). Migration Alembic **`0032`** (`down_revision=0031` après cascade F24). Aucun stub.

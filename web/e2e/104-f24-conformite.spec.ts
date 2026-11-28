@@ -16,9 +16,14 @@ test('F24 — conformité : profils et panneau machine', async ({ page }) => {
     const rudder = connectors.body.find((c: { slug: string }) => c.slug === 'rudder-fake')
     expect(rudder).toBeTruthy()
     expect(rudder.mode === 'simulated' || rudder.simulated === true).toBe(true)
+    expect(rudder.capabilities?.execute?.available).toBe(false)
 
-    await page.goto('/')
-    await expectAccessible(page, 'F24 conformité')
+    await logout(page)
+    await login(page, 'admin')
+    await page.goto('/admin/connecteurs')
+    await expect(page.getByTestId('rudder-admin')).toBeVisible()
+    await expect(page.getByTestId('rudder-config-form')).toBeVisible()
+    await expectAccessible(page, 'RAC-36 Rudder admin')
     await logout(page)
   } finally {
     await alice.dispose()

@@ -47,6 +47,7 @@ packages = ["src/rackloom"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
 addopts = "-ra --strict-markers"
 markers = [
   "terraform: utilise la vraie CLI Terraform",

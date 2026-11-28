@@ -2927,7 +2927,10 @@ export interface paths {
         put?: never;
         /**
          * Import Rudder Observations
-         * @description F24 / RAC-36 : importe des observations Rudder fictives explicites (lecture seule).
+         * @description F24 / RAC-36 : importe des observations Rudder (lecture seule).
+         *
+         *     Connecteur fictif (`rudder-fake`) : synchrone, fixtures explicites.
+         *     Connecteur réel : met en file un job `rudder_import` (worker + secret).
          */
         post: operations["import_rudder_observations_api_v1_hosts__host_id__rudder_import_observations_post"];
         delete?: never;

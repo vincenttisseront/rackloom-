@@ -121,6 +121,8 @@ class JobContext:
             "verify": "verification",
             "reconcile": "system",
             "inventory_refresh": "vcenter",
+            "compliance_scan": "system",
+            "rudder_import": "system",
         }.get(self.job["kind"], "job")
 
     def event(self, conn: Conn, type_: str, data: dict[str, Any], severity: str = "info",
