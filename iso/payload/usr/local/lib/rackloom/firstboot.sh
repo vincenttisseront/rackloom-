@@ -48,13 +48,9 @@ if command -v timedatectl >/dev/null 2>&1; then
 fi
 
 # --- FQDN / hostname ----------------------------------------------------------
-# Priorité : RACKLOOM_FQDN → hostname choisi à l'install (install-hostname) →
-# hostname système. Pas de re-saisie opérateur si déjà fourni à l'installateur.
+# Priorité : RACKLOOM_FQDN → hostname posé par Subiquity (identity) → invite TTY.
+# Idempotent : ne régénère rien si firstboot.done existe (ci-dessus).
 FQDN="${RACKLOOM_FQDN:-}"
-if [ -z "$FQDN" ] && [ -s "$CONF_DIR/install-hostname" ]; then
-  FQDN=$(tr -d '[:space:]' <"$CONF_DIR/install-hostname")
-  log "hostname repris de l'installateur: $FQDN"
-fi
 if [ -z "$FQDN" ]; then
   FQDN=$(hostname -f 2>/dev/null || hostname || true)
 fi

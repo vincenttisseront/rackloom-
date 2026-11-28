@@ -195,13 +195,11 @@ cp "$ROOT/iso/autoinstall/meta-data" "$NOCLOUD/meta-data"
 
 PAYLOAD_DST="$EXTRACT/rackloom"
 rm -rf "$PAYLOAD_DST"
-mkdir -p "$PAYLOAD_DST/payload" "$PAYLOAD_DST/debs" "$PAYLOAD_DST/installer"
+mkdir -p "$PAYLOAD_DST/payload" "$PAYLOAD_DST/debs"
 cp -a "$ROOT/iso/payload/." "$PAYLOAD_DST/payload/"
 printf '%s\n' "$VERSION_LABEL" >"$PAYLOAD_DST/payload/etc/rackloom/VERSION"
 cp -a "$DEB_STAGE/." "$PAYLOAD_DST/debs/"
-# Installateur console Rackloom (early-commands) — remplace l'UI Subiquity stock.
-cp -a "$ROOT/iso/installer/." "$PAYLOAD_DST/installer/"
-chmod 0755 "$PAYLOAD_DST/installer/"*.sh
+# Partitionnement et identity : Subiquity / Curtin uniquement (pas d'installateur maison).
 mkdir -p "$PAYLOAD_DST/payload/opt/rackloom/images"
 if [ "$EMBED_IMAGES" = 1 ]; then
   cp -a "$IMG_STAGE/." "$PAYLOAD_DST/payload/opt/rackloom/images/"

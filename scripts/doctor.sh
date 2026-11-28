@@ -79,6 +79,21 @@ check_cmd postgres 0 16.0 bash -c 'ls /usr/lib/postgresql/*/bin/postgres >/dev/n
 check_cmd ssh-keygen 1 "" bash -c 'ssh -V 2>&1'
 
 echo
+echo "== ISO appliance (lot 3, optionnels hors build) =="
+check_cmd xorriso 0 "" xorriso -version
+check_cmd qemu-system-x86_64 0 "" qemu-system-x86_64 --version
+if [ -f /usr/share/OVMF/OVMF_CODE_4M.fd ]; then
+  ok "OVMF" "OVMF_CODE_4M.fd"
+else
+  warn "OVMF" "absent (/usr/share/OVMF/OVMF_CODE_4M.fd) — requis pour make test-iso"
+fi
+if [ -e "$ROOT/iso/installer" ]; then
+  fail "iso/installer" "installateur maison présent — interdit (Subiquity uniquement)"
+else
+  ok "iso path" "pas d'installateur maison (Subiquity)"
+fi
+
+echo
 echo "== Navigateur (tests e2e) =="
 if command -v google-chrome >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1 \
    || ls "$HOME"/.cache/ms-playwright/chromium-* >/dev/null 2>&1; then

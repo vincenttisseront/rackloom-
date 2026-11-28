@@ -1,27 +1,18 @@
 #cloud-config
-# Graine bootstrap Rackloom (ADR-0004 / RAC-61).
+# Autoinstall Ubuntu Server 24.04 LTS pour l'appliance Rackloom (ADR-0004).
 #
-# Ce que voit l'opérateur :
-#   - Menu GRUB Rackloom (« Install Rackloom appliance »)
-#   - Installateur console Rackloom (early-commands) : réseau, hostname,
-#     mot de passe compte initial, confirmation explicite du disque
+# Installateur exclusif : Subiquity / Curtin officiels.
+# Interdit : installateur console/GUI maison, early-commands UI,
+# partitionnement hors Subiquity, copie live FS → disque.
 #
-# Ce qu'il ne voit PAS :
-#   - Aucun écran Subiquity stock (language, keyboard, mirror, source,
-#     updates, SSH, snaps, Ubuntu Pro, etc.)
-#
-# Sous le capot : live-server Ubuntu 24.04 + Subiquity/curtin appliquent
-# la graine réécrite (100 % non interactive) par iso/installer/run.sh.
+# Prompts opérateur via sections interactives Subiquity uniquement :
+#   - storage  : choix et confirmation du disque
+#   - identity : hostname + mot de passe du compte console
+#   - network  : DHCP ou IPv4 statique (si besoin)
 #
 # Aucun secret, mot de passe applicatif ou certificat privé n'est embarqué.
 autoinstall:
   version: 1
-  early-commands:
-    # UI console Rackloom ; réécrit /autoinstall.yaml sans interactive-sections.
-    # bash explicite : le bit +x n'est pas toujours honoré sur ISO 9660.
-    - bash /cdrom/rackloom/installer/run.sh
-  # Stubs volontairement inutilisables si l'installateur n'a pas tourné
-  # (échec fail-closed : pas d'effacement silencieux).
   locale: fr_FR.UTF-8
   keyboard:
     layout: fr
@@ -31,14 +22,17 @@ autoinstall:
     update: false
   identity:
     hostname: rackloom
+    # Compte console local d'installation ; le mot de passe est demandé
+    # par Subiquity (interactive-sections). Remplacé / complété par le
+    # jeton d'amorçage WebUI au premier boot.
     username: rackloom
-    # Placeholder : remplacé par le hash saisi dans l'installateur console.
-    password: "$6$rackloom$InstallerMustReplaceThisPlaceholderHashValueXXXX"
+  interactive-sections:
+    - network
+    - identity
+    - storage
   storage:
     layout:
       name: lvm
-      match:
-        path: /dev/disk/by-id/rackloom-installer-must-select-disk
   ssh:
     install-server: true
     allow-pw: false
@@ -48,10 +42,13 @@ autoinstall:
     - ca-certificates
     - openssl
   apt:
+    # Miroir local éventuel via late-commands ; pas de téléchargement imprévu
+    # après le premier boot (bundles F17 pour le reste).
     preserve_sources_list: false
     fallback: offline-install
   snaps: []
   late-commands:
+    # Docker depuis les .deb embarqués (hors pool de l'ISO amont).
     - /cdrom/rackloom/install-debs.sh
     - curtin in-target -- mkdir -p /opt/rackloom /etc/rackloom /var/lib/rackloom
     - curtin in-target -- mkdir -p /etc/rackloom/secrets /etc/rackloom/keys /etc/rackloom/tls

@@ -51,6 +51,9 @@ Ils ne se négocient pas pour tenir un délai. Un changement qui en affaiblit un
 26. Une capacité absente est affichée « non disponible » ; une étape simulée porte le badge « Simulé » et le profil `production` refuse tout connecteur simulé. Aucun faux succès : un job réussi n'est pas un service prêt ; l'état du service vient des contrôles de santé du template et de l'état observé.
 27. Niveaux de preuve : **simulé**, **testé localement**, **validé en laboratoire réel**, **non vérifié**. Jamais « validé en laboratoire » sur la base de mocks.
 
+**ISO appliance (lot 3)**
+28. L'installation système passe **uniquement** par l'installateur officiel Ubuntu Server 24.04 **Subiquity / Curtin**, piloté par autoinstall NoCloud (`iso/autoinstall/`), `late-commands` et firstboot systemd. Interdit : installateur texte/GUI maison (`iso/installer/`, early-commands UI), partitionnement hors Subiquity, copie live FS → disque, dualité de chemins d'installation. Les prompts opérateur (réseau, hostname, mot de passe, disque) passent par les `interactive-sections` Subiquity uniquement.
+
 ## 2. Limites de sécurité pendant le développement
 
 - Aucun identifiant réel ni aucune ressource de production. Identités de démo en `*.demo.invalid`, secrets de test générés localement dans `.lab/` (ignoré par Git).
@@ -119,11 +122,12 @@ rackloom/
 │   ├── images/lab-node/           Ubuntu 24.04, systemd, OpenSSH, dépôt apt local signé
 │   └── fixtures/                  inventory.yaml, demo-profile.yaml
 ├── deploy/systemd/rackloom.service
-├── iso/                           lot 3 : autoinstall, construction, test QEMU/OVMF
+├── iso/                           lot 3 : Subiquity/autoinstall NoCloud, payload, build, test QEMU/OVMF
 ├── scripts/                       doctor.sh, demo.sh, test-e2e.sh, build-images.sh, lab-keys.sh,
 │                                  check-exposure.sh, check-openapi-drift.sh, canary-scan.sh
 └── docs/
-    ├── architecture.md, product-spec.md, threat-model.md
+    ├── architecture.md, product-spec.md, threat-model.md, security-model.md
+    ├── iso-build.md, installation.md, first-boot.md, testing.md
     ├── progress.md, backlog.md, lot-1-plan.md
     └── adr/
 ```
@@ -136,53 +140,21 @@ rackloom/
 | `make demo` | construit les images, démarre le profil de démonstration, migre, génère clés et identités, charge le registre, publie `ubuntu-web` 1.0.0, affiche URL, comptes et étapes simulées | lot 1 (E13, squelette dès E0) |
 | `make test` | lint, formatage, types, `import-linter`, tests unitaires, d'intégration (PostgreSQL éphémère), de contrat et de sécurité, dérive OpenAPI | lot 1 (E0) |
 | `make test-e2e` | pile de test, vrais runners Terraform et Ansible, nœuds de labo, parcours Playwright D1 à D6, résilience, scan du canari, redémarrage | lot 1 (E13) |
-| `make iso` | construit l'ISO d'installation | lot 3 ; avant, code 2 et message explicite |
-| `make test-iso` | installe l'ISO sur un disque virtuel jetable (QEMU, OVMF), redémarre sans ISO, vérifie persistance et restauration | lot 3 ; avant, code 2 |
+| `make validate` | refuse tout installateur maison ; vérifie autoinstall Subiquity | lot 3 |
+| `make iso` / `make build-iso` | construit l'ISO (Subiquity/autoinstall + xorriso) ; Windows : `iso/build.ps1` | lot 3 |
+| `make test-iso` / `test-qemu-install` / `test-qemu-reboot` | install QEMU/OVMF + reboot sans ISO | lot 3 |
 
 Cibles d'appoint : `make lab-keys`, `make images`, `make openapi`, `make lint`, `make fmt`, `make logs`, `make down` (conserve les volumes), `make demo-reset` (supprime uniquement les volumes de démo et de labo, après confirmation).
 
-Makefile cible :
+Makefile (extrait lot 3) :
 
 ```make
-.DEFAULT_GOAL := help
-.PHONY: help doctor demo test test-e2e iso test-iso lab-keys images openapi lint fmt logs down demo-reset
-
-COMPOSE := docker compose -f compose/compose.yaml
-
-help:       ## Liste les cibles
-	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/ :/'
-doctor:     ## Vérifie les prérequis locaux (aucun appel réseau externe)
-	./scripts/doctor.sh
-demo:       ## Démarre le profil de démonstration Compose
-	./scripts/demo.sh up
-test:       ## Lint, types, unitaires, intégration, contrat, sécurité, dérive OpenAPI
-	cd backend && uv run ruff check . && uv run ruff format --check . && uv run mypy src && uv run lint-imports && uv run pytest
-	cd launcher && uv run pytest
-	cd web && pnpm lint && pnpm typecheck && pnpm test
-	./scripts/check-openapi-drift.sh
-test-e2e:   ## Bout en bout : runners réels, labo, navigateur, résilience, canari
-	./scripts/test-e2e.sh
-iso:        ## Lot 3 : construit l'ISO
+validate:          ## Refuse installateur maison ; vérifie autoinstall Subiquity
+	./iso/scripts/validate-autoinstall.sh
+iso build-iso:     ## Construit l'ISO appliance (Subiquity officiel)
 	./iso/build.sh
-test-iso:   ## Lot 3 : installe et démarre l'ISO sur disque virtuel jetable
+test-iso test-qemu-install test-qemu-reboot: ## QEMU + OVMF
 	./iso/test.sh
-lab-keys:   ## Génère les clés SSH de labo dans .lab/
-	./scripts/lab-keys.sh
-images:     ## Construit les images applicatives, runners et labo
-	./scripts/build-images.sh
-openapi:    ## Exporte le contrat et régénère le client typé
-	cd backend && uv run rackloom openapi export ../openapi/openapi.json
-	cd web && pnpm generate:api
-lint:       ## Lint seul (backend, launcher, web)
-	cd backend && uv run ruff check . && cd ../launcher && uv run ruff check . && cd ../web && pnpm lint
-fmt:        ## Formate le code
-	cd backend && uv run ruff format . && cd ../launcher && uv run ruff format . && cd ../web && pnpm format
-logs:       ## Suit les journaux de la pile de démonstration
-	$(COMPOSE) -f compose/compose.demo.yaml logs -f
-down:       ## Arrête la pile en conservant les volumes
-	$(COMPOSE) -f compose/compose.demo.yaml down
-demo-reset: ## Supprime les volumes de démo et de labo (confirmation demandée)
-	./scripts/demo.sh reset
 ```
 
 Commande d'exploitation `rackloom` (dans le conteneur `api` ou `worker`) : `migrate`, `keys init`, `bootstrap-token`, `demo seed`, `catalog load` (charge et valide `catalog/`, ne publie rien), `jobs list --stuck`, `reconcile <job_id>` (met en file une réconciliation, en lecture seule), `audit verify`, `openapi export`, `chat eval` (F46 : banc d'évaluation, aucun job).

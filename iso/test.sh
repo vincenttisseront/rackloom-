@@ -57,13 +57,17 @@ cp "$OVMF_VARS_TEMPLATE" "$VARS"
 
 # Si l'ISO n'est pas une graine test, en fabriquer une copie temporaire.
 WORK_ISO="$ISO"
-if ! xorriso -indev "$ISO" -exec report_file_content /nocloud/user-data -- 2>/dev/null | grep -q 'rackloom-test\|iso-test-installed'; then
+SEED_PROBE="$TEST_DIR/user-data.probe"
+rm -f "$SEED_PROBE"
+xorriso -osirrox on -indev "$ISO" -extract /nocloud/user-data "$SEED_PROBE" >/dev/null 2>&1 || true
+if ! grep -Eq 'rackloom-test|iso-test-installed' "$SEED_PROBE" 2>/dev/null; then
   say "génération d'une copie ISO à graine test"
   WORK_ISO="$TEST_DIR/appliance-test.iso"
   TMP_EXTRACT="$TEST_DIR/extract"
   rm -rf "$TMP_EXTRACT"
   mkdir -p "$TMP_EXTRACT"
   xorriso -osirrox on -indev "$ISO" -extract / "$TMP_EXTRACT"
+  chmod -R u+w "$TMP_EXTRACT"
   cp "$ROOT/iso/autoinstall/user-data.test" "$TMP_EXTRACT/nocloud/user-data"
   cp "$ROOT/iso/autoinstall/meta-data" "$TMP_EXTRACT/nocloud/meta-data"
   MBR="$TEST_DIR/isohdpfx.bin"
@@ -78,10 +82,19 @@ fi
 
 say "phase 1 : installation depuis l'ISO (timeout ${TIMEOUT}s)"
 # Accélère l'install en injectant FQDN non interactif via smbios (firstboot lit RACKLOOM_FQDN)
+# KVM si disponible (beaucoup plus rapide que TCG).
+QEMU_ACCEL=tcg
+QEMU_CPU=max
+if [ -r /dev/kvm ] && [ "${RACKLOOM_ISO_TEST_TCG:-0}" != 1 ]; then
+  QEMU_ACCEL=kvm
+  QEMU_CPU=host
+fi
+say "accélération QEMU : $QEMU_ACCEL"
+
 qemu-system-x86_64 \
   -name rackloom-iso-test \
-  -machine q35,accel=tcg \
-  -cpu max \
+  -machine q35,accel="$QEMU_ACCEL" \
+  -cpu "$QEMU_CPU" \
   -m "$MEM" \
   -smp 2 \
   -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
@@ -137,8 +150,8 @@ say "phase 2 : redémarrage sans ISO (persistance)"
 : >"$SERIAL_LOG"
 qemu-system-x86_64 \
   -name rackloom-iso-test-reboot \
-  -machine q35,accel=tcg \
-  -cpu max \
+  -machine q35,accel="$QEMU_ACCEL" \
+  -cpu "$QEMU_CPU" \
   -m "$MEM" \
   -smp 2 \
   -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
