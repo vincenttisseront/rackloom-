@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
-.PHONY: help doctor venv images demo down demo-reset logs test typecheck test-e2e smoke check-exposure \
-        lab-keys openapi lint fmt iso test-iso
+.PHONY: help doctor validate venv images demo down demo-reset logs test typecheck test-e2e smoke check-exposure \
+        lab-keys openapi lint fmt iso build-iso test-iso test-qemu-install test-qemu-reboot
 
 SHELL := /bin/bash
 COMPOSE := docker compose -f compose/compose.yaml -f compose/compose.demo.yaml
@@ -9,6 +9,9 @@ help:           ## Liste les cibles
 	@grep -E '^[a-z0-9-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*##/ :/'
 doctor:         ## Vérifie les prérequis locaux (aucun appel réseau externe)
 	./scripts/doctor.sh
+validate:       ## Lot 3 : architecture installateur TUI Rackloom (pas Subiquity UX)
+	./iso/scripts/validate-installer.sh
+	./iso/installer/test-installer.sh
 venv:           ## Installe les dépendances de développement (backend/.venv, web/node_modules)
 	cd backend && uv sync --frozen
 	cd web && npm ci
@@ -29,6 +32,7 @@ test:           ## Lint, contrats d'imports, tests backend (unitaires, intégrat
 	cd web && npx nuxi typecheck
 	./scripts/check-openapi-drift.sh
 	./iso/branding/test-apply-branding.sh
+	./iso/scripts/validate-installer.sh
 	./iso/installer/test-installer.sh
 typecheck:      ## mypy sur backend/src (non bloquant au lot 1 : dette chiffrée dans docs/progress.md)
 	cd backend && uv run mypy
@@ -47,7 +51,13 @@ lint:           ## Lint seul (backend, launcher, scripts)
 	cd backend && uv run ruff check . ../launcher/src ../scripts && uv run lint-imports
 fmt:            ## Trie les imports et applique les corrections sûres de ruff
 	cd backend && uv run ruff check --fix . ../launcher/src ../scripts
-iso:            ## Lot 3 : construit l'ISO appliance (Ubuntu 24.04 autoinstall ; Windows : iso/build.ps1)
+iso:            ## Lot 3 : ISO + installateur TUI Rackloom (Windows : iso/build.ps1)
 	./iso/build.sh
-test-iso:       ## Lot 3 : installe l'ISO sur disque virtuel jetable (QEMU + OVMF)
+build-iso:      ## Alias de iso
+	@$(MAKE) iso
+test-iso:       ## Lot 3 : QEMU/OVMF installateur Rackloom + reboot sans média
+	./iso/test.sh
+test-qemu-install: ## Alias test-iso (phase install)
+	./iso/test.sh
+test-qemu-reboot:  ## Alias test-iso (install + reboot)
 	./iso/test.sh

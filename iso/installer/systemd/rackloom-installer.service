@@ -1,0 +1,21 @@
+[Unit]
+Description=Rackloom appliance installer (TUI)
+Documentation=file:///rackloom/installer/run.sh
+After=local-fs.target network-online.target
+Wants=network-online.target
+ConditionPathExists=/rackloom/installer/run.sh
+ConditionPathExists=!/var/lib/rackloom/installer.ran
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/run/rackloom-installer.env
+ExecStartPre=/bin/mkdir -p /var/lib/rackloom /run/rackloom-installer
+ExecStart=/bin/bash -c 'if [ -f /cdrom/rackloom/installer.env ]; then set -a; . /cdrom/rackloom/installer.env; set +a; fi; exec /bin/bash /rackloom/installer/run.sh'
+ExecStartPost=/bin/touch /var/lib/rackloom/installer.ran
+StandardOutput=journal+console
+StandardError=journal+console
+RemainAfterExit=yes
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

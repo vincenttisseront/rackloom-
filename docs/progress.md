@@ -582,10 +582,12 @@ Les décisions marquées « décidé » sont tranchées ; les autres restent ouv
 - Preuve build : ISO 5,2 Go, SHA-256 `fd38022067374fea42bc2fec451afed24e0e18698c9bdcfd2f00c0019db42c88`, label `lot3-20261127-1f5601d`.
 - **D3 ouverte** (Terraform BSL dans le runner). **D5** non basculé (Docker Ubuntu, pas encore Podman sans root). `make test-iso` install complète : à rejouer sur poste KVM.
 
-### Lot 3 : installateur console Rackloom (RAC-61, 2026-11-28, heure de Paris)
+### Lot 3 : installateur TUI Rackloom (RAC-62 corrigé, 2026-11-28, heure de Paris)
 
-- Branche `cursor/iso-install-custom-7f9a`. Plus aucune UI Subiquity stock : `early-commands` lance `iso/installer/run.sh` (réseau, hostname, mot de passe `rackloom`, confirmation disque), puis réécrit `/autoinstall.yaml` non interactif.
-- GRUB branding (#48) conservé. Smoke : `./iso/installer/test-installer.sh` (dans `make test`). ADR-0004 mis à jour. Rebuild ISO requis pour preuve boot réelle.
+- Branche `cursor/iso-installateur-rackloom-2c97`. **Corrige** #52 (early-commands → Subiquity) et abandonne le brief Subiquity erroné.
+- Architecture : live sans Subiquity ; TUI Étape 1–2 (disque, partition, mmdebstrap, GRUB, message « Installation Rackloom terminée »).
+- Cibles : `make validate`, `make build-iso`, `make test-qemu-*`. `build.ps1` conservé.
+
 
 ### Lot 2-D2 : parcours mission sous contrainte D2 (2026-11-28, heure de Paris)
 

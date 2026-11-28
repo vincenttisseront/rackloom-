@@ -183,25 +183,17 @@ mkdir -p "$EXTRACT"
 xorriso -osirrox on -indev "$ISO_SRC" -extract / "$EXTRACT"
 chmod -R u+w "$EXTRACT"
 
-say "injection autoinstall + payload Rackloom"
-NOCLOUD="$EXTRACT/nocloud"
-mkdir -p "$NOCLOUD"
-if [ "$TEST_SEED" = 1 ]; then
-  cp "$ROOT/iso/autoinstall/user-data.test" "$NOCLOUD/user-data"
-else
-  cp "$ROOT/iso/autoinstall/user-data" "$NOCLOUD/user-data"
-fi
-cp "$ROOT/iso/autoinstall/meta-data" "$NOCLOUD/meta-data"
-
+say "injection installateur Rackloom + payload (pas d'autoinstall UX)"
 PAYLOAD_DST="$EXTRACT/rackloom"
 rm -rf "$PAYLOAD_DST"
 mkdir -p "$PAYLOAD_DST/payload" "$PAYLOAD_DST/debs" "$PAYLOAD_DST/installer"
 cp -a "$ROOT/iso/payload/." "$PAYLOAD_DST/payload/"
 printf '%s\n' "$VERSION_LABEL" >"$PAYLOAD_DST/payload/etc/rackloom/VERSION"
 cp -a "$DEB_STAGE/." "$PAYLOAD_DST/debs/"
-# Installateur console Rackloom (early-commands) — remplace l'UI Subiquity stock.
+# Installateur TUI réel (partition + mmdebstrap) — pas early-commands Subiquity.
 cp -a "$ROOT/iso/installer/." "$PAYLOAD_DST/installer/"
 chmod 0755 "$PAYLOAD_DST/installer/"*.sh
+# Lien live : /rackloom → contenu ISO (casper monte /cdrom ; on expose aussi à la racine live via squashfs).
 mkdir -p "$PAYLOAD_DST/payload/opt/rackloom/images"
 if [ "$EMBED_IMAGES" = 1 ]; then
   cp -a "$IMG_STAGE/." "$PAYLOAD_DST/payload/opt/rackloom/images/"
@@ -209,36 +201,113 @@ else
   cp -a "$IMG_STAGE/README.txt" "$PAYLOAD_DST/payload/opt/rackloom/images/" 2>/dev/null || true
 fi
 
-cat >"$PAYLOAD_DST/install-debs.sh" <<'EOS'
-#!/bin/bash
-set -euo pipefail
-DEBDIR=/cdrom/rackloom/debs
-cp -a "$DEBDIR" /target/tmp/rackloom-debs
-# Ordre approximatif : libs → runc/containerd → docker → compose
-chroot /target bash -c '
-  set -e
-  cd /tmp/rackloom-debs
-  dpkg -i ./libmnl0_*.deb ./libnfnetlink0_*.deb ./libnftnl11_*.deb ./libnftables1_*.deb \
-    ./libip4tc2_*.deb ./libip6tc2_*.deb ./libxtables12_*.deb ./libnetfilter-conntrack3_*.deb \
-    ./iptables_*.deb ./runc_*.deb ./containerd_*.deb ./docker.io_*.deb ./docker-compose-v2_*.deb \
-    || apt-get -y -f install --no-download || apt-get -y -f install
-  rm -rf /tmp/rackloom-debs
-'
-EOS
-chmod 0755 "$PAYLOAD_DST/install-debs.sh"
+# Paquets outils installateur (mmdebstrap, gdisk, …) pour le live.
+TOOL_DEB_STAGE="$WORK/tool-debs"
+rm -rf "$TOOL_DEB_STAGE"
+mkdir -p "$TOOL_DEB_STAGE" "$PAYLOAD_DST/tool-debs"
+if [ -d "${RACKLOOM_ISO_TOOL_DEB_DIR:-}" ]; then
+  cp -a "${RACKLOOM_ISO_TOOL_DEB_DIR}/." "$TOOL_DEB_STAGE/"
+else
+  (
+    cd "$TOOL_DEB_STAGE"
+    if ! ls /var/lib/apt/lists/*_Packages >/dev/null 2>&1; then
+      if [ "$(id -u)" -eq 0 ]; then apt-get update -qq; else sudo apt-get update -qq; fi
+    fi
+    DL=(apt-get download)
+    if [ "$(id -u)" -ne 0 ]; then DL=(sudo apt-get download); fi
+    "${DL[@]}" mmdebstrap gdisk parted dosfstools e2fsprogs || true
+    # apt-get download as root may leave root-owned files
+    sudo chown -R "$(id -u):$(id -g)" "$TOOL_DEB_STAGE" 2>/dev/null || true
+  )
+fi
+if ls "$TOOL_DEB_STAGE"/*.deb >/dev/null 2>&1; then
+  cp -a "$TOOL_DEB_STAGE"/. "$PAYLOAD_DST/tool-debs/"
+fi
 
-# Paramètres noyau autoinstall
-AUTOINSTALL_ARGS='autoinstall ds=nocloud\;s=/cdrom/nocloud/'
+# Retirer toute graine autoinstall éventuelle (pas d'UX Subiquity).
+rm -rf "$EXTRACT/nocloud"
+
+# Kernel : masquer Subiquity + console série (QEMU) ; pas d'autoinstall.
+KERNEL_ARGS='layerfs-path=ubuntu-server-minimal.ubuntu-server.installer.rackloom.squashfs systemd.mask=snap.subiquity.subiquity-server.service systemd.mask=snap.subiquity.subiquity-service.service systemd.mask=subiquity.service console=ttyS0 console=tty0'
 for cfg in "$EXTRACT/boot/grub/grub.cfg" "$EXTRACT/boot/grub/loopback.cfg"; do
   [ -f "$cfg" ] || continue
-  if grep -q 'ds=nocloud' "$cfg"; then continue; fi
-  # Insère avant le « --- » terminal des entrées linux casper.
-  sed -i -E "s|(linux[[:space:]]+/casper/(hwe-)?vmlinuz[[:space:]]*)(---)|\\1${AUTOINSTALL_ARGS} \\3|" "$cfg"
+  if grep -q 'systemd.mask=subiquity' "$cfg"; then continue; fi
+  sed -i -E "s|(linux[[:space:]]+/casper/(hwe-)?vmlinuz[[:space:]]*)(---)|\\1${KERNEL_ARGS} \\3|" "$cfg"
 done
 
 # Branding menu GRUB / splash (remplace « Try or Install Ubuntu Server »).
 say "branding GRUB Rackloom"
 bash "$ROOT/iso/branding/apply-grub-branding.sh" "$EXTRACT" "$ROOT/iso/branding"
+
+# Live squashfs : activer rackloom-installer, masquer Subiquity, outils bootstrap.
+say "overlay live rackloom (layerfs, masque Subiquity)"
+need unsquashfs
+need mksquashfs
+OVERLAY_DIR="$WORK/rackloom-overlay"
+rm -rf "$OVERLAY_DIR"
+mkdir -p "$OVERLAY_DIR/etc/systemd/system/multi-user.target.wants" \
+  "$OVERLAY_DIR/etc/systemd/system/serial-getty@.service.d" \
+  "$OVERLAY_DIR/usr/lib/systemd/system/serial-getty@.service.d" \
+  "$OVERLAY_DIR/rackloom/installer" \
+  "$OVERLAY_DIR/rackloom/tool-debs"
+
+# Masquer les unités snap Subiquity (Ubuntu 24.04 live-server).
+for unit in snap.subiquity.subiquity-server.service snap.subiquity.subiquity-service.service \
+  subiquity.service subiquity-server.service subiquity-service.service; do
+  ln -sfn /dev/null "$OVERLAY_DIR/etc/systemd/system/$unit"
+done
+
+# Empêcher serial-getty de lancer Subiquity ; getty classique.
+cat >"$OVERLAY_DIR/usr/lib/systemd/system/serial-getty@.service.d/subiquity-serial.conf" <<'EOV'
+[Unit]
+Description=Serial Getty on %I (Rackloom — pas Subiquity)
+StartLimitInterval=0
+
+[Service]
+Environment=
+ExecStart=
+ExecStart=-/sbin/agetty -o '-p -- \\u' --keep-baud 115200,57600,38400,9600 %I $TERM
+EOV
+
+cp -a "$PAYLOAD_DST/installer/." "$OVERLAY_DIR/rackloom/installer/"
+chmod 0755 "$OVERLAY_DIR/rackloom/installer/"*.sh
+if ls "$PAYLOAD_DST/tool-debs"/*.deb >/dev/null 2>&1; then
+  cp -a "$PAYLOAD_DST/tool-debs/." "$OVERLAY_DIR/rackloom/tool-debs/"
+fi
+if [ -x /usr/bin/mmdebstrap ]; then
+  mkdir -p "$OVERLAY_DIR/usr/bin"
+  cp -a /usr/bin/mmdebstrap "$OVERLAY_DIR/usr/bin/mmdebstrap"
+fi
+cp -a "$ROOT/iso/installer/systemd/rackloom-installer.service" \
+  "$OVERLAY_DIR/etc/systemd/system/rackloom-installer.service"
+ln -sfn /etc/systemd/system/rackloom-installer.service \
+  "$OVERLAY_DIR/etc/systemd/system/multi-user.target.wants/rackloom-installer.service"
+
+# Lien /cdrom/rackloom/tool-debs pour ensure_tools (cdrom monté séparément ; copie aussi sous /rackloom).
+OVERLAY_SQ="$EXTRACT/casper/ubuntu-server-minimal.ubuntu-server.installer.rackloom.squashfs"
+mksquashfs "$OVERLAY_DIR" "$OVERLAY_SQ" -comp xz -noappend
+rm -rf "$OVERLAY_DIR"
+say "overlay écrit : $(basename "$OVERLAY_SQ")"
+
+if [ "$TEST_SEED" = 1 ]; then
+  mkdir -p "$EXTRACT/rackloom"
+  cat >"$EXTRACT/rackloom/installer.env" <<'EOF'
+RACKLOOM_INSTALLER_AUTO=1
+RACKLOOM_DISK=/dev/vda
+EOF
+  for cfg in "$EXTRACT/boot/grub/grub.cfg" "$EXTRACT/boot/grub/loopback.cfg"; do
+    [ -f "$cfg" ] || continue
+    sed -i -E 's/^set timeout=.*/set timeout=0/' "$cfg"
+    sed -i -E 's/^terminal_output gfxterm/terminal_output console/' "$cfg"
+  done
+fi
+
+if [ -f "$EXTRACT/md5sum.txt" ]; then
+  (
+    cd "$EXTRACT"
+    find casper -type f -print0 | sort -z | xargs -0 md5sum >md5sum.txt
+  ) || true
+fi
 
 # Identifiant de volume ISO 9660 : A–Z, 0–9, underscore, ≤ 32 caractères.
 VOLID="RACKLOOM_${STAMP}"

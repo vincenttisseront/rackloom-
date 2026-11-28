@@ -51,6 +51,10 @@ Ils ne se négocient pas pour tenir un délai. Un changement qui en affaiblit un
 26. Une capacité absente est affichée « non disponible » ; une étape simulée porte le badge « Simulé » et le profil `production` refuse tout connecteur simulé. Aucun faux succès : un job réussi n'est pas un service prêt ; l'état du service vient des contrôles de santé du template et de l'état observé.
 27. Niveaux de preuve : **simulé**, **testé localement**, **validé en laboratoire réel**, **non vérifié**. Jamais « validé en laboratoire » sur la base de mocks.
 
+**ISO appliance (lot 3)**
+28. L'installation système passe par l'**installateur TUI Rackloom** (partitionnement + mmdebstrap/debootstrap Ubuntu 24.04). Interdit comme UX : Subiquity, écrans Ubuntu Server, Curtin UI, autoinstall.yaml comme parcours. Pas de copie live FS → disque comme méthode d'install. Les prompts opérateur (disque, puis réseau/hostname/mot de passe) sont ceux de l'installateur Rackloom.
+
+
 ## 2. Limites de sécurité pendant le développement
 
 - Aucun identifiant réel ni aucune ressource de production. Identités de démo en `*.demo.invalid`, secrets de test générés localement dans `.lab/` (ignoré par Git).

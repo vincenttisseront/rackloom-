@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Helpers partagés — installateur console Rackloom (Lot 3 / RAC-61).
+# Helpers — installateur TUI Rackloom (partition + bootstrap, pas Subiquity).
 # shellcheck shell=bash
 
 BACKTITLE="Rackloom appliance"
 USERNAME_FIXED="rackloom"
-REALNAME_FIXED="Rackloom"
 
 die() {
   printf 'rackloom-installer: ERREUR: %s\n' "$*" >&2
@@ -17,7 +16,6 @@ log() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# Console TTY pour les invites (early-commands Subiquity).
 installer_tty() {
   if [ -r /dev/tty ] && [ -w /dev/tty ]; then
     printf '%s\n' /dev/tty
@@ -37,18 +35,14 @@ banner() {
     printf '========================================\n'
     printf '   Rackloom appliance installer\n'
     printf '========================================\n'
-    printf ' Choix opérateur uniquement :\n'
-    printf '   1) réseau\n'
-    printf '   2) nom / hostname\n'
-    printf '   3) mot de passe compte initial\n'
-    printf '   4) confirmation explicite du disque\n'
-    printf ' Le reste est automatisé (autoinstall).\n'
+    printf ' Installateur Rackloom (pas Subiquity).\n'
+    printf ' Étape 1 : disque\n'
+    printf ' Étape 2 : partition + Ubuntu 24.04 + GRUB\n'
     printf '========================================\n\n'
   } >"$tty"
 }
 
 prompt_line() {
-  # prompt_line <tty> <message> [default] -> écrit la réponse sur stdout
   local tty=$1 msg=$2 default=${3:-} reply
   if [ -n "$default" ]; then
     printf '%s [%s]: ' "$msg" "$default" >"$tty"
@@ -63,61 +57,36 @@ prompt_line() {
   printf '%s\n' "$reply"
 }
 
-prompt_secret() {
-  local tty=$1 msg=$2 reply
-  printf '%s: ' "$msg" >"$tty"
-  stty -echo <"$tty" 2>/dev/null || true
-  # shellcheck disable=SC2162
-  IFS= read -r reply <"$tty" || true
-  stty echo <"$tty" 2>/dev/null || true
-  printf '\n' >"$tty"
-  printf '%s\n' "$reply"
-}
-
 confirm_yes() {
   local tty=$1 msg=$2 reply
   reply=$(prompt_line "$tty" "$msg (oui/non)" "non")
   case "$reply" in
-    oui|Oui|OUI|o|O|yes|Yes|YES|y|Y) return 0 ;;
+    oui|Oui|OUI|o|O|yes|Yes|y|Y) return 0 ;;
     *) return 1 ;;
   esac
 }
 
-hash_password() {
-  local plain=$1
-  if have openssl; then
-    openssl passwd -6 -- "$plain"
-    return 0
-  fi
-  if have mkpasswd; then
-    mkpasswd -m sha-512 -- "$plain"
-    return 0
-  fi
-  die "openssl ou mkpasswd requis pour hacher le mot de passe"
-}
-
-# Disques candidats (exclut loop, rom, et le périphérique du média live si détectable).
+# Liste « chemin<TAB>taille modèle » en excluant le média d'installation si possible.
 list_candidate_disks() {
-  local live_src=""
-  if [ -r /cdrom ]; then
-    live_src=$(findmnt -n -o SOURCE /cdrom 2>/dev/null || true)
-    live_src=${live_src%%[0-9]*}
+  local cdrom_src=""
+  if [ -e /dev/disk/by-label ]; then
+    :
   fi
-  lsblk -dn -o NAME,SIZE,TYPE,MODEL 2>/dev/null | while read -r name size typ model; do
+  # Exclure le périphérique qui porte /cdrom si monté.
+  if mountpoint -q /cdrom 2>/dev/null; then
+    cdrom_src=$(findmnt -n -o SOURCE /cdrom 2>/dev/null || true)
+    cdrom_src=${cdrom_src%%[0-9]*}
+  fi
+  lsblk -dn -o NAME,TYPE,SIZE,MODEL 2>/dev/null | while read -r name typ size model; do
     [ "$typ" = disk ] || continue
-    case "$name" in
-      loop*|sr*|ram*|zram*) continue ;;
-    esac
-    if [ -n "$live_src" ] && [ "/dev/$name" = "$live_src" ]; then
+    path="/dev/$name"
+    if [ -n "$cdrom_src" ] && [ "$path" = "$cdrom_src" ]; then
       continue
     fi
-    printf '/dev/%s\t%s\t%s\n' "$name" "$size" "${model:-}"
+    # Exclure sr* / loop
+    case "$name" in
+      sr*|loop*|fd*) continue ;;
+    esac
+    printf '%s\t%s %s\n' "$path" "$size" "${model:-}"
   done
-}
-
-yaml_single_quote() {
-  # Échappe une valeur pour YAML en simple quotes ('' pour ').
-  local s=$1
-  s=${s//\'/\'\'}
-  printf "'%s'" "$s"
 }
