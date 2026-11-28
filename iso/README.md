@@ -47,6 +47,10 @@ Déroulement de `build.ps1` :
 4. Lance un conteneur Linux qui exécute `iso/build.sh` (gpg, apt `.deb`, xorriso)
 5. Écrit `dist/rackloom-appliance-*.iso`, `.sha256` et `.manifest.txt` sur le FS Windows
 
+Sous PowerShell 5.1, l’absence d’une image `:appliance` ne doit **pas** arrêter le script :
+`Test-DockerImage` lit `$LASTEXITCODE` avec `ErrorActionPreference = Continue`
+(le stderr de `docker image inspect` est sinon terminant). Le fichier est UTF-8 avec BOM.
+
 Variables utiles :
 
 | Variable | Rôle |

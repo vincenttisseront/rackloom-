@@ -1,22 +1,22 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   Construit l'ISO appliance Rackloom sous Windows via Docker Desktop.
 
 .DESCRIPTION
-  Aucune distro WSL Ubuntu + apt n'est requise. Prérequis :
+  Aucune distro WSL Ubuntu + apt n'est requise. Prerequis :
     - Docker Desktop en mode Linux containers
-    - Accès réseau à releases.ubuntu.com (ou cache local)
+    - Acces reseau a releases.ubuntu.com (ou cache local)
 
-  Les images :appliance sont construites/sauvegardées sur l'hôte (démon Desktop),
+  Les images :appliance sont construites/sauvegardees sur l'hote (demon Desktop),
   puis le reconditionnement (gpg, xorriso, .deb) tourne dans un conteneur Linux
-  (iso/Dockerfile.builder) qui réutilise iso/build.sh.
+  (iso/Dockerfile.builder) qui reutilise iso/build.sh.
 
 .PARAMETER TestSeed
-  Graine autoinstall non interactive (équivalent --test-seed).
+  Graine autoinstall non interactive (equivalent --test-seed).
 
 .PARAMETER SkipImages
-  N'embarque pas les images Docker (équivalent --skip-images).
+  N'embarque pas les images Docker (equivalent --skip-images).
 
 .PARAMETER Help
   Affiche cette aide.
@@ -33,6 +33,50 @@ $ErrorActionPreference = "Stop"
 function Write-Step([string]$Message) {
   Write-Host ""
   Write-Host "== $Message"
+}
+
+# PowerShell 5.1 + ErrorAction Stop : le stderr d'un exe natif devient terminant.
+# On abaisse temporairement ErrorAction pour lire $LASTEXITCODE sans planter.
+function Invoke-Docker {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string[]]$DockerArgs,
+    [switch]$AllowFailure
+  )
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & docker @DockerArgs 1>$null 2>$null
+    $code = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $prev
+  }
+  if (-not $AllowFailure -and $code -ne 0) {
+    throw ("echec docker {0} (code {1})" -f ($DockerArgs -join " "), $code)
+  }
+  return $code
+}
+
+function Test-DockerImage([string]$Ref) {
+  return ((Invoke-Docker -DockerArgs @("image", "inspect", $Ref) -AllowFailure) -eq 0)
+}
+
+function Invoke-DockerChecked {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string[]]$DockerArgs
+  )
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & docker @DockerArgs
+    $code = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $prev
+  }
+  if ($code -ne 0) {
+    throw ("echec docker {0} (code {1})" -f ($DockerArgs -join " "), $code)
+  }
 }
 
 if ($Help) {
@@ -72,28 +116,37 @@ function ConvertTo-DockerPath([string]$Path) {
 }
 
 function Assert-DockerLinux {
-  Write-Step "vérification Docker Desktop (Linux containers)"
+  Write-Step "verification Docker Desktop (Linux containers)"
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
   try {
-    docker version | Out-Null
-  } catch {
-    throw "docker introuvable ou démon inaccessible. Installez Docker Desktop et démarrez-le."
+    & docker version 1>$null 2>$null
+    if ($LASTEXITCODE -ne 0) {
+      throw "docker introuvable ou demon inaccessible. Installez Docker Desktop et demarrez-le."
+    }
+    $serverOs = (& docker version --format "{{.Server.Os}}" 2>$null)
+  } finally {
+    $ErrorActionPreference = $prev
   }
-  $serverOs = (docker version --format "{{.Server.Os}}" 2>$null)
   if (-not $serverOs) {
-    throw "impossible de lire docker version. Vérifiez que Docker Desktop est démarré."
+    throw "impossible de lire docker version. Verifiez que Docker Desktop est demarre."
   }
   if ($serverOs -ne "linux") {
-    throw "Docker Desktop doit être en mode Linux containers (actuel: $serverOs). Menu : Switch to Linux containers."
+    throw "Docker Desktop doit etre en mode Linux containers (actuel: $serverOs). Menu : Switch to Linux containers."
   }
   Write-Host "-- Docker OK (Server.Os=$serverOs)"
 }
 
 function Get-GitShortSha {
   if ($env:RACKLOOM_ISO_GIT_SHA) { return $env:RACKLOOM_ISO_GIT_SHA }
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
   try {
     $sha = & git -C $Root rev-parse --short HEAD 2>$null
     if ($LASTEXITCODE -eq 0 -and $sha) { return $sha.Trim() }
-  } catch { }
+  } finally {
+    $ErrorActionPreference = $prev
+  }
   return "unknown"
 }
 
@@ -108,18 +161,21 @@ function Build-ApplianceImages {
     @{ Ref = "rackloom/runner-terraform:$ImageTag"; Dockerfile = "runners/terraform/Dockerfile" }
   )
   foreach ($p in $pairs) {
-    $null = docker image inspect $p.Ref 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    if (-not (Test-DockerImage $p.Ref)) {
       Write-Host "-- docker build $($p.Ref)"
-      docker build -f (Join-Path $Root $p.Dockerfile) -t $p.Ref $Root
-      if ($LASTEXITCODE -ne 0) { throw "échec docker build $($p.Ref)" }
+      Invoke-DockerChecked -DockerArgs @(
+        "build",
+        "-f", (Join-Path $Root $p.Dockerfile),
+        "-t", $p.Ref,
+        $Root
+      )
     } else {
-      Write-Host "-- image déjà présente : $($p.Ref)"
+      Write-Host "-- image deja presente : $($p.Ref)"
     }
   }
   # D3 (ouverte) : runner Terraform = binaire HashiCorp BSL 1.1.
-  docker pull postgres:16.11-bookworm
-  if ($LASTEXITCODE -ne 0) { throw "échec docker pull postgres:16.11-bookworm" }
+  Write-Host "-- docker pull postgres:16.11-bookworm"
+  Invoke-DockerChecked -DockerArgs @("pull", "postgres:16.11-bookworm")
 
   if (Test-Path $HostImages) {
     Get-ChildItem -Path $HostImages -Force | Remove-Item -Recurse -Force
@@ -142,20 +198,33 @@ function Build-ApplianceImages {
       @{ Ref = "postgres:16.11-bookworm"; Name = "postgres" }
     )) {
     $dest = Join-Path $HostImages "$($item.Name).tar"
-    Write-Host "-- docker save $($item.Ref) → $($item.Name).tar"
-    docker save -o $dest $item.Ref
-    if ($LASTEXITCODE -ne 0) { throw "échec docker save $($item.Ref)" }
+    Write-Host "-- docker save $($item.Ref) -> $($item.Name).tar"
+    Invoke-DockerChecked -DockerArgs @("save", "-o", $dest, $item.Ref)
     $hash = (Get-FileHash -Algorithm SHA256 -Path $dest).Hash.ToLowerInvariant()
     Add-Content -Path $manifest -Value "$hash  $($item.Name).tar"
-    $idLine = docker image inspect --format "{{.Id}} {{index .RepoTags 0}}" $item.Ref
+
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+      $idLine = & docker image inspect --format "{{.Id}} {{index .RepoTags 0}}" $item.Ref
+      if ($LASTEXITCODE -ne 0) {
+        throw "echec docker image inspect $($item.Ref) apres save"
+      }
+    } finally {
+      $ErrorActionPreference = $prev
+    }
     Add-Content -Path $ids -Value $idLine
   }
 }
 
 function Build-IsoBuilder {
   Write-Step "image builder ISO ($BuilderTag)"
-  docker build -f (Join-Path $IsoDir "Dockerfile.builder") -t $BuilderTag $Root
-  if ($LASTEXITCODE -ne 0) { throw "échec construction $BuilderTag" }
+  Invoke-DockerChecked -DockerArgs @(
+    "build",
+    "-f", (Join-Path $IsoDir "Dockerfile.builder"),
+    "-t", $BuilderTag,
+    $Root
+  )
 }
 
 function Invoke-Remaster {
@@ -198,8 +267,7 @@ function Invoke-Remaster {
     "bash", "iso/build.sh"
   ) + $bashArgs
 
-  & docker @cmd
-  if ($LASTEXITCODE -ne 0) { throw "échec du reconditionnement ISO (conteneur)" }
+  Invoke-DockerChecked -DockerArgs $cmd
 }
 
 Assert-DockerLinux
@@ -207,11 +275,11 @@ Build-IsoBuilder
 if (-not $SkipImages) {
   Build-ApplianceImages
 } else {
-  Write-Step "images Docker non embarquées (-SkipImages)"
+  Write-Step "images Docker non embarquees (-SkipImages)"
 }
 Invoke-Remaster
 
-Write-Step "terminé"
+Write-Step "termine"
 Get-ChildItem -Path $OutDir -Filter "rackloom-appliance-*.iso*" |
   Sort-Object LastWriteTime -Descending |
   Select-Object -First 6 |
