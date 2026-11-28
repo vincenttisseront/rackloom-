@@ -1,6 +1,5 @@
-# Scripts ISO : LF obligatoire (conteneur Linux / bash), y compris sous Windows.
-iso/*.sh text eol=lf
-iso/*.ps1 text eol=lf
+# Fichiers ISO : LF obligatoire (bash / conteneur Linux), y compris checkout Windows.
+# Exception : lanceurs .cmd (CRLF pour cmd.exe).
+iso/** text eol=lf
 iso/*.cmd text eol=crlf
-iso/Dockerfile.builder text eol=lf
-iso/versions.env text eol=lf
+iso/**/*.cmd text eol=crlf

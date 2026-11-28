@@ -227,8 +227,43 @@ function Build-IsoBuilder {
   )
 }
 
+# Checkout Windows peut livrer CRLF malgre .gitattributes ; le conteneur bash exige LF.
+function Convert-IsoTextToLf {
+  Write-Step "normalisation LF sous iso/ (hote Windows)"
+  $patterns = @(
+    "*.sh", "*.env", "*.ps1", "*.yaml", "*.yml", "*.template",
+    "user-data", "user-data.test", "meta-data", "Dockerfile*",
+    "VERSION", "README.md", "*.service", "rackloom-firstboot",
+    "docker-entrypoint.sh"
+  )
+  $files = @(Get-ChildItem -Path $IsoDir -Recurse -File -Force | Where-Object {
+      $name = $_.Name
+      ($patterns | Where-Object { $name -like $_ } | Select-Object -First 1)
+    })
+  $utf8 = New-Object System.Text.UTF8Encoding $false
+  $utf8Bom = New-Object System.Text.UTF8Encoding $true
+  foreach ($f in $files) {
+    $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
+    $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+    if ($hasBom) {
+      $text = $utf8.GetString($bytes, 3, $bytes.Length - 3)
+    } else {
+      $text = $utf8.GetString($bytes)
+    }
+    $normalized = $text -replace "`r`n", "`n" -replace "`r", "`n"
+    $needsBom = ($f.Extension -eq ".ps1")
+    if (($normalized -cne $text) -or ($needsBom -and -not $hasBom)) {
+      $enc = if ($needsBom) { $utf8Bom } else { $utf8 }
+      [System.IO.File]::WriteAllText($f.FullName, $normalized, $enc)
+      $rel = $f.FullName.Substring($Root.Length) -replace '^[\\/]+', ''
+      Write-Host "-- LF : $rel"
+    }
+  }
+}
+
 function Invoke-Remaster {
   Write-Step "reconditionnement ISO dans le conteneur Linux (xorriso/gpg)"
+  Convert-IsoTextToLf
   $gitSha = Get-GitShortSha
   $bashArgs = @()
   if ($TestSeed) { $bashArgs += "--test-seed" }
@@ -259,12 +294,12 @@ function Invoke-Remaster {
     $volArgs += @("-v", "$(ConvertTo-DockerPath $env:RACKLOOM_ISO_DEB_DIR):/debs:ro")
   }
 
+  # ENTRYPOINT = rackloom-iso-entrypoint (normalise CRLF puis build.sh)
   $cmd = @(
     "run", "--rm",
     "-w", "/src"
   ) + $volArgs + $envArgs + @(
-    $BuilderTag,
-    "bash", "iso/build.sh"
+    $BuilderTag
   ) + $bashArgs
 
   Invoke-DockerChecked -DockerArgs $cmd

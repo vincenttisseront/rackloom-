@@ -51,6 +51,10 @@ Sous PowerShell 5.1, l’absence d’une image `:appliance` ne doit **pas** arr�
 `Test-DockerImage` lit `$LASTEXITCODE` avec `ErrorActionPreference = Continue`
 (le stderr de `docker image inspect` est sinon terminant). Le fichier est UTF-8 avec BOM.
 
+Fins de ligne : `.gitattributes` force `eol=lf` sous `iso/**` (sauf `.cmd`).
+`build.ps1` normalise aussi en LF avant le remaster ; l’entrypoint du conteneur
+(`iso/docker-entrypoint.sh`) retire les `\r` restants (filet montage Windows).
+
 Variables utiles :
 
 | Variable | Rôle |
