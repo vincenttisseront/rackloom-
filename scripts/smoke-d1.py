@@ -30,7 +30,9 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = "https://localhost:8443"
 API = f"{BASE}/api/v1"
 TIMEOUT_S = 600
-APPLIANCE = ["caddy", "api", "worker", "launcher", "postgres"]
+# Inclure dex : après T25, un Dex orphelin reste sur l'ancien réseau core et
+# l'API recrée ne peut plus joindre l'IdP (callback / discovery en échec).
+APPLIANCE = ["caddy", "api", "worker", "launcher", "postgres", "dex"]
 
 
 def compose(*args: str) -> None:

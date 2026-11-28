@@ -315,16 +315,20 @@ def _discovery_url(issuer: str) -> str:
 
 
 def _internalize_endpoint(url: str, issuer: str) -> str:
-    """Réécrit token/jwks vers la base interne ; laisse authorization_endpoint public."""
+    """Réécrit token/jwks vers la base interne ; laisse authorization_endpoint public.
+
+    Réécrit par *chemin* (pas seulement si le préfixe public matche) : la discovery
+    frappée via `http://dex:5556` peut renvoyer des hôtes internes ou publics.
+    """
     internal = get_settings().oidc_internal_base
     if not internal:
         return url
-    public_prefix = issuer.rstrip("/")
-    path = urlparse(issuer).path.rstrip("/") or ""
-    internal_prefix = internal.rstrip("/") + path
-    if url.startswith(public_prefix):
-        return internal_prefix + url[len(public_prefix) :]
-    return url
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.path:
+        return url
+    # Conserves path+query ; force host interne HTTP (TLS seulement sur Caddy).
+    q = f"?{parsed.query}" if parsed.query else ""
+    return internal.rstrip("/") + parsed.path + q
 
 
 def probe_idp(conn: Conn, *, timeout: float = PROBE_TIMEOUT) -> dict[str, Any]:
@@ -356,11 +360,22 @@ def _discovery(issuer: str) -> dict[str, Any]:
         resp = client.get(url)
         resp.raise_for_status()
         data = resp.json()
+    # Issuer public configuré (celui des id_token) — pas l'hôte interne de discovery.
+    data["issuer"] = issuer.rstrip("/")
+    internal = get_settings().oidc_internal_base
     # token + jwks : joignables depuis l'API ; authorization : navigateur (issuer public).
     if "token_endpoint" in data:
         data["token_endpoint"] = _internalize_endpoint(str(data["token_endpoint"]), issuer)
     if "jwks_uri" in data:
         data["jwks_uri"] = _internalize_endpoint(str(data["jwks_uri"]), issuer)
+    # En Compose : forcer authorization via l'origine publique (Caddy → Dex).
+    # Hors Compose (FakeOidc en tests) : conserver l'URL renvoyée par l'IdP.
+    if internal:
+        auth_ep = data.get("authorization_endpoint")
+        if isinstance(auth_ep, str) and auth_ep:
+            path = urlparse(auth_ep).path
+            if path.startswith("/"):
+                data["authorization_endpoint"] = get_settings().public_origin.rstrip("/") + path
     return data
 
 
@@ -509,6 +524,7 @@ def _verify_id_token(
         raise ApiError(401, "oidc_invalid_token", "jeton d'identité IdP invalide") from exc
 
     iss = str(claims.get("iss") or "")
+    # Comparer à l'issuer de discovery (forcé sur l'URL configurée en base).
     expected_iss = str(disco.get("issuer") or "")
     if iss.rstrip("/") != expected_iss.rstrip("/"):
         raise ApiError(401, "oidc_issuer_mismatch", "émetteur IdP inattendu")

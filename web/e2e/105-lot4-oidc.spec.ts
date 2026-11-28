@@ -4,35 +4,30 @@ import type { Page } from '@playwright/test'
 
 const OIDC_LAB_PASSWORD = 'rackloom-oidc-lab'
 
-/** Remplit le formulaire password Dex (après éventuel choix de connecteur). */
+/** Attend le formulaire password Dex, le remplit, attend une destination hors IdP. */
 async function dexPasswordLogin(page: Page, email: string, pwd: string) {
-  await page.waitForURL(/\/dex\//, { timeout: 60_000 })
+  // Attendre le formulaire (chemin …/login), pas seulement /dex/auth (redirects intermédiaires).
+  await page.waitForURL(/\/dex\/.*\/login/, { timeout: 60_000 })
   const login = page.locator('input#login, input[name="login"]')
-  if (!(await login.isVisible().catch(() => false))) {
-    const connector = page.getByRole('link', { name: /log in with/i }).first()
-    await expect(connector).toBeVisible({ timeout: 15_000 })
-    await connector.click()
-  }
-  await expect(login).toBeVisible({ timeout: 30_000 })
+  await expect(login).toBeVisible({ timeout: 15_000 })
   await login.fill(email)
   await page.locator('input#password, input[name="password"]').fill(pwd)
-  await page.locator('button#submit-login, button[type="submit"], button:has-text("Login")').first().click()
-}
-
-/**
- * Attend la fin du flux OIDC : ne pas matcher le callback `/auth/oidc/callback`
- * (sinon un goto concurrent annule la navigation avant Set-Cookie).
- */
-async function waitOidcSettled(page: Page) {
-  await page.waitForURL(
-    (url) => {
-      const p = url.pathname
-      if (p.includes('/dex/')) return false
-      if (p.includes('/auth/oidc/callback')) return false
-      return true
-    },
-    { timeout: 60_000 },
-  )
+  const submit = page.locator('button#submit-login, button[type="submit"]').first()
+  await Promise.all([
+    page.waitForURL(
+      (url) => {
+        const p = url.pathname
+        // Destination finale uniquement (évite de résoudre trop tôt sur le callback).
+        return p === '/' || p.startsWith('/admin') || p.startsWith('/connexion')
+      },
+      { timeout: 90_000 },
+    ),
+    submit.click(),
+  ])
+  if (page.url().includes('oidc_error') || page.url().includes('/connexion')) {
+    const body = await page.locator('body').innerText().catch(() => '')
+    throw new Error(`OIDC callback refusé : ${page.url()} — ${body.slice(0, 400)}`)
+  }
 }
 
 test('Lot 4 — OIDC : login SSO, step-up, urgence si IdP down', async ({ page }) => {
@@ -41,12 +36,13 @@ test('Lot 4 — OIDC : login SSO, step-up, urgence si IdP down', async ({ page }
   // --- Login SSO via Dex local ---
   await page.goto('/connexion')
   await expect(page.getByTestId('oidc-login')).toBeVisible()
-  await page.getByTestId('oidc-login').click()
+  await Promise.all([
+    page.waitForURL(/\/dex\//, { timeout: 60_000 }),
+    page.getByTestId('oidc-login').click(),
+  ])
   await dexPasswordLogin(page, 'admin@demo.invalid', OIDC_LAB_PASSWORD)
-  await waitOidcSettled(page)
-  // return_to=/ : ne pas naviguer ailleurs avant que le cookie de session soit posé
   await expect(page.getByRole('heading', { level: 1, name: /Bonjour/ })).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByText(/Admin \(démo\)|admin@demo\.invalid/i).first()).toBeVisible()
+  await expect(page.getByText(/Admin \(démo\)/i).first()).toBeVisible()
   await expectAccessible(page, 'Lot 4 OIDC connecté')
 
   // --- Admin SSO page (secret jamais affiché) ---
@@ -57,7 +53,7 @@ test('Lot 4 — OIDC : login SSO, step-up, urgence si IdP down', async ({ page }
   await page.getByTestId('oidc-probe').click()
   await expect(page.getByTestId('oidc-reachable')).toHaveText('oui', { timeout: 30_000 })
 
-  // --- Step-up OIDC (F12) : démarrer depuis l'API puis Dex ---
+  // --- Step-up OIDC (F12) ---
   const csrf = await page.evaluate(async () => {
     const r = await fetch('/api/v1/session', { credentials: 'same-origin' })
     const j = await r.json()
@@ -74,18 +70,8 @@ test('Lot 4 — OIDC : login SSO, step-up, urgence si IdP down', async ({ page }
   }, csrf)
   expect(authUrl).toContain('/dex/')
   await page.goto(authUrl)
-  if (page.url().includes('/dex/')) {
-    const loginField = page.locator('input#login, input[name="login"]')
-    if (await loginField.isVisible().catch(() => false)) {
-      await loginField.fill('admin@demo.invalid')
-      await page.locator('input#password, input[name="password"]').fill(OIDC_LAB_PASSWORD)
-      await page.locator('button#submit-login, button[type="submit"], button:has-text("Login")').first().click()
-    } else if (await page.getByRole('link', { name: /log in with/i }).first().isVisible().catch(() => false)) {
-      await dexPasswordLogin(page, 'admin@demo.invalid', OIDC_LAB_PASSWORD)
-    }
-  }
-  await waitOidcSettled(page)
-  await page.waitForURL(/\/admin\/sso/, { timeout: 60_000 })
+  await dexPasswordLogin(page, 'admin@demo.invalid', OIDC_LAB_PASSWORD)
+  await expect(page).toHaveURL(/\/admin\/sso/, { timeout: 30_000 })
   const sessionAfter = await page.evaluate(async () => {
     const r = await fetch('/api/v1/session', { credentials: 'same-origin' })
     return r.json()
