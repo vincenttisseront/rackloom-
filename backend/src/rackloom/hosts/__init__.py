@@ -124,6 +124,8 @@ def view(conn: Conn, host: dict[str, Any]) -> dict[str, Any]:
         "name": host["name"],
         "project_id": str(host["project_id"]),
         "environment_id": str(host["environment_id"]),
+        # D2 : identité vCenter et adresse viennent du mapping guest_ready fictif (lab-node).
+        # Resteront True tant que la personnalisation invitée réelle n'est pas branchée.
         "vcenter": {"vm_stable_id": host["vm_stable_id"], "simulated": True},
         "stack": stack["slug"] if stack else None,
         "address": host["address"],

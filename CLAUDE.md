@@ -4,7 +4,7 @@ Rackloom est une appliance on-premise (Ubuntu Server 24.04 LTS amd64) qui donne 
 
 Règle produit : **l'utilisateur choisit le besoin, Rackloom choisit la technique**. Le demandeur décrit un résultat ; un résolveur central côté serveur en déduit les valeurs techniques à partir de templates Rackloom publiés et versionnés, des politiques d'environnement et de l'inventaire autorisé.
 
-Avant toute modification, lire : ce fichier, `docs/progress.md` (état réel et prochain pas), `docs/architecture.md`, `docs/threat-model.md`, `docs/adr/`, le plan du lot en cours (`docs/lot-1-plan.md`) et `docs/backlog.md`.
+Avant toute modification, lire : ce fichier, `docs/progress.md` (état réel et prochain pas), `docs/architecture.md`, `docs/threat-model.md`, `docs/adr/`, les plans de lot (`docs/lot-1-plan.md`, `docs/lot-2-plan.md`), la checklist labo vSphere (`docs/lab-vsphere-checklist.md`) et `docs/backlog.md`.
 
 ## 1. Invariants
 
@@ -76,7 +76,7 @@ rackloom/
 │   │   ├── projects/              projets, environnements, politiques versionnées, octrois de ressources
 │   │   ├── registry/              composants et templates versionnés, chargeur de catalog/, publication
 │   │   ├── resolver/              résolveur central (fonction pure), codes de blocage, départage
-│   │   ├── connectors/            contrat et capacités ; vsphere/, vsphere_fake/, terraform_cli/, ansible_runner/
+│   │   ├── connectors/            contrat et capacités ; vsphere.py (TLS) ; inventaire simulé via fixtures vsphere-fake
 │   │   ├── inventory/             instantanés, fraîcheur
 │   │   ├── changes/               besoins, versions, révisions, validation, transitions, actions disponibles
 │   │   ├── deployments/           déploiements, stacks, état du service

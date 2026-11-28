@@ -753,8 +753,8 @@ Niveau de preuve visé au lot 1 : « testé localement ». Aucun de ces tests ne
 
 Exigences non couvertes au lot 1 :
 - installation depuis l'ISO, redémarrage de l'appliance et restauration sur une VM neuve (lot 3) ;
-- seconde exécution et échec Ansible après création d'une vraie VM (lot 2) ;
-- critères de l'atelier de conception (AT01) et du scénario de référence F60, F57, F55.
+- seconde exécution et échec Ansible après création d'une **vraie** VM vSphere (laboratoire réel, hors D2) — le parcours équivalent sur `lab-vm` + `lab-node` est clos en Lot 2-D2 (`docs/lot-2-plan.md` : T22, T27, AT01) ;
+- critères de l'atelier de conception (AT01) et du scénario de référence F60, F57, F55 (livrés ensuite, testés localement).
 
 ## 10. Points d'extension réservés
 
