@@ -34,7 +34,9 @@ APPLIANCE = ["caddy", "api", "worker", "launcher", "postgres"]
 
 
 def compose(*args: str) -> None:
-    files = ["compose/compose.yaml", "compose/compose.demo.yaml"]
+    # Toujours inclure compose.oidc.yaml (Dex) : sinon T25 recrée api sans
+    # RACKLOOM_OIDC_INTERNAL_BASE et laisse dex orphelin.
+    files = ["compose/compose.yaml", "compose/compose.demo.yaml", "compose/compose.oidc.yaml"]
     if os.environ.get("RACKLOOM_COMPOSE_EXTRA"):
         files.append(os.environ["RACKLOOM_COMPOSE_EXTRA"])
     cmd = ["docker", "compose", *[a for f in files for a in ("-f", f)], *args]

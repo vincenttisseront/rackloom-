@@ -6,7 +6,7 @@ CREATE TABLE oidc_settings (
     id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
     enabled boolean NOT NULL DEFAULT false,
     issuer_url text NOT NULL DEFAULT ''
-        CHECK (issuer_url = '' OR issuer_url ~ '^https://' OR issuer_url ~ '^http://127\\.0\\.0\\.1' OR issuer_url ~ '^http://localhost'),
+        CHECK (issuer_url = '' OR issuer_url ~ '^https://' OR issuer_url ~ '^http://127[.]0[.]0[.]1' OR issuer_url ~ '^http://localhost'),
     client_id text NOT NULL DEFAULT ''
         CHECK (char_length(client_id) <= 200),
     -- AES-GCM (clé oidc-client hors base) ; NULL = client public (PKCE seul).

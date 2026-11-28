@@ -8,7 +8,8 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CANARY_FILE="$ROOT/.lab/e2e-canary"
 OUT=${1:-$ROOT/.lab/e2e-results}
-COMPOSE=(docker compose -f "$ROOT/compose/compose.yaml" -f "$ROOT/compose/compose.demo.yaml")
+COMPOSE=(docker compose -f "$ROOT/compose/compose.yaml" -f "$ROOT/compose/compose.demo.yaml"
+         -f "$ROOT/compose/compose.oidc.yaml")
 [ -n "${RACKLOOM_COMPOSE_EXTRA:-}" ] && COMPOSE+=(-f "$RACKLOOM_COMPOSE_EXTRA")
 grep -qE '^RLCANARY-[0-9a-f]{32}$' "$CANARY_FILE" || { echo "canari absent ou invalide : $CANARY_FILE" >&2; exit 2; }
 

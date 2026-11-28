@@ -115,7 +115,7 @@ export async function api(page: Page, method: 'GET' | 'POST' | 'PUT', path: stri
 }
 
 export function compose(...args: string[]): string {
-  const files = ['compose/compose.yaml', 'compose/compose.demo.yaml']
+  const files = ['compose/compose.yaml', 'compose/compose.demo.yaml', 'compose/compose.oidc.yaml']
   if (process.env.RACKLOOM_COMPOSE_EXTRA) files.push(process.env.RACKLOOM_COMPOSE_EXTRA)
   return execFileSync('docker', ['compose', ...files.flatMap(f => ['-f', f.startsWith('/') ? f : `${ROOT}${f}`]), ...args],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })

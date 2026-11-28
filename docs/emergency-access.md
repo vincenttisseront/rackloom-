@@ -46,7 +46,7 @@ Consulter : Administration › Audit, ou `GET /api/v1/admin/emergency` (admin de
 
 ## Laboratoire
 
-IdP local Dex (Compose, profil `oidc`) : arrêter le service `dex` ou
+IdP local Dex (`compose/compose.oidc.yaml`) : arrêter le service `dex` ou
 `rackloom emergency simulate-idp-down`, puis activer une intervention. Les mots de
 passe locaux (`.lab/demo-credentials.txt`) restent distincts du mot de passe IdP
 labo (`rackloom-oidc-lab`). Aucune ressource réelle n'est touchée. Niveau de
