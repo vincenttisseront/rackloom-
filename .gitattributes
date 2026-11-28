@@ -3,3 +3,5 @@
 iso/** text eol=lf
 iso/*.cmd text eol=crlf
 iso/**/*.cmd text eol=crlf
+# PNG binaires (splash / logo GRUB).
+iso/branding/*.png binary

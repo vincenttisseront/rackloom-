@@ -75,6 +75,20 @@ Variables utiles :
 - Payload `/rackloom/payload` → `/` (systemd, firstboot, Compose appliance)
 - Paquets Docker hors ligne (`/rackloom/debs`)
 - Images `rackloom/*:appliance` + `postgres:16.11-bookworm` (sauf skip)
+- Branding GRUB (`iso/branding/`) : menu « Install Rackloom appliance », splash / thème
+
+### Branding boot (GRUB)
+
+Au démarrage de l’ISO (UEFI/BIOS), l’opérateur doit voir :
+
+- fond / splash Rackloom (slate `#0f172a`, barre accent bleu)
+- titre de thème **Rackloom**
+- entrée principale **Install Rackloom appliance** (plus « Try or Install Ubuntu Server »)
+- variante **Install Rackloom appliance (safe graphics)** si présente amont
+
+Smoke hors ISO : `./iso/branding/test-apply-branding.sh` (inclus dans `make test`).
+
+Rebuild requis pour le média : `make iso` ou `.\iso\build.ps1`.
 
 ## Licence Terraform (D3)
 
